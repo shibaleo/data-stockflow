@@ -215,6 +215,30 @@ model TenantUser {
 }
 
 // ============================================================
+// 監査ログ
+// ============================================================
+
+/// 監査ログ（全API操作を記録。INSERT-only、削除不可）
+model AuditLog {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenant_id   String?  @db.Uuid /// NULL for platform-level ops (tax_class)
+  user_id     String   @db.Uuid
+  user_role   String   /// platform, audit, tenant, admin, user
+  action      String   /// create, update, deactivate, restore, reverse, close, reopen
+  entity_type String   /// account, journal, fiscal_period, etc.
+  entity_code String   /// code or idempotency_code of the affected entity
+  revision    Int?     /// resulting revision number (if applicable)
+  detail      String?  @db.Text /// JSON payload or description of the change
+  source_ip   String?  /// client IP address
+  created_at  DateTime @default(now()) @db.Timestamptz()
+
+  @@index([tenant_id, created_at])
+  @@index([entity_type, entity_code])
+  @@map("audit_log")
+  @@schema("data_accounting")
+}
+
+// ============================================================
 // トランザクション系
 // ============================================================
 

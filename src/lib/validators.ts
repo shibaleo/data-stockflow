@@ -520,6 +520,29 @@ export const journalCreateResponseSchema = z.object({
 // Operations API schemas
 // ============================================================
 
+export const auditLogResponseSchema = z.object({
+  id: z.string(),
+  tenant_id: z.string().nullable(),
+  user_id: z.string(),
+  user_role: z.string(),
+  action: z.string(),
+  entity_type: z.string(),
+  entity_code: z.string(),
+  revision: z.number().nullable(),
+  detail: z.string().nullable(),
+  source_ip: z.string().nullable(),
+  created_at: z.string(),
+});
+
+export const auditLogQuerySchema = z.object({
+  entity_type: z.string().optional().openapi({ example: "journal" }),
+  entity_code: z.string().optional().openapi({ example: "zaim:12345" }),
+  action: z.string().optional().openapi({ example: "create" }),
+  user_id: z.string().optional(),
+  limit: z.string().optional().openapi({ example: "50" }),
+  cursor: z.string().optional(),
+});
+
 export const reverseJournalSchema = z.object({
   posted_date: z.string().datetime().optional().openapi({
     description: "Posted date for the reversal entry. Defaults to now if omitted.",

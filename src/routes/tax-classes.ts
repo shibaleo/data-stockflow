@@ -21,6 +21,7 @@ import {
 import type { AppVariables } from "@/middleware/context";
 import { requireAuth, requireRole } from "@/middleware/guards";
 import type { CurrentTaxClass } from "@/lib/types";
+import { recordAudit } from "@/lib/audit";
 
 const app = new OpenAPIHono<{ Variables: AppVariables }>();
 
@@ -134,6 +135,7 @@ app.openapi(create, async (c) => {
     },
   });
 
+  recordAudit(c, { action: "create", entityType: "tax_class", entityCode: created.code, revision: 1 });
   return c.json({ data: created }, 201);
 });
 
@@ -179,6 +181,7 @@ app.openapi(update, async (c) => {
     },
   });
 
+  recordAudit(c, { action: "update", entityType: "tax_class", entityCode: code, revision: maxRev + 1 });
   return c.json({ data: updated }, 200);
 });
 
@@ -212,6 +215,7 @@ app.openapi(del, async (c) => {
     },
   });
 
+  recordAudit(c, { action: "deactivate", entityType: "tax_class", entityCode: code, revision: maxRev + 1 });
   return c.json({ message: "Deactivated" }, 200);
 });
 

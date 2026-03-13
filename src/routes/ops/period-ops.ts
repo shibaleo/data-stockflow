@@ -10,6 +10,7 @@ import {
 import type { AppVariables } from "@/middleware/context";
 import { requireTenant, requireAuth, requireRole } from "@/middleware/guards";
 import type { CurrentFiscalPeriod } from "@/lib/types";
+import { recordAudit } from "@/lib/audit";
 
 const app = new OpenAPIHono<{ Variables: AppVariables }>();
 
@@ -91,6 +92,7 @@ app.openapi(close, async (c) => {
     },
   });
 
+  recordAudit(c, { action: "close", entityType: "fiscal_period", entityCode: code, revision: maxRev + 1 });
   return c.json({ data: updated }, 200);
 });
 
@@ -170,6 +172,7 @@ app.openapi(reopen, async (c) => {
     },
   });
 
+  recordAudit(c, { action: "reopen", entityType: "fiscal_period", entityCode: code, revision: maxRev + 1 });
   return c.json({ data: updated }, 200);
 });
 

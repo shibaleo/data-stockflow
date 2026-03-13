@@ -21,6 +21,7 @@ import {
 import type { AppVariables } from "@/middleware/context";
 import { requireTenant, requireAuth, requireRole } from "@/middleware/guards";
 import type { CurrentDepartment } from "@/lib/types";
+import { recordAudit } from "@/lib/audit";
 
 const app = new OpenAPIHono<{ Variables: AppVariables }>();
 app.use("*", requireTenant(), requireAuth());
@@ -140,6 +141,7 @@ app.openapi(create, async (c) => {
       department_type: body.department_type,
     },
   });
+  recordAudit(c, { action: "create", entityType: "department", entityCode: created.code, revision: 1 });
   return c.json({ data: created }, 201);
 });
 
@@ -173,6 +175,7 @@ app.openapi(update, async (c) => {
         ? body.department_type : current.department_type,
     },
   });
+  recordAudit(c, { action: "update", entityType: "department", entityCode: code, revision: maxRev + 1 });
   return c.json({ data: updated }, 200);
 });
 
@@ -195,6 +198,7 @@ app.openapi(del, async (c) => {
       department_type: current.department_type, is_active: false,
     },
   });
+  recordAudit(c, { action: "deactivate", entityType: "department", entityCode: code, revision: maxRev + 1 });
   return c.json({ message: "Deactivated" }, 200);
 });
 
@@ -217,6 +221,7 @@ app.openapi(restore, async (c) => {
       department_type: current.department_type, is_active: true,
     },
   });
+  recordAudit(c, { action: "restore", entityType: "department", entityCode: code, revision: maxRev + 1 });
   return c.json({ message: "Restored" }, 200);
 });
 

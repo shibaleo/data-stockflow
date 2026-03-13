@@ -11,6 +11,7 @@ import {
 import type { AppVariables } from "@/middleware/context";
 import { requireTenant, requireAuth, requireRole } from "@/middleware/guards";
 import type { CurrentTenantSetting } from "@/lib/types";
+import { recordAudit } from "@/lib/audit";
 
 const app = new OpenAPIHono<{ Variables: AppVariables }>();
 
@@ -87,6 +88,7 @@ app.openapi(create, async (c) => {
     },
   });
 
+  recordAudit(c, { action: "create", entityType: "tenant_setting", entityCode: tenantId, revision: 1 });
   return c.json({ data: created }, 201);
 });
 
@@ -121,6 +123,7 @@ app.openapi(update, async (c) => {
     },
   });
 
+  recordAudit(c, { action: "update", entityType: "tenant_setting", entityCode: tenantId, revision: maxRev + 1 });
   return c.json({ data: updated }, 200);
 });
 

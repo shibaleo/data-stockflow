@@ -35,6 +35,7 @@ import type {
   JournalTagRow,
   JournalAttachmentRow,
 } from "@/lib/types";
+import { recordAudit } from "@/lib/audit";
 
 const S = "data_accounting";
 
@@ -384,6 +385,7 @@ app.openapi(create, async (c) => {
     return { header, journal };
   });
 
+  recordAudit(c, { action: "create", entityType: "journal", entityCode: body.idempotency_code, revision: 1 });
   return c.json({ data: result }, 201);
 });
 
@@ -526,6 +528,7 @@ app.openapi(update, async (c) => {
     return journal;
   });
 
+  recordAudit(c, { action: "update", entityType: "journal", entityCode: code, revision: maxRev + 1 });
   return c.json({ data: result }, 200);
 });
 
@@ -588,6 +591,7 @@ app.openapi(del, async (c) => {
     },
   });
 
+  recordAudit(c, { action: "deactivate", entityType: "journal", entityCode: code, revision: maxRev + 1 });
   return c.json({ message: "Deactivated" }, 200);
 });
 

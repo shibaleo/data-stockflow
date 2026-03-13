@@ -21,6 +21,7 @@ import {
 import type { AppVariables } from "@/middleware/context";
 import { requireTenant, requireAuth, requireRole } from "@/middleware/guards";
 import type { CurrentAccountMapping, CurrentAccount } from "@/lib/types";
+import { recordAudit } from "@/lib/audit";
 
 const app = new OpenAPIHono<{ Variables: AppVariables }>();
 
@@ -172,6 +173,7 @@ app.openapi(create, async (c) => {
     },
   });
 
+  recordAudit(c, { action: "create", entityType: "account_mapping", entityCode: created.id, revision: 1 });
   return c.json({ data: created }, 201);
 });
 
@@ -220,6 +222,7 @@ app.openapi(update, async (c) => {
     },
   });
 
+  recordAudit(c, { action: "update", entityType: "account_mapping", entityCode: id, revision: maxRev + 1 });
   return c.json({ data: updated }, 200);
 });
 
@@ -258,6 +261,7 @@ app.openapi(del, async (c) => {
     },
   });
 
+  recordAudit(c, { action: "deactivate", entityType: "account_mapping", entityCode: id, revision: maxRev + 1 });
   return c.json({ message: "Deactivated" }, 200);
 });
 
@@ -296,6 +300,7 @@ app.openapi(restore, async (c) => {
     },
   });
 
+  recordAudit(c, { action: "restore", entityType: "account_mapping", entityCode: id, revision: maxRev + 1 });
   return c.json({ message: "Restored" }, 200);
 });
 

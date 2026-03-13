@@ -21,6 +21,7 @@ import {
 import type { AppVariables } from "@/middleware/context";
 import { requireTenant, requireAuth, requireRole } from "@/middleware/guards";
 import type { CurrentAccount } from "@/lib/types";
+import { recordAudit } from "@/lib/audit";
 
 const app = new OpenAPIHono<{ Variables: AppVariables }>();
 app.use("*", requireTenant(), requireAuth());
@@ -139,6 +140,7 @@ app.openapi(create, async (c) => {
       sign: body.sign, parent_account_code: body.parent_account_code,
     },
   });
+  recordAudit(c, { action: "create", entityType: "account", entityCode: created.code, revision: 1 });
   return c.json({ data: created }, 201);
 });
 
@@ -169,6 +171,7 @@ app.openapi(update, async (c) => {
       parent_account_code: body.parent_account_code !== undefined ? body.parent_account_code : current.parent_account_code,
     },
   });
+  recordAudit(c, { action: "update", entityType: "account", entityCode: code, revision: maxRev + 1 });
   return c.json({ data: updated }, 200);
 });
 
@@ -190,6 +193,7 @@ app.openapi(del, async (c) => {
       account_type: current.account_type, sign: current.sign, parent_account_code: current.parent_account_code,
     },
   });
+  recordAudit(c, { action: "deactivate", entityType: "account", entityCode: code, revision: maxRev + 1 });
   return c.json({ message: "Deactivated" }, 200);
 });
 
@@ -211,6 +215,7 @@ app.openapi(restore, async (c) => {
       account_type: current.account_type, sign: current.sign, parent_account_code: current.parent_account_code,
     },
   });
+  recordAudit(c, { action: "restore", entityType: "account", entityCode: code, revision: maxRev + 1 });
   return c.json({ message: "Restored" }, 200);
 });
 

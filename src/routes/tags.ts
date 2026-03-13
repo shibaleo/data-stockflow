@@ -21,6 +21,7 @@ import {
 import type { AppVariables } from "@/middleware/context";
 import { requireTenant, requireAuth, requireRole } from "@/middleware/guards";
 import type { CurrentTag } from "@/lib/types";
+import { recordAudit } from "@/lib/audit";
 
 const app = new OpenAPIHono<{ Variables: AppVariables }>();
 app.use("*", requireTenant(), requireAuth());
@@ -131,6 +132,7 @@ app.openapi(create, async (c) => {
       created_by: userId, name: body.name, tag_type: body.tag_type,
     },
   });
+  recordAudit(c, { action: "create", entityType: "tag", entityCode: created.code, revision: 1 });
   return c.json({ data: created }, 201);
 });
 
@@ -156,6 +158,7 @@ app.openapi(update, async (c) => {
       tag_type: body.tag_type ?? current.tag_type,
     },
   });
+  recordAudit(c, { action: "update", entityType: "tag", entityCode: code, revision: maxRev + 1 });
   return c.json({ data: updated }, 200);
 });
 
@@ -176,6 +179,7 @@ app.openapi(del, async (c) => {
       created_by: userId, name: current.name, tag_type: current.tag_type, is_active: false,
     },
   });
+  recordAudit(c, { action: "deactivate", entityType: "tag", entityCode: code, revision: maxRev + 1 });
   return c.json({ message: "Deactivated" }, 200);
 });
 
@@ -196,6 +200,7 @@ app.openapi(restore, async (c) => {
       created_by: userId, name: current.name, tag_type: current.tag_type, is_active: true,
     },
   });
+  recordAudit(c, { action: "restore", entityType: "tag", entityCode: code, revision: maxRev + 1 });
   return c.json({ message: "Restored" }, 200);
 });
 

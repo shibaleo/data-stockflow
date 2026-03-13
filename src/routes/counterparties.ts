@@ -21,6 +21,7 @@ import {
 import type { AppVariables } from "@/middleware/context";
 import { requireTenant, requireAuth, requireRole } from "@/middleware/guards";
 import type { CurrentCounterparty } from "@/lib/types";
+import { recordAudit } from "@/lib/audit";
 
 const app = new OpenAPIHono<{ Variables: AppVariables }>();
 app.use("*", requireTenant(), requireAuth());
@@ -133,6 +134,7 @@ app.openapi(create, async (c) => {
       is_qualified_issuer: body.is_qualified_issuer,
     },
   });
+  recordAudit(c, { action: "create", entityType: "counterparty", entityCode: created.code, revision: 1 });
   return c.json({ data: created }, 201);
 });
 
@@ -160,6 +162,7 @@ app.openapi(update, async (c) => {
       is_qualified_issuer: body.is_qualified_issuer ?? current.is_qualified_issuer,
     },
   });
+  recordAudit(c, { action: "update", entityType: "counterparty", entityCode: code, revision: maxRev + 1 });
   return c.json({ data: updated }, 200);
 });
 
@@ -182,6 +185,7 @@ app.openapi(del, async (c) => {
       is_qualified_issuer: current.is_qualified_issuer,
     },
   });
+  recordAudit(c, { action: "deactivate", entityType: "counterparty", entityCode: code, revision: maxRev + 1 });
   return c.json({ message: "Deactivated" }, 200);
 });
 
@@ -204,6 +208,7 @@ app.openapi(restore, async (c) => {
       is_qualified_issuer: current.is_qualified_issuer,
     },
   });
+  recordAudit(c, { action: "restore", entityType: "counterparty", entityCode: code, revision: maxRev + 1 });
   return c.json({ message: "Restored" }, 200);
 });
 

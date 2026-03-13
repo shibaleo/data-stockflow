@@ -17,6 +17,7 @@ import type {
   JournalLineRow,
   JournalTagRow,
 } from "@/lib/types";
+import { recordAudit } from "@/lib/audit";
 
 const S = "data_accounting";
 
@@ -216,6 +217,7 @@ app.openapi(reverse, async (c) => {
     return { header, journal };
   });
 
+  recordAudit(c, { action: "reverse", entityType: "journal", entityCode: code, revision: 1, detail: { reversal_code: reversalCode } });
   return c.json(
     {
       data: {

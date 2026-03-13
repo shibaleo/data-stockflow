@@ -6,6 +6,7 @@ import { requireWritable } from "@/middleware/guards";
 import { errorHandler } from "@/middleware/error-handler";
 import journalOps from "@/routes/ops/journal-ops";
 import periodOps from "@/routes/ops/period-ops";
+import auditLogs from "@/routes/ops/audit-logs";
 import reports from "@/routes/reports";
 
 // ────────────────────────────────────────────
@@ -27,6 +28,9 @@ opsApp.use("*", requireWritable());
 // Business operation routes
 opsApp.route("/journals", journalOps);
 opsApp.route("/periods", periodOps);
+
+// Audit log routes
+opsApp.route("/audit-logs", auditLogs);
 
 // Report routes
 opsApp.route("/reports", reports);
