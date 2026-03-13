@@ -16,8 +16,8 @@ datasource db {
 model Account {
   id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   tenant_id          String    @db.Uuid
-  code               String    /// [identity] 不変
-  display_code       String?   /// [display] ユーザー向け科目コード
+  code               String    @default(dbgenerated("gen_random_uuid()::text")) /// [identity] システム自動生成・不変
+  display_code       String    /// [display] ユーザー向け科目コード（編集可）
   revision           Int       @default(1)
   valid_from         DateTime  @default(now()) @db.Timestamptz()
   valid_to           DateTime? @db.Timestamptz()
@@ -39,8 +39,8 @@ model Account {
 model Tag {
   id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   tenant_id    String    @db.Uuid
-  code         String    /// [identity] 不変
-  display_code String?   /// [display]
+  code         String    @default(dbgenerated("gen_random_uuid()::text")) /// [identity] システム自動生成・不変
+  display_code String    /// [display] 編集可
   revision     Int       @default(1)
   valid_from   DateTime  @default(now()) @db.Timestamptz()
   valid_to     DateTime? @db.Timestamptz()
@@ -59,8 +59,8 @@ model Tag {
 model FiscalPeriod {
   id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   tenant_id    String    @db.Uuid
-  code         String    /// [identity]
-  display_code String?   /// [display]
+  code         String    @default(dbgenerated("gen_random_uuid()::text")) /// [identity] システム自動生成・不変
+  display_code String    /// [display] 編集可
   revision     Int       @default(1)
   valid_from   DateTime  @default(now()) @db.Timestamptz()
   valid_to     DateTime? @db.Timestamptz()
@@ -81,8 +81,8 @@ model FiscalPeriod {
 model Department {
   id                     String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   tenant_id              String    @db.Uuid
-  code                   String    /// [identity]
-  display_code           String?   /// [display]
+  code                   String    @default(dbgenerated("gen_random_uuid()::text")) /// [identity] システム自動生成・不変
+  display_code           String    /// [display] 編集可
   revision               Int       @default(1)
   valid_from             DateTime  @default(now()) @db.Timestamptz()
   valid_to               DateTime? @db.Timestamptz()
@@ -101,8 +101,8 @@ model Department {
 /// 消費税区分（グローバル、tenant_id なし）
 model TaxClass {
   id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  code            String    /// [identity]
-  display_code    String?   /// [display]
+  code            String    @default(dbgenerated("gen_random_uuid()::text")) /// [identity] システム自動生成・不変
+  display_code    String    /// [display] 編集可
   revision        Int       @default(1)
   valid_from      DateTime  @default(now()) @db.Timestamptz()
   valid_to        DateTime? @db.Timestamptz()
@@ -124,8 +124,8 @@ model TaxClass {
 model Counterparty {
   id                       String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   tenant_id                String    @db.Uuid
-  code                     String    /// [identity]
-  display_code             String?   /// [display]
+  code                     String    @default(dbgenerated("gen_random_uuid()::text")) /// [identity] システム自動生成・不変
+  display_code             String    /// [display] 編集可
   revision                 Int       @default(1)
   valid_from               DateTime  @default(now()) @db.Timestamptz()
   valid_to                 DateTime? @db.Timestamptz()
@@ -194,6 +194,23 @@ model PaymentMapping {
 
   @@unique([tenant_id, source_system, payment_method, revision])
   @@map("payment_mapping")
+  @@schema("data_accounting")
+}
+
+// ============================================================
+// ユーザーマッピング
+// ============================================================
+
+/// 外部IdP ↔ テナントユーザー マッピング
+model TenantUser {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  external_id String   @unique /// 外部IdPユーザーID (e.g. Clerk "user_2abc...")
+  tenant_id   String   @db.Uuid
+  user_id     String   @db.Uuid @default(dbgenerated("gen_random_uuid()"))
+  role        String   @default("user") /// platform, tenant, admin, user
+  created_at  DateTime @default(now()) @db.Timestamptz()
+
+  @@map("tenant_user")
   @@schema("data_accounting")
 }
 

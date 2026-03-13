@@ -102,12 +102,9 @@ app.openapi(create, async (c) => {
   const userId = c.get("userId");
   const body = c.req.valid("json");
 
-  const existing = await getCurrent<CurrentFiscalPeriod>("current_fiscal_period", { tenant_id: tenantId, code: body.code });
-  if (existing) return c.json({ error: "Code already exists" }, 409);
-
   const created = await prisma.fiscalPeriod.create({
     data: {
-      tenant_id: tenantId, code: body.code, display_code: body.display_code, revision: 1,
+      tenant_id: tenantId, display_code: body.display_code, revision: 1,
       valid_from: body.valid_from ? new Date(body.valid_from) : undefined,
       created_by: userId, fiscal_year: body.fiscal_year, period_no: body.period_no,
       start_date: new Date(body.start_date), end_date: new Date(body.end_date),

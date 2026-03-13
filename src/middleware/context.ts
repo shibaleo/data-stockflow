@@ -12,11 +12,15 @@ export type AppVariables = {
 export const contextMiddleware = createMiddleware<{
   Variables: AppVariables;
 }>(async (c, next) => {
-  const result = await authenticate(c.req.raw);
-  if (result) {
-    c.set("tenantId", result.tenantId);
-    c.set("userId", result.userId);
-    c.set("userRole", result.role);
+  try {
+    const result = await authenticate(c.req.raw);
+    if (result) {
+      c.set("tenantId", result.tenantId);
+      c.set("userId", result.userId);
+      c.set("userRole", result.role);
+    }
+  } catch (e) {
+    console.error("[contextMiddleware] authenticate error:", e);
   }
   await next();
 });

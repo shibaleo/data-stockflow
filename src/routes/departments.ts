@@ -126,9 +126,6 @@ app.openapi(create, async (c) => {
   const userId = c.get("userId");
   const body = c.req.valid("json");
 
-  const existing = await getCurrent<CurrentDepartment>("current_department", { tenant_id: tenantId, code: body.code });
-  if (existing) return c.json({ error: "Code already exists" }, 409);
-
   if (body.parent_department_code) {
     const parent = await getCurrent<CurrentDepartment>("current_department", { tenant_id: tenantId, code: body.parent_department_code });
     if (!parent) return c.json({ error: "parent_department_code not found" }, 422);
@@ -136,7 +133,7 @@ app.openapi(create, async (c) => {
 
   const created = await prisma.department.create({
     data: {
-      tenant_id: tenantId, code: body.code, display_code: body.display_code, revision: 1,
+      tenant_id: tenantId, display_code: body.display_code, revision: 1,
       valid_from: body.valid_from ? new Date(body.valid_from) : undefined,
       created_by: userId, name: body.name,
       parent_department_code: body.parent_department_code,

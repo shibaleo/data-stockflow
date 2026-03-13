@@ -46,7 +46,7 @@ export const accountResponseSchema = z.object({
   id: z.string(),
   tenant_id: z.string(),
   code: z.string(),
-  display_code: z.string().nullable(),
+  display_code: z.string(),
   revision: z.number(),
   valid_from: z.string(),
   valid_to: z.string().nullable(),
@@ -61,8 +61,7 @@ export const accountResponseSchema = z.object({
 });
 
 export const createAccountSchema = z.object({
-  code: z.string().min(1).max(50),
-  display_code: z.string().max(50).optional(),
+  display_code: z.string().min(1).max(50),
   name: z.string().min(1).max(200),
   unit: z.string().default("JPY"),
   account_type: z.enum([
@@ -81,7 +80,7 @@ export const createAccountSchema = z.object({
 });
 
 export const updateAccountSchema = z.object({
-  display_code: z.string().max(50).nullable().optional(),
+  display_code: z.string().min(1).max(50).optional(),
   name: z.string().min(1).max(200).optional(),
   unit: z.string().optional(),
   account_type: z
@@ -102,7 +101,7 @@ export const tagResponseSchema = z.object({
   id: z.string(),
   tenant_id: z.string(),
   code: z.string(),
-  display_code: z.string().nullable(),
+  display_code: z.string(),
   revision: z.number(),
   valid_from: z.string(),
   valid_to: z.string().nullable(),
@@ -114,15 +113,14 @@ export const tagResponseSchema = z.object({
 });
 
 export const createTagSchema = z.object({
-  code: z.string().min(1).max(50),
-  display_code: z.string().max(50).optional(),
+  display_code: z.string().min(1).max(50),
   name: z.string().min(1).max(200),
   tag_type: z.string().min(1).max(100),
   valid_from: z.string().datetime().optional(),
 });
 
 export const updateTagSchema = z.object({
-  display_code: z.string().max(50).nullable().optional(),
+  display_code: z.string().min(1).max(50).optional(),
   name: z.string().min(1).max(200).optional(),
   tag_type: z.string().min(1).max(100).optional(),
   valid_from: z.string().datetime().optional(),
@@ -136,7 +134,7 @@ export const departmentResponseSchema = z.object({
   id: z.string(),
   tenant_id: z.string(),
   code: z.string(),
-  display_code: z.string().nullable(),
+  display_code: z.string(),
   revision: z.number(),
   valid_from: z.string(),
   valid_to: z.string().nullable(),
@@ -149,8 +147,7 @@ export const departmentResponseSchema = z.object({
 });
 
 export const createDepartmentSchema = z.object({
-  code: z.string().min(1).max(50),
-  display_code: z.string().max(50).optional(),
+  display_code: z.string().min(1).max(50),
   name: z.string().min(1).max(200),
   parent_department_code: z.string().optional(),
   department_type: z.enum(["statutory", "management"]).optional(),
@@ -158,7 +155,7 @@ export const createDepartmentSchema = z.object({
 });
 
 export const updateDepartmentSchema = z.object({
-  display_code: z.string().max(50).nullable().optional(),
+  display_code: z.string().min(1).max(50).optional(),
   name: z.string().min(1).max(200).optional(),
   parent_department_code: z.string().nullable().optional(),
   department_type: z.enum(["statutory", "management"]).nullable().optional(),
@@ -173,7 +170,7 @@ export const fiscalPeriodResponseSchema = z.object({
   id: z.string(),
   tenant_id: z.string(),
   code: z.string(),
-  display_code: z.string().nullable(),
+  display_code: z.string(),
   revision: z.number(),
   valid_from: z.string(),
   valid_to: z.string().nullable(),
@@ -187,8 +184,7 @@ export const fiscalPeriodResponseSchema = z.object({
 });
 
 export const createFiscalPeriodSchema = z.object({
-  code: z.string().min(1).max(50),
-  display_code: z.string().max(50).optional(),
+  display_code: z.string().min(1).max(50),
   fiscal_year: z.number().int(),
   period_no: z.number().int().min(1).max(13),
   start_date: z.string().datetime(),
@@ -198,7 +194,7 @@ export const createFiscalPeriodSchema = z.object({
 });
 
 export const updateFiscalPeriodSchema = z.object({
-  display_code: z.string().max(50).nullable().optional(),
+  display_code: z.string().min(1).max(50).optional(),
   fiscal_year: z.number().int().optional(),
   period_no: z.number().int().min(1).max(13).optional(),
   start_date: z.string().datetime().optional(),
@@ -215,7 +211,7 @@ export const counterpartyResponseSchema = z.object({
   id: z.string(),
   tenant_id: z.string(),
   code: z.string(),
-  display_code: z.string().nullable(),
+  display_code: z.string(),
   revision: z.number(),
   valid_from: z.string(),
   valid_to: z.string().nullable(),
@@ -228,8 +224,7 @@ export const counterpartyResponseSchema = z.object({
 });
 
 export const createCounterpartySchema = z.object({
-  code: z.string().min(1).max(50),
-  display_code: z.string().max(50).optional(),
+  display_code: z.string().min(1).max(50),
   name: z.string().min(1).max(200),
   qualified_invoice_number: z.string().optional(),
   is_qualified_issuer: z.boolean().default(false),
@@ -237,7 +232,7 @@ export const createCounterpartySchema = z.object({
 });
 
 export const updateCounterpartySchema = z.object({
-  display_code: z.string().max(50).nullable().optional(),
+  display_code: z.string().min(1).max(50).optional(),
   name: z.string().min(1).max(200).optional(),
   qualified_invoice_number: z.string().nullable().optional(),
   is_qualified_issuer: z.boolean().optional(),
@@ -251,7 +246,7 @@ export const updateCounterpartySchema = z.object({
 export const taxClassResponseSchema = z.object({
   id: z.string(),
   code: z.string(),
-  display_code: z.string().nullable(),
+  display_code: z.string(),
   revision: z.number(),
   valid_from: z.string(),
   valid_to: z.string().nullable(),
@@ -266,8 +261,7 @@ export const taxClassResponseSchema = z.object({
 });
 
 export const createTaxClassSchema = z.object({
-  code: z.string().min(1).max(50),
-  display_code: z.string().max(50).optional(),
+  display_code: z.string().min(1).max(50),
   name: z.string().min(1).max(200),
   direction: z.enum(["purchase", "sale"]).optional(),
   is_taxable: z.boolean().default(true),
@@ -279,7 +273,7 @@ export const createTaxClassSchema = z.object({
 });
 
 export const updateTaxClassSchema = z.object({
-  display_code: z.string().max(50).nullable().optional(),
+  display_code: z.string().min(1).max(50).optional(),
   name: z.string().min(1).max(200).optional(),
   direction: z.enum(["purchase", "sale"]).nullable().optional(),
   is_taxable: z.boolean().optional(),

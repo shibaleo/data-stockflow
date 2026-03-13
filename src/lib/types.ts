@@ -2,7 +2,7 @@ export interface CurrentAccount {
   id: string;
   tenant_id: string;
   code: string;
-  display_code: string | null;
+  display_code: string;
   revision: number;
   valid_from: Date;
   valid_to: Date | null;
@@ -20,7 +20,7 @@ export interface CurrentTag {
   id: string;
   tenant_id: string;
   code: string;
-  display_code: string | null;
+  display_code: string;
   revision: number;
   valid_from: Date;
   valid_to: Date | null;
@@ -35,7 +35,7 @@ export interface CurrentFiscalPeriod {
   id: string;
   tenant_id: string;
   code: string;
-  display_code: string | null;
+  display_code: string;
   revision: number;
   valid_from: Date;
   valid_to: Date | null;
@@ -52,7 +52,7 @@ export interface CurrentDepartment {
   id: string;
   tenant_id: string;
   code: string;
-  display_code: string | null;
+  display_code: string;
   revision: number;
   valid_from: Date;
   valid_to: Date | null;
@@ -67,7 +67,7 @@ export interface CurrentDepartment {
 export interface CurrentTaxClass {
   id: string;
   code: string;
-  display_code: string | null;
+  display_code: string;
   revision: number;
   valid_from: Date;
   valid_to: Date | null;
@@ -85,7 +85,7 @@ export interface CurrentCounterparty {
   id: string;
   tenant_id: string;
   code: string;
-  display_code: string | null;
+  display_code: string;
   revision: number;
   valid_from: Date;
   valid_to: Date | null;

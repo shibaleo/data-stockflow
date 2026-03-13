@@ -126,9 +126,6 @@ app.openapi(create, async (c) => {
   const userId = c.get("userId");
   const body = c.req.valid("json");
 
-  const existing = await getCurrent<CurrentAccount>("current_account", { tenant_id: tenantId, code: body.code });
-  if (existing) return c.json({ error: "Code already exists" }, 409);
-
   if (body.parent_account_code) {
     const parent = await getCurrent<CurrentAccount>("current_account", { tenant_id: tenantId, code: body.parent_account_code });
     if (!parent) return c.json({ error: "parent_account_code not found" }, 422);
@@ -136,7 +133,7 @@ app.openapi(create, async (c) => {
 
   const created = await prisma.account.create({
     data: {
-      tenant_id: tenantId, code: body.code, display_code: body.display_code, revision: 1,
+      tenant_id: tenantId, display_code: body.display_code, revision: 1,
       valid_from: body.valid_from ? new Date(body.valid_from) : undefined,
       created_by: userId, name: body.name, unit: body.unit, account_type: body.account_type,
       sign: body.sign, parent_account_code: body.parent_account_code,

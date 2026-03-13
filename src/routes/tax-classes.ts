@@ -120,14 +120,8 @@ app.openapi(create, async (c) => {
   const userId = c.get("userId");
   const body = c.req.valid("json");
 
-  const existing = await getCurrent<CurrentTaxClass>("current_tax_class", {
-    code: body.code,
-  });
-  if (existing) return c.json({ error: "Code already exists" }, 409);
-
   const created = await prisma.taxClass.create({
     data: {
-      code: body.code,
       display_code: body.display_code,
       revision: 1,
       valid_from: body.valid_from ? new Date(body.valid_from) : undefined,

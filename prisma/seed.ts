@@ -41,6 +41,7 @@ async function main() {
       data: {
         tenant_id: TENANT_ID,
         code: a.code,
+        display_code: a.code,
         revision: 1,
         created_by: USER_ID,
         name: a.name,
@@ -56,6 +57,7 @@ async function main() {
     data: {
       tenant_id: TENANT_ID,
       code: "2026-01",
+      display_code: "2026-01",
       revision: 1,
       created_by: USER_ID,
       fiscal_year: 2026,
@@ -77,6 +79,7 @@ async function main() {
       data: {
         tenant_id: TENANT_ID,
         code: d.code,
+        display_code: d.code,
         revision: 1,
         created_by: USER_ID,
         name: d.name,
@@ -90,6 +93,7 @@ async function main() {
     data: {
       tenant_id: TENANT_ID,
       code: "CP001",
+      display_code: "CP001",
       revision: 1,
       created_by: USER_ID,
       name: "Test Supplier",
@@ -106,6 +110,20 @@ async function main() {
     },
   });
   console.log("  Tenant Setting: created");
+
+  // ---- Tenant User (dev mapping) ----
+  // Links a known Clerk user ID to the test tenant/user.
+  // Update CLERK_USER_ID to your actual Clerk user ID after first login.
+  const CLERK_USER_ID = process.env.CLERK_DEV_USER_ID || "dev_placeholder";
+  await prisma.tenantUser.create({
+    data: {
+      external_id: CLERK_USER_ID,
+      tenant_id: TENANT_ID,
+      user_id: USER_ID,
+      role: "admin",
+    },
+  });
+  console.log(`  Tenant User: mapped ${CLERK_USER_ID} → ${USER_ID}`);
 
   console.log("Seed complete.");
 }
