@@ -1,6 +1,13 @@
 "use client";
 
-import { Pencil, Trash2 } from "lucide-react";
+import { useState } from "react";
+import {
+  Pencil,
+  Trash2,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
@@ -34,7 +41,51 @@ const TYPE_LABELS: Record<string, string> = {
   auto: "自動",
 };
 
+type SortKey =
+  | "voucher_code"
+  | "posted_date"
+  | "description"
+  | "journal_type"
+  | "revision";
+type SortDir = "asc" | "desc";
+
 export function JournalTable({ journals, onEdit, onDelete }: Props) {
+  const [sortKey, setSortKey] = useState<SortKey>("posted_date");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
+
+  const toggleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  };
+
+  const SortIcon = ({ col }: { col: SortKey }) => {
+    if (sortKey !== col)
+      return <ArrowUpDown className="h-3 w-3 ml-1 opacity-40" />;
+    return sortDir === "asc" ? (
+      <ArrowUp className="h-3 w-3 ml-1" />
+    ) : (
+      <ArrowDown className="h-3 w-3 ml-1" />
+    );
+  };
+
+  const sorted = [...journals].sort((a, b) => {
+    const dir = sortDir === "asc" ? 1 : -1;
+    const va = a[sortKey];
+    const vb = b[sortKey];
+    if (va == null && vb == null) return 0;
+    if (va == null) return 1;
+    if (vb == null) return -1;
+    if (typeof va === "string" && typeof vb === "string")
+      return va.localeCompare(vb, "ja") * dir;
+    if (typeof va === "number" && typeof vb === "number")
+      return (va - vb) * dir;
+    return 0;
+  });
+
   if (journals.length === 0) {
     return (
       <div className="text-center py-12 text-muted-foreground">
@@ -43,21 +94,35 @@ export function JournalTable({ journals, onEdit, onDelete }: Props) {
     );
   }
 
+  const columns: [SortKey, string][] = [
+    ["voucher_code", "伝票番号"],
+    ["posted_date", "計上日"],
+    ["description", "摘要"],
+    ["journal_type", "種別"],
+    ["revision", "Rev"],
+  ];
+
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-border text-left text-muted-foreground">
-            <th className="pb-3 pr-4 font-medium">伝票番号</th>
-            <th className="pb-3 pr-4 font-medium">計上日</th>
-            <th className="pb-3 pr-4 font-medium">摘要</th>
-            <th className="pb-3 pr-4 font-medium">種別</th>
-            <th className="pb-3 pr-4 font-medium">Rev</th>
+            {columns.map(([key, label]) => (
+              <th key={key} className="pb-3 pr-4 font-medium">
+                <button
+                  className="inline-flex items-center hover:text-foreground transition-colors"
+                  onClick={() => toggleSort(key)}
+                >
+                  {label}
+                  <SortIcon col={key} />
+                </button>
+              </th>
+            ))}
             <th className="pb-3 font-medium w-24">操作</th>
           </tr>
         </thead>
         <tbody>
-          {journals.map((j) => (
+          {sorted.map((j) => (
             <tr
               key={j.id}
               className="border-b border-border/50 hover:bg-accent/30 transition-colors"

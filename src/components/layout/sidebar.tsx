@@ -4,12 +4,14 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  BarChart3,
   BookOpen,
   Calendar,
   PanelLeftClose,
   PanelLeftOpen,
   PenLine,
   Settings,
+  Tag,
 } from "lucide-react";
 import { UserButton, useUser } from "@clerk/nextjs";
 import { cn } from "@/lib/utils";
@@ -19,7 +21,9 @@ const COLLAPSED_WIDTH = 56;
 
 const navItems = [
   { href: "/journals", label: "仕訳入力", icon: PenLine },
+  { href: "/reports", label: "財務レポート", icon: BarChart3 },
   { href: "/accounts", label: "勘定科目", icon: BookOpen },
+  { href: "/tags", label: "タグ", icon: Tag },
   { href: "/fiscal-periods", label: "会計期間", icon: Calendar },
   { href: "/settings", label: "設定", icon: Settings },
 ];

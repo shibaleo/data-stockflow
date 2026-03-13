@@ -15,6 +15,7 @@ import tenantSettings from "@/routes/tenant-settings";
 import accountMappings from "@/routes/account-mappings";
 import paymentMappings from "@/routes/payment-mappings";
 import journals from "@/routes/journals";
+import reports from "@/routes/reports";
 
 const app = new OpenAPIHono().basePath("/api");
 
@@ -41,6 +42,9 @@ app.route("/payment-mappings", paymentMappings);
 
 // Transaction routes
 app.route("/journals", journals);
+
+// Report routes
+app.route("/reports", reports);
 
 // OpenAPI spec endpoint
 app.doc("/doc", {
