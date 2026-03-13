@@ -5,18 +5,15 @@ import type { AppVariables, UserRole } from "./context";
 export const requireTenant = () =>
   createMiddleware<{ Variables: AppVariables }>(async (c, next) => {
     if (!c.get("tenantId")) {
-      throw new HTTPException(400, { message: "X-Tenant-Id is required" });
+      throw new HTTPException(401, { message: "Authentication required" });
     }
     await next();
   });
 
 export const requireAuth = () =>
   createMiddleware<{ Variables: AppVariables }>(async (c, next) => {
-    if (!c.get("userId")) {
-      throw new HTTPException(401, { message: "X-User-Id is required" });
-    }
-    if (!c.get("userRole")) {
-      throw new HTTPException(401, { message: "X-User-Role is required" });
+    if (!c.get("tenantId") || !c.get("userId") || !c.get("userRole")) {
+      throw new HTTPException(401, { message: "Authentication required" });
     }
     await next();
   });

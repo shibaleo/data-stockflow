@@ -4,6 +4,7 @@ import { apiReference } from "@scalar/hono-api-reference";
 import { contextMiddleware } from "@/middleware/context";
 import { errorHandler } from "@/middleware/error-handler";
 import health from "@/routes/health";
+import auth from "@/routes/auth";
 import accounts from "@/routes/accounts";
 import tags from "@/routes/tags";
 import departments from "@/routes/departments";
@@ -20,8 +21,9 @@ const app = new OpenAPIHono().basePath("/api");
 app.use("*", logger());
 app.onError(errorHandler);
 
-// Health (no auth)
+// Public routes (no auth)
 app.route("/health", health);
+app.route("/auth", auth);
 
 // Context middleware for all subsequent routes
 app.use("*", contextMiddleware);
