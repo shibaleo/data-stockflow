@@ -1,8 +1,15 @@
+import { Hono } from "hono";
 import { auth } from "@clerk/nextjs/server";
 import { handle } from "hono/vercel";
-import app from "@/lib/hono-app";
+import atomApp from "@/lib/hono-app";
+import opsApp from "@/lib/hono-ops";
 
 export const runtime = "nodejs";
+
+// Parent app that mounts both Atomic API and Operations API
+const app = new Hono();
+app.route("/", atomApp);
+app.route("/", opsApp);
 
 const honoHandler = handle(app);
 

@@ -516,6 +516,31 @@ export const journalCreateResponseSchema = z.object({
   }),
 });
 
+// ============================================================
+// Operations API schemas
+// ============================================================
+
+export const reverseJournalSchema = z.object({
+  posted_date: z.string().datetime().optional().openapi({
+    description: "Posted date for the reversal entry. Defaults to now if omitted.",
+  }),
+  description: z.string().optional().openapi({
+    description: "Optional description override. Defaults to 'Reversal of <original description>'.",
+  }),
+});
+
+export const reverseJournalResponseSchema = z.object({
+  original: z.object({
+    idempotency_code: z.string(),
+    voucher_code: z.string().nullable(),
+  }),
+  reversal: journalCreateResponseSchema,
+});
+
+// ============================================================
+// Journal (continued)
+// ============================================================
+
 export const updateJournalSchema = z.object({
   posted_date: z.string().datetime().optional(),
   journal_type: z

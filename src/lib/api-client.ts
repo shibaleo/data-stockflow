@@ -14,47 +14,57 @@ export class ApiError extends Error {
   }
 }
 
-export async function apiFetch<T = unknown>(
-  path: string,
-  options?: RequestInit
-): Promise<T> {
-  const res = await fetch(`/api${path}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...options?.headers,
-    },
-  });
+function createApiFetch(basePrefix: string) {
+  return async function apiFetch<T = unknown>(
+    path: string,
+    options?: RequestInit
+  ): Promise<T> {
+    const res = await fetch(`${basePrefix}${path}`, {
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+      },
+    });
 
-  if (!res.ok) {
-    let body: { error: string };
-    try {
-      body = await res.json();
-    } catch {
-      body = { error: res.statusText };
+    if (!res.ok) {
+      let body: { error: string };
+      try {
+        body = await res.json();
+      } catch {
+        body = { error: res.statusText };
+      }
+      throw new ApiError(res.status, body);
     }
-    throw new ApiError(res.status, body);
-  }
 
-  return res.json();
+    return res.json();
+  };
 }
 
-// Typed helpers
-export const api = {
-  get: <T>(path: string) => apiFetch<T>(path),
+function createApiHelpers(basePrefix: string) {
+  const apiFetch = createApiFetch(basePrefix);
+  return {
+    get: <T>(path: string) => apiFetch<T>(path),
 
-  post: <T>(path: string, body: unknown) =>
-    apiFetch<T>(path, {
-      method: "POST",
-      body: JSON.stringify(body),
-    }),
+    post: <T>(path: string, body: unknown) =>
+      apiFetch<T>(path, {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
 
-  put: <T>(path: string, body: unknown) =>
-    apiFetch<T>(path, {
-      method: "PUT",
-      body: JSON.stringify(body),
-    }),
+    put: <T>(path: string, body: unknown) =>
+      apiFetch<T>(path, {
+        method: "PUT",
+        body: JSON.stringify(body),
+      }),
 
-  delete: <T>(path: string) =>
-    apiFetch<T>(path, { method: "DELETE" }),
-};
+    delete: <T>(path: string) =>
+      apiFetch<T>(path, { method: "DELETE" }),
+  };
+}
+
+/** Atomic API — CRUD operations */
+export const api = createApiHelpers("/api/atom/v1");
+
+/** Operations API — business operations & reports */
+export const opsApi = createApiHelpers("/api/ops/v1");

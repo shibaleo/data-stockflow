@@ -12,7 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { api, ApiError } from "@/lib/api-client";
+import { opsApi, ApiError } from "@/lib/api-client";
 
 // ── Types ──
 
@@ -152,7 +152,7 @@ export default function ReportsPage() {
       if (periodFrom !== "__all__") params.set("period_from", periodFrom);
       if (periodTo !== "__all__") params.set("period_to", periodTo);
       const qs = params.toString();
-      const res = await api.get<{ data: BalanceItem[]; periods: string[] }>(
+      const res = await opsApi.get<{ data: BalanceItem[]; periods: string[] }>(
         `/reports/balances${qs ? `?${qs}` : ""}`
       );
       setData(res.data);

@@ -8,7 +8,7 @@ export interface AuthResult {
   role: UserRole;
 }
 
-const ROLES: readonly string[] = ["platform", "tenant", "admin", "user"];
+const ROLES: readonly string[] = ["platform", "audit", "tenant", "admin", "user"];
 
 // ============================================================
 // Clerk JWKS — verify JWT and extract sub (Clerk user ID)

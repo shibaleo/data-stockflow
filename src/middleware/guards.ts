@@ -28,3 +28,22 @@ export const requireRole = (...roles: UserRole[]) =>
     }
     await next();
   });
+
+/**
+ * Reject write operations (POST/PUT/DELETE/PATCH) for audit role.
+ * Audit users can only read data.
+ */
+export const requireWritable = () =>
+  createMiddleware<{ Variables: AppVariables }>(async (c, next) => {
+    if (
+      c.get("userRole") === "audit" &&
+      c.req.method !== "GET" &&
+      c.req.method !== "HEAD" &&
+      c.req.method !== "OPTIONS"
+    ) {
+      throw new HTTPException(403, {
+        message: "Audit role is read-only",
+      });
+    }
+    await next();
+  });

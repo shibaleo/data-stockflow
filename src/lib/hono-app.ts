@@ -2,6 +2,7 @@ import { OpenAPIHono } from "@hono/zod-openapi";
 import { logger } from "hono/logger";
 import { apiReference } from "@scalar/hono-api-reference";
 import { contextMiddleware } from "@/middleware/context";
+import { requireWritable } from "@/middleware/guards";
 import { errorHandler } from "@/middleware/error-handler";
 import health from "@/routes/health";
 import auth from "@/routes/auth";
@@ -15,44 +16,48 @@ import tenantSettings from "@/routes/tenant-settings";
 import accountMappings from "@/routes/account-mappings";
 import paymentMappings from "@/routes/payment-mappings";
 import journals from "@/routes/journals";
-import reports from "@/routes/reports";
 
-const app = new OpenAPIHono().basePath("/api");
+// ────────────────────────────────────────────
+// Atomic API v1 — /api/atom/v1
+// Minimal-unit CRUD operations
+// ────────────────────────────────────────────
 
-app.use("*", logger());
-app.onError(errorHandler);
+const atomApp = new OpenAPIHono().basePath("/api/atom/v1");
+
+atomApp.use("*", logger());
+atomApp.onError(errorHandler);
 
 // Public routes (no auth)
-app.route("/health", health);
-app.route("/auth", auth);
+atomApp.route("/health", health);
+atomApp.route("/auth", auth);
 
 // Context middleware for all subsequent routes
-app.use("*", contextMiddleware);
+atomApp.use("*", contextMiddleware);
+
+// Audit role enforcement: read-only for audit users
+atomApp.use("*", requireWritable());
 
 // Master routes
-app.route("/accounts", accounts);
-app.route("/tags", tags);
-app.route("/departments", departments);
-app.route("/fiscal-periods", fiscalPeriods);
-app.route("/counterparties", counterparties);
-app.route("/tax-classes", taxClasses);
-app.route("/tenant-settings", tenantSettings);
-app.route("/account-mappings", accountMappings);
-app.route("/payment-mappings", paymentMappings);
+atomApp.route("/accounts", accounts);
+atomApp.route("/tags", tags);
+atomApp.route("/departments", departments);
+atomApp.route("/fiscal-periods", fiscalPeriods);
+atomApp.route("/counterparties", counterparties);
+atomApp.route("/tax-classes", taxClasses);
+atomApp.route("/tenant-settings", tenantSettings);
+atomApp.route("/account-mappings", accountMappings);
+atomApp.route("/payment-mappings", paymentMappings);
 
 // Transaction routes
-app.route("/journals", journals);
+atomApp.route("/journals", journals);
 
-// Report routes
-app.route("/reports", reports);
-
-// OpenAPI spec endpoint
-app.doc("/doc", {
+// OpenAPI spec
+atomApp.doc("/doc", {
   openapi: "3.1.0",
   info: {
-    title: "data-stockflow API",
+    title: "data-stockflow Atomic API",
     version: "1.0.0",
-    description: `Append-only double-entry bookkeeping API with bi-temporal versioning.
+    description: `Minimal-unit CRUD API for the append-only double-entry bookkeeping system.
 
 ## Double-Entry Convention
 
@@ -71,21 +76,29 @@ Example — record "Expense 1000 / Cash 1000":
 \`\`\`
 The sum of all debit amounts must equal the sum of all credit amounts.
 
-Internally, amounts are stored as signed values (debit=negative, credit=positive) with a SUM=0 balance invariant, but the API abstracts this away.
-
 ## Append-Only Model
 
-All write operations (create, update, delete, restore) are INSERT-only with incrementing revision numbers. No rows are ever updated or deleted. The latest active revision represents the current state.`,
+All write operations (create, update, delete, restore) are INSERT-only with incrementing revision numbers. No rows are ever updated or deleted. The latest active revision represents the current state.
+
+## Roles
+
+| Role | Access |
+|------|--------|
+| platform | tax_class CRUD |
+| audit | Read-only (all GET endpoints) |
+| tenant | tenant_settings management |
+| admin | All master CRUD, all journal types |
+| user | Normal journals, tags, counterparties |`,
   },
 });
 
 // Scalar API Reference UI
-app.get(
+atomApp.get(
   "/reference",
   apiReference({
-    url: "/api/doc",
+    url: "/api/atom/v1/doc",
     theme: "kepler",
   })
 );
 
-export default app;
+export default atomApp;
