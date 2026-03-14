@@ -25,15 +25,15 @@ import {
 import { api, ApiError } from "@/lib/api-client";
 
 interface BookRow {
-  id: string;
+  id: number;
   code: string;
-  display_code: string;
   name: string;
   unit: string;
   unit_symbol: string;
   unit_position: string;
   type_labels: Record<string, string>;
   is_active: boolean;
+  revision: number;
   created_at: string;
 }
 
@@ -51,10 +51,10 @@ export default function BooksPage() {
   const [books, setBooks] = useState<BookRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [editCode, setEditCode] = useState<string | null>(null);
+  const [editId, setEditId] = useState<number | null>(null);
 
   // Form state
-  const [displayCode, setDisplayCode] = useState("");
+  const [code, setCode] = useState("");
   const [name, setName] = useState("");
   const [unit, setUnit] = useState("");
   const [unitSymbol, setUnitSymbol] = useState("");
@@ -79,8 +79,8 @@ export default function BooksPage() {
   }, [fetchBooks]);
 
   const handleCreate = () => {
-    setEditCode(null);
-    setDisplayCode("");
+    setEditId(null);
+    setCode("");
     setName("");
     setUnit("");
     setUnitSymbol("");
@@ -90,8 +90,8 @@ export default function BooksPage() {
   };
 
   const handleEdit = (book: BookRow) => {
-    setEditCode(book.code);
-    setDisplayCode(book.display_code);
+    setEditId(book.id);
+    setCode(book.code);
     setName(book.name);
     setUnit(book.unit);
     setUnitSymbol(book.unit_symbol ?? "");
@@ -100,10 +100,10 @@ export default function BooksPage() {
     setDialogOpen(true);
   };
 
-  const handleDeactivate = async (bookCode: string) => {
+  const handleDeactivate = async (id: number) => {
     if (!confirm("この帳簿を無効化しますか？")) return;
     try {
-      await api.delete(`/books/${bookCode}`);
+      await api.delete(`/books/${id}`);
       toast.success("帳簿を無効化しました");
       fetchBooks();
     } catch (e) {
@@ -112,9 +112,9 @@ export default function BooksPage() {
     }
   };
 
-  const handleRestore = async (bookCode: string) => {
+  const handleRestore = async (id: number) => {
     try {
-      await api.post(`/books/${bookCode}/restore`, {});
+      await api.post(`/books/${id}/restore`, {});
       toast.success("帳簿を復元しました");
       fetchBooks();
     } catch (e) {
@@ -131,14 +131,14 @@ export default function BooksPage() {
         if (v.trim()) labels[k] = v.trim();
       }
 
-      const payload: Record<string, unknown> = { name, unit, unit_symbol: unitSymbol, unit_position: unitPosition };
-      if (displayCode) payload.display_code = displayCode;
-      if (Object.keys(labels).length > 0) payload.type_labels = labels;
-
-      if (editCode) {
-        await api.put(`/books/${editCode}`, payload);
+      if (editId) {
+        const payload: Record<string, unknown> = { name, unit, unit_symbol: unitSymbol, unit_position: unitPosition };
+        if (Object.keys(labels).length > 0) payload.type_labels = labels;
+        await api.put(`/books/${editId}`, payload);
         toast.success("帳簿を更新しました");
       } else {
+        const payload: Record<string, unknown> = { code, name, unit, unit_symbol: unitSymbol, unit_position: unitPosition };
+        if (Object.keys(labels).length > 0) payload.type_labels = labels;
         await api.post("/books", payload);
         toast.success("帳簿を作成しました");
       }
@@ -192,11 +192,11 @@ export default function BooksPage() {
                   const inactive = !book.is_active;
                   return (
                     <tr
-                      key={book.code}
+                      key={book.id}
                       className={`border-b border-border/50 transition-colors ${inactive ? "opacity-50" : "hover:bg-accent/20"}`}
                     >
                       <td className="py-2 px-3 font-mono text-xs">
-                        {book.display_code}
+                        {book.code}
                       </td>
                       <td className="py-2 px-3">{book.name}</td>
                       <td className="py-2 px-3">
@@ -237,7 +237,7 @@ export default function BooksPage() {
                               size="icon"
                               className="size-7"
                               title="復元"
-                              onClick={() => handleRestore(book.code)}
+                              onClick={() => handleRestore(book.id)}
                             >
                               <RotateCcw className="size-3.5" />
                             </Button>
@@ -257,7 +257,7 @@ export default function BooksPage() {
                                 size="icon"
                                 className="size-7 text-destructive"
                                 title="無効化"
-                                onClick={() => handleDeactivate(book.code)}
+                                onClick={() => handleDeactivate(book.id)}
                               >
                                 <Trash2 className="size-3.5" />
                               </Button>
@@ -286,9 +286,9 @@ export default function BooksPage() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>{editCode ? "帳簿を編集" : "帳簿を作成"}</DialogTitle>
+            <DialogTitle>{editId ? "帳簿を編集" : "帳簿を作成"}</DialogTitle>
             <DialogDescription>
-              {editCode
+              {editId
                 ? "帳簿の名前、単位、科目区分ラベルを編集できます。"
                 : "新しい帳簿を作成します。"}
             </DialogDescription>
@@ -298,9 +298,10 @@ export default function BooksPage() {
             <div className="space-y-2">
               <Label>コード</Label>
               <Input
-                value={displayCode}
-                onChange={(e) => setDisplayCode(e.target.value)}
-                placeholder="例: jpy-ledger（省略時は名前が使用されます）"
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                placeholder="例: jpy-ledger"
+                disabled={!!editId}
               />
             </div>
 
@@ -378,8 +379,8 @@ export default function BooksPage() {
             <Button variant="outline" onClick={() => setDialogOpen(false)}>
               キャンセル
             </Button>
-            <Button onClick={handleSubmit} disabled={!name || !unit}>
-              {editCode ? "更新" : "作成"}
+            <Button onClick={handleSubmit} disabled={!name || !unit || (!editId && !code)}>
+              {editId ? "更新" : "作成"}
             </Button>
           </DialogFooter>
         </DialogContent>

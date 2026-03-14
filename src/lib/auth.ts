@@ -1,16 +1,23 @@
 import * as jose from "jose";
 import { db } from "@/lib/db";
-import { tenantUser } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import type { UserRole } from "@/middleware/context";
 
+const S = "data_stockflow";
+
 export interface AuthResult {
-  userId: string;
-  tenantId: string;
+  userKey: number;
+  tenantKey: number;
   role: UserRole;
+  roleCode: string;
 }
 
-const ROLES: readonly string[] = ["platform", "audit", "tenant", "admin", "user"];
+const ROLES: readonly string[] = [
+  "platform",
+  "audit",
+  "admin",
+  "user",
+];
 
 // ============================================================
 // Clerk JWKS — verify JWT and extract sub (Clerk user ID)
@@ -40,9 +47,6 @@ function getClerkJWKS(): ReturnType<typeof jose.createRemoteJWKSet> | null {
   return clerkJWKS;
 }
 
-/**
- * Verify Clerk JWT and return the Clerk user ID (sub claim).
- */
 async function verifyClerkToken(token: string): Promise<string | null> {
   const jwks = getClerkJWKS();
   if (!jwks) return null;
@@ -55,42 +59,72 @@ async function verifyClerkToken(token: string): Promise<string | null> {
 }
 
 /**
- * Look up tenant_user by external_id (Clerk user ID).
- * Auto-creates a record on first login using DEFAULT_TENANT_ID from env.
+ * Look up user by external_id from current_user view + current_role.
+ * Auto-creates on first login using DEFAULT_TENANT_KEY.
  */
-async function findOrCreateTenantUser(
+async function findOrCreateUser(
   externalId: string
 ): Promise<AuthResult | null> {
-  // Try to find existing mapping
-  const [existing] = await db
-    .select()
-    .from(tenantUser)
-    .where(eq(tenantUser.external_id, externalId))
-    .limit(1);
-  if (existing) {
-    if (!ROLES.includes(existing.role)) return null;
+  // Try existing user
+  const { rows: existing } = await db.execute(sql`
+    SELECT u.key, u.tenant_key, u.role_key, r.code as role_code
+    FROM ${sql.raw(`"${S}".current_user`)} u
+    JOIN ${sql.raw(`"${S}".current_role`)} r ON r.key = u.role_key
+    WHERE u.external_id = ${externalId}
+    LIMIT 1
+  `);
+
+  if (existing.length > 0) {
+    const row = existing[0] as {
+      key: number;
+      tenant_key: number;
+      role_key: number;
+      role_code: string;
+    };
+    if (!ROLES.includes(row.role_code)) return null;
     return {
-      userId: existing.user_id,
-      tenantId: existing.tenant_id,
-      role: existing.role as UserRole,
+      userKey: row.key,
+      tenantKey: row.tenant_key,
+      role: row.role_code as UserRole,
+      roleCode: row.role_code,
     };
   }
 
   // Auto-create on first login
-  const defaultTenantId =
-    process.env.DEFAULT_TENANT_ID || "00000000-0000-0000-0000-000000000001";
-  const [created] = await db
-    .insert(tenantUser)
-    .values({
-      external_id: externalId,
-      tenant_id: defaultTenantId,
-      role: "user",
-    })
-    .returning();
+  const defaultTenantKey = Number(process.env.DEFAULT_TENANT_KEY || "1");
+  // Default role = 'user' (key=4 from bootstrap)
+  const { rows: roleRows } = await db.execute(sql`
+    SELECT key FROM ${sql.raw(`"${S}".current_role`)}
+    WHERE code = 'user'
+    LIMIT 1
+  `);
+  const userRoleKey = roleRows.length > 0
+    ? (roleRows[0] as { key: number }).key
+    : 4;
+
+  const { rows: created } = await db.execute(sql`
+    INSERT INTO ${sql.raw(`"${S}"."user"`)} (
+      key, revision, external_id, tenant_key, role_key,
+      lines_hash, prev_revision_hash, revision_hash
+    ) VALUES (
+      nextval('${sql.raw(`${S}.user_key_seq`)}'), 1, ${externalId},
+      ${defaultTenantKey}, ${userRoleKey},
+      'bootstrap', 'genesis', 'bootstrap'
+    )
+    RETURNING key, tenant_key, role_key
+  `);
+
+  if (created.length === 0) return null;
+  const row = created[0] as {
+    key: number;
+    tenant_key: number;
+    role_key: number;
+  };
   return {
-    userId: created.user_id,
-    tenantId: created.tenant_id,
-    role: created.role as UserRole,
+    userKey: row.key,
+    tenantKey: row.tenant_key,
+    role: "user",
+    roleCode: "user",
   };
 }
 
@@ -111,12 +145,17 @@ async function verifyDevToken(token: string): Promise<AuthResult | null> {
     const { payload } = await jose.jwtVerify(token, secret, {
       algorithms: ["HS256"],
     });
-    const userId = payload.sub;
-    const tenantId = payload.tenant_id as string | undefined;
-    const role = payload.role as string | undefined;
-    if (!userId || !tenantId || !role) return null;
-    if (!ROLES.includes(role)) return null;
-    return { userId, tenantId, role: role as UserRole };
+    const userKey = Number(payload.sub);
+    const tenantKey = Number(payload.tenant_key);
+    const roleCode = payload.role as string | undefined;
+    if (!userKey || !tenantKey || !roleCode) return null;
+    if (!ROLES.includes(roleCode)) return null;
+    return {
+      userKey,
+      tenantKey,
+      role: roleCode as UserRole,
+      roleCode,
+    };
   } catch {
     return null;
   }
@@ -144,31 +183,22 @@ function extractSessionCookie(req: Request): string | null {
 // Main authenticate function
 // ============================================================
 
-/**
- * Authenticate a request.
- * Flow: Bearer/cookie token → Clerk JWKS (sub → DB lookup) → dev HS256 fallback
- */
 export async function authenticate(
   req: Request
 ): Promise<AuthResult | null> {
   const bearerToken = extractBearerToken(req);
   const cookieToken = extractSessionCookie(req);
 
-  console.log("[auth] bearer:", !!bearerToken, "cookie:", !!cookieToken);
-
   for (const token of [bearerToken, cookieToken]) {
     if (!token) continue;
 
     // Try Clerk JWKS → DB lookup
     const clerkUserId = await verifyClerkToken(token);
-    console.log("[auth] clerkUserId:", clerkUserId);
     if (clerkUserId) {
-      const result = await findOrCreateTenantUser(clerkUserId);
-      console.log("[auth] tenantUser result:", result);
-      return result;
+      return findOrCreateUser(clerkUserId);
     }
 
-    // Fallback: dev HS256 token (claims embedded in JWT)
+    // Fallback: dev HS256 token
     const devResult = await verifyDevToken(token);
     if (devResult) return devResult;
   }
@@ -180,15 +210,15 @@ export async function authenticate(
  * Sign a dev JWT token (for testing/curl usage).
  */
 export async function signToken(
-  userId: string,
-  tenantId: string,
+  userKey: number,
+  tenantKey: number,
   role: UserRole
 ): Promise<string> {
   const secret = getSecret();
   if (!secret) throw new Error("JWT_SECRET is not set");
-  return new jose.SignJWT({ tenant_id: tenantId, role })
+  return new jose.SignJWT({ tenant_key: tenantKey, role })
     .setProtectedHeader({ alg: "HS256" })
-    .setSubject(userId)
+    .setSubject(String(userKey))
     .setIssuedAt()
     .setExpirationTime("24h")
     .sign(secret);

@@ -7,12 +7,109 @@ import {
   timestamp,
   decimal,
   jsonb,
+  bigint,
   uniqueIndex,
   index,
+  foreignKey,
+  primaryKey,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
 export const s = pgSchema("data_stockflow");
+
+// ============================================================
+// SEQUENCES
+// ============================================================
+
+export const tenantKeySeq = s.sequence("tenant_key_seq");
+export const roleKeySeq = s.sequence("role_key_seq");
+export const userKeySeq = s.sequence("user_key_seq");
+export const bookKeySeq = s.sequence("book_key_seq");
+export const accountKeySeq = s.sequence("account_key_seq");
+export const fiscalPeriodKeySeq = s.sequence("fiscal_period_key_seq");
+export const tagKeySeq = s.sequence("tag_key_seq");
+export const departmentKeySeq = s.sequence("department_key_seq");
+export const counterpartyKeySeq = s.sequence("counterparty_key_seq");
+export const voucherKeySeq = s.sequence("voucher_key_seq");
+export const journalKeySeq = s.sequence("journal_key_seq");
+
+// ============================================================
+// 基盤系
+// ============================================================
+
+export const tenant = s.table(
+  "tenant",
+  {
+    key: bigint("key", { mode: "number" })
+      .default(sql`nextval('data_stockflow.tenant_key_seq')`)
+      .notNull(),
+    revision: integer("revision").default(1).notNull(),
+    created_at: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    valid_from: timestamp("valid_from", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    valid_to: timestamp("valid_to", { withTimezone: true }),
+    lines_hash: text("lines_hash").notNull(),
+    prev_revision_hash: text("prev_revision_hash").notNull(),
+    revision_hash: text("revision_hash").notNull(),
+    name: text("name").notNull(),
+    locked_until: timestamp("locked_until", { withTimezone: true }),
+  },
+  (t) => [primaryKey({ columns: [t.key, t.revision] })]
+);
+
+export const role = s.table(
+  "role",
+  {
+    key: bigint("key", { mode: "number" })
+      .default(sql`nextval('data_stockflow.role_key_seq')`)
+      .notNull(),
+    revision: integer("revision").default(1).notNull(),
+    created_at: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    valid_from: timestamp("valid_from", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    valid_to: timestamp("valid_to", { withTimezone: true }),
+    lines_hash: text("lines_hash").notNull(),
+    prev_revision_hash: text("prev_revision_hash").notNull(),
+    revision_hash: text("revision_hash").notNull(),
+    code: text("code").notNull(),
+    name: text("name").notNull(),
+    is_active: boolean("is_active").default(true).notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.key, t.revision] }),
+    uniqueIndex("role_code_revision_key").on(t.code, t.revision),
+  ]
+);
+
+export const user = s.table(
+  "user",
+  {
+    key: bigint("key", { mode: "number" })
+      .default(sql`nextval('data_stockflow.user_key_seq')`)
+      .notNull(),
+    revision: integer("revision").default(1).notNull(),
+    created_at: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    valid_from: timestamp("valid_from", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    valid_to: timestamp("valid_to", { withTimezone: true }),
+    lines_hash: text("lines_hash").notNull(),
+    prev_revision_hash: text("prev_revision_hash").notNull(),
+    revision_hash: text("revision_hash").notNull(),
+    external_id: text("external_id").notNull(),
+    tenant_key: bigint("tenant_key", { mode: "number" }).notNull(),
+    role_key: bigint("role_key", { mode: "number" }).notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.key, t.revision] })]
+);
 
 // ============================================================
 // マスタ系
@@ -21,21 +118,23 @@ export const s = pgSchema("data_stockflow");
 export const book = s.table(
   "book",
   {
-    id: uuid("id").defaultRandom().primaryKey(),
-    tenant_id: uuid("tenant_id").notNull(),
-    code: text("code")
-      .default(sql`gen_random_uuid()::text`)
+    key: bigint("key", { mode: "number" })
+      .default(sql`nextval('data_stockflow.book_key_seq')`)
       .notNull(),
-    display_code: text("display_code").notNull(),
     revision: integer("revision").default(1).notNull(),
+    created_at: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
     valid_from: timestamp("valid_from", { withTimezone: true })
       .defaultNow()
       .notNull(),
     valid_to: timestamp("valid_to", { withTimezone: true }),
-    created_by: uuid("created_by").notNull(),
-    created_at: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
+    lines_hash: text("lines_hash").notNull(),
+    prev_revision_hash: text("prev_revision_hash").notNull(),
+    revision_hash: text("revision_hash").notNull(),
+    created_by: bigint("created_by", { mode: "number" }).notNull(),
+    tenant_key: bigint("tenant_key", { mode: "number" }).notNull(),
+    code: text("code").notNull(),
     name: text("name").notNull(),
     unit: text("unit").notNull(),
     unit_symbol: text("unit_symbol").default("").notNull(),
@@ -47,8 +146,9 @@ export const book = s.table(
     is_active: boolean("is_active").default(true).notNull(),
   },
   (t) => [
-    uniqueIndex("book_tenant_id_code_revision_key").on(
-      t.tenant_id,
+    primaryKey({ columns: [t.key, t.revision] }),
+    uniqueIndex("book_tenant_key_code_revision_key").on(
+      t.tenant_key,
       t.code,
       t.revision
     ),
@@ -58,61 +158,32 @@ export const book = s.table(
 export const account = s.table(
   "account",
   {
-    id: uuid("id").defaultRandom().primaryKey(),
-    book_code: text("book_code").notNull(),
-    code: text("code")
-      .default(sql`gen_random_uuid()::text`)
+    key: bigint("key", { mode: "number" })
+      .default(sql`nextval('data_stockflow.account_key_seq')`)
       .notNull(),
-    display_code: text("display_code").notNull(),
     revision: integer("revision").default(1).notNull(),
+    created_at: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
     valid_from: timestamp("valid_from", { withTimezone: true })
       .defaultNow()
       .notNull(),
     valid_to: timestamp("valid_to", { withTimezone: true }),
-    created_by: uuid("created_by").notNull(),
-    created_at: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
+    lines_hash: text("lines_hash").notNull(),
+    prev_revision_hash: text("prev_revision_hash").notNull(),
+    revision_hash: text("revision_hash").notNull(),
+    created_by: bigint("created_by", { mode: "number" }).notNull(),
+    book_key: bigint("book_key", { mode: "number" }).notNull(),
+    code: text("code").notNull(),
     name: text("name").notNull(),
-    is_active: boolean("is_active").default(true).notNull(),
-    is_leaf: boolean("is_leaf").default(true).notNull(),
     account_type: text("account_type").notNull(),
-    parent_account_code: text("parent_account_code"),
-  },
-  (t) => [
-    uniqueIndex("account_book_code_code_revision_key").on(
-      t.book_code,
-      t.code,
-      t.revision
-    ),
-  ]
-);
-
-export const tag = s.table(
-  "tag",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    tenant_id: uuid("tenant_id").notNull(),
-    code: text("code")
-      .default(sql`gen_random_uuid()::text`)
-      .notNull(),
-    display_code: text("display_code").notNull(),
-    revision: integer("revision").default(1).notNull(),
-    valid_from: timestamp("valid_from", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    valid_to: timestamp("valid_to", { withTimezone: true }),
-    created_by: uuid("created_by").notNull(),
-    created_at: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    name: text("name").notNull(),
-    tag_type: text("tag_type").notNull(),
     is_active: boolean("is_active").default(true).notNull(),
+    parent_account_key: bigint("parent_account_key", { mode: "number" }),
   },
   (t) => [
-    uniqueIndex("tag_tenant_id_code_revision_key").on(
-      t.tenant_id,
+    primaryKey({ columns: [t.key, t.revision] }),
+    uniqueIndex("account_book_key_code_revision_key").on(
+      t.book_key,
       t.code,
       t.revision
     ),
@@ -122,30 +193,67 @@ export const tag = s.table(
 export const fiscalPeriod = s.table(
   "fiscal_period",
   {
-    id: uuid("id").defaultRandom().primaryKey(),
-    book_code: text("book_code").notNull(),
-    code: text("code")
-      .default(sql`gen_random_uuid()::text`)
+    key: bigint("key", { mode: "number" })
+      .default(sql`nextval('data_stockflow.fiscal_period_key_seq')`)
       .notNull(),
-    display_code: text("display_code").notNull(),
     revision: integer("revision").default(1).notNull(),
+    created_at: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
     valid_from: timestamp("valid_from", { withTimezone: true })
       .defaultNow()
       .notNull(),
     valid_to: timestamp("valid_to", { withTimezone: true }),
-    created_by: uuid("created_by").notNull(),
-    created_at: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    fiscal_year: integer("fiscal_year").notNull(),
-    period_no: integer("period_no").notNull(),
+    lines_hash: text("lines_hash").notNull(),
+    prev_revision_hash: text("prev_revision_hash").notNull(),
+    revision_hash: text("revision_hash").notNull(),
+    created_by: bigint("created_by", { mode: "number" }).notNull(),
+    book_key: bigint("book_key", { mode: "number" }).notNull(),
+    code: text("code").notNull(),
     start_date: timestamp("start_date", { withTimezone: true }).notNull(),
     end_date: timestamp("end_date", { withTimezone: true }).notNull(),
     status: text("status").default("open").notNull(),
+    is_active: boolean("is_active").default(true).notNull(),
+    parent_period_key: bigint("parent_period_key", { mode: "number" }),
   },
   (t) => [
-    uniqueIndex("fiscal_period_book_code_code_revision_key").on(
-      t.book_code,
+    primaryKey({ columns: [t.key, t.revision] }),
+    uniqueIndex("fiscal_period_book_key_code_revision_key").on(
+      t.book_key,
+      t.code,
+      t.revision
+    ),
+  ]
+);
+
+export const tag = s.table(
+  "tag",
+  {
+    key: bigint("key", { mode: "number" })
+      .default(sql`nextval('data_stockflow.tag_key_seq')`)
+      .notNull(),
+    revision: integer("revision").default(1).notNull(),
+    created_at: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    valid_from: timestamp("valid_from", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    valid_to: timestamp("valid_to", { withTimezone: true }),
+    lines_hash: text("lines_hash").notNull(),
+    prev_revision_hash: text("prev_revision_hash").notNull(),
+    revision_hash: text("revision_hash").notNull(),
+    created_by: bigint("created_by", { mode: "number" }).notNull(),
+    tenant_key: bigint("tenant_key", { mode: "number" }).notNull(),
+    code: text("code").notNull(),
+    name: text("name").notNull(),
+    tag_type: text("tag_type").notNull(),
+    is_active: boolean("is_active").default(true).notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.key, t.revision] }),
+    uniqueIndex("tag_tenant_key_code_revision_key").on(
+      t.tenant_key,
       t.code,
       t.revision
     ),
@@ -155,80 +263,58 @@ export const fiscalPeriod = s.table(
 export const department = s.table(
   "department",
   {
-    id: uuid("id").defaultRandom().primaryKey(),
-    tenant_id: uuid("tenant_id").notNull(),
-    code: text("code")
-      .default(sql`gen_random_uuid()::text`)
+    key: bigint("key", { mode: "number" })
+      .default(sql`nextval('data_stockflow.department_key_seq')`)
       .notNull(),
-    display_code: text("display_code").notNull(),
     revision: integer("revision").default(1).notNull(),
+    created_at: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
     valid_from: timestamp("valid_from", { withTimezone: true })
       .defaultNow()
       .notNull(),
     valid_to: timestamp("valid_to", { withTimezone: true }),
-    created_by: uuid("created_by").notNull(),
-    created_at: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
+    lines_hash: text("lines_hash").notNull(),
+    prev_revision_hash: text("prev_revision_hash").notNull(),
+    revision_hash: text("revision_hash").notNull(),
+    created_by: bigint("created_by", { mode: "number" }).notNull(),
+    tenant_key: bigint("tenant_key", { mode: "number" }).notNull(),
+    code: text("code").notNull(),
     name: text("name").notNull(),
-    parent_department_code: text("parent_department_code"),
     department_type: text("department_type"),
     is_active: boolean("is_active").default(true).notNull(),
+    parent_department_key: bigint("parent_department_key", { mode: "number" }),
   },
   (t) => [
-    uniqueIndex("department_tenant_id_code_revision_key").on(
-      t.tenant_id,
+    primaryKey({ columns: [t.key, t.revision] }),
+    uniqueIndex("department_tenant_key_code_revision_key").on(
+      t.tenant_key,
       t.code,
       t.revision
     ),
   ]
 );
 
-export const taxClass = s.table(
-  "tax_class",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    code: text("code")
-      .default(sql`gen_random_uuid()::text`)
-      .notNull(),
-    display_code: text("display_code").notNull(),
-    revision: integer("revision").default(1).notNull(),
-    valid_from: timestamp("valid_from", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    valid_to: timestamp("valid_to", { withTimezone: true }),
-    created_by: uuid("created_by").notNull(),
-    created_at: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    name: text("name").notNull(),
-    is_active: boolean("is_active").default(true).notNull(),
-    direction: text("direction"),
-    is_taxable: boolean("is_taxable").default(true).notNull(),
-    deduction_ratio: decimal("deduction_ratio", { precision: 5, scale: 4 }),
-    invoice_type: text("invoice_type"),
-  },
-  (t) => [uniqueIndex("tax_class_code_revision_key").on(t.code, t.revision)]
-);
-
 export const counterparty = s.table(
   "counterparty",
   {
-    id: uuid("id").defaultRandom().primaryKey(),
-    tenant_id: uuid("tenant_id").notNull(),
-    code: text("code")
-      .default(sql`gen_random_uuid()::text`)
+    key: bigint("key", { mode: "number" })
+      .default(sql`nextval('data_stockflow.counterparty_key_seq')`)
       .notNull(),
-    display_code: text("display_code").notNull(),
     revision: integer("revision").default(1).notNull(),
+    created_at: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
     valid_from: timestamp("valid_from", { withTimezone: true })
       .defaultNow()
       .notNull(),
     valid_to: timestamp("valid_to", { withTimezone: true }),
-    created_by: uuid("created_by").notNull(),
-    created_at: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
+    lines_hash: text("lines_hash").notNull(),
+    prev_revision_hash: text("prev_revision_hash").notNull(),
+    revision_hash: text("revision_hash").notNull(),
+    created_by: bigint("created_by", { mode: "number" }).notNull(),
+    tenant_key: bigint("tenant_key", { mode: "number" }).notNull(),
+    code: text("code").notNull(),
     name: text("name").notNull(),
     is_active: boolean("is_active").default(true).notNull(),
     qualified_invoice_number: text("qualified_invoice_number"),
@@ -237,142 +323,11 @@ export const counterparty = s.table(
       .notNull(),
   },
   (t) => [
-    uniqueIndex("counterparty_tenant_id_code_revision_key").on(
-      t.tenant_id,
+    primaryKey({ columns: [t.key, t.revision] }),
+    uniqueIndex("counterparty_tenant_key_code_revision_key").on(
+      t.tenant_key,
       t.code,
       t.revision
-    ),
-  ]
-);
-
-export const tenantSetting = s.table(
-  "tenant_setting",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    tenant_id: uuid("tenant_id").notNull(),
-    revision: integer("revision").default(1).notNull(),
-    valid_from: timestamp("valid_from", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    valid_to: timestamp("valid_to", { withTimezone: true }),
-    created_by: uuid("created_by").notNull(),
-    created_at: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    locked_until: timestamp("locked_until", { withTimezone: true }),
-  },
-  (t) => [
-    uniqueIndex("tenant_setting_tenant_id_revision_key").on(
-      t.tenant_id,
-      t.revision
-    ),
-  ]
-);
-
-export const accountMapping = s.table(
-  "account_mapping",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    book_code: text("book_code").notNull(),
-    source_system: text("source_system").notNull(),
-    source_field: text("source_field").notNull(),
-    source_value: text("source_value").notNull(),
-    side: text("side").notNull(),
-    revision: integer("revision").default(1).notNull(),
-    valid_from: timestamp("valid_from", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    valid_to: timestamp("valid_to", { withTimezone: true }),
-    created_by: uuid("created_by").notNull(),
-    created_at: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    is_active: boolean("is_active").default(true).notNull(),
-    account_code: text("account_code").notNull(),
-  },
-  (t) => [
-    uniqueIndex(
-      "account_mapping_book_code_source_system_source_field_sourc_key"
-    ).on(
-      t.book_code,
-      t.source_system,
-      t.source_field,
-      t.source_value,
-      t.side,
-      t.revision
-    ),
-  ]
-);
-
-export const paymentMapping = s.table(
-  "payment_mapping",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    book_code: text("book_code").notNull(),
-    source_system: text("source_system").notNull(),
-    payment_method: text("payment_method").notNull(),
-    revision: integer("revision").default(1).notNull(),
-    valid_from: timestamp("valid_from", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    valid_to: timestamp("valid_to", { withTimezone: true }),
-    created_by: uuid("created_by").notNull(),
-    created_at: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    is_active: boolean("is_active").default(true).notNull(),
-    account_code: text("account_code").notNull(),
-  },
-  (t) => [
-    uniqueIndex(
-      "payment_mapping_book_code_source_system_payment_method_rev_key"
-    ).on(t.book_code, t.source_system, t.payment_method, t.revision),
-  ]
-);
-
-// ============================================================
-// ユーザーマッピング
-// ============================================================
-
-export const tenantUser = s.table("tenant_user", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  external_id: text("external_id").notNull().unique(),
-  tenant_id: uuid("tenant_id").notNull(),
-  user_id: uuid("user_id")
-    .default(sql`gen_random_uuid()`)
-    .notNull(),
-  role: text("role").default("user").notNull(),
-  created_at: timestamp("created_at", { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-});
-
-// ============================================================
-// 監査ログ
-// ============================================================
-
-export const auditLog = s.table(
-  "audit_log",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    tenant_id: uuid("tenant_id"),
-    user_id: uuid("user_id").notNull(),
-    user_role: text("user_role").notNull(),
-    action: text("action").notNull(),
-    entity_type: text("entity_type").notNull(),
-    entity_code: text("entity_code").notNull(),
-    revision: integer("revision"),
-    detail: text("detail"),
-    source_ip: text("source_ip"),
-    created_at: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-  },
-  (t) => [
-    index("audit_log_tenant_id_created_at_idx").on(t.tenant_id, t.created_at),
-    index("audit_log_entity_type_entity_code_idx").on(
-      t.entity_type,
-      t.entity_code
     ),
   ]
 );
@@ -381,104 +336,140 @@ export const auditLog = s.table(
 // トランザクション系
 // ============================================================
 
-export const journalHeader = s.table(
-  "journal_header",
+export const voucher = s.table(
+  "voucher",
   {
-    idempotency_code: text("idempotency_code").primaryKey(),
-    tenant_id: uuid("tenant_id").notNull(),
-    voucher_code: text("voucher_code"),
-    fiscal_period_code: text("fiscal_period_code").notNull(),
-    created_by: uuid("created_by").notNull(),
+    key: bigint("key", { mode: "number" })
+      .default(sql`nextval('data_stockflow.voucher_key_seq')`)
+      .notNull(),
+    revision: integer("revision").default(1).notNull(),
     created_at: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
-    // Hash chain
+    valid_from: timestamp("valid_from", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    valid_to: timestamp("valid_to", { withTimezone: true }),
+    lines_hash: text("lines_hash").notNull(),
+    prev_revision_hash: text("prev_revision_hash").notNull(),
+    revision_hash: text("revision_hash").notNull(),
+    created_by: bigint("created_by", { mode: "number" }).notNull(),
+    tenant_key: bigint("tenant_key", { mode: "number" }).notNull(),
+    idempotency_key: text("idempotency_key").notNull().unique(),
+    book_key: bigint("book_key", { mode: "number" }).notNull(),
+    fiscal_period_key: bigint("fiscal_period_key", { mode: "number" }).notNull(),
+    voucher_code: text("voucher_code"),
+    posted_date: timestamp("posted_date", { withTimezone: true }).notNull(),
+    description: text("description"),
+    source_system: text("source_system"),
     sequence_no: integer("sequence_no").notNull(),
     prev_header_hash: text("prev_header_hash").notNull(),
     header_hash: text("header_hash").notNull(),
   },
   (t) => [
-    uniqueIndex("journal_header_tenant_id_fiscal_period_code_voucher_code_key").on(
-      t.tenant_id,
-      t.fiscal_period_code,
-      t.voucher_code
-    ),
-    uniqueIndex("journal_header_tenant_id_sequence_no_key").on(
-      t.tenant_id,
-      t.sequence_no
-    ),
+    primaryKey({ columns: [t.key, t.revision] }),
+    uniqueIndex("uq_voucher_code")
+      .on(t.tenant_key, t.fiscal_period_key, t.voucher_code)
+      .where(sql`voucher_code IS NOT NULL`),
   ]
 );
 
 export const journal = s.table(
   "journal",
   {
-    id: uuid("id").defaultRandom().primaryKey(),
-    tenant_id: uuid("tenant_id").notNull(),
-    idempotency_code: text("idempotency_code").notNull(),
-    revision: integer("revision").default(1).notNull(),
-    is_active: boolean("is_active").default(true).notNull(),
-    posted_date: timestamp("posted_date", { withTimezone: true })
-      .default(sql`(now()::date)::timestamptz`)
+    key: bigint("key", { mode: "number" })
+      .default(sql`nextval('data_stockflow.journal_key_seq')`)
       .notNull(),
+    revision: integer("revision").default(1).notNull(),
+    created_at: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    valid_from: timestamp("valid_from", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    valid_to: timestamp("valid_to", { withTimezone: true }),
+    lines_hash: text("lines_hash").notNull(),
+    prev_revision_hash: text("prev_revision_hash").notNull(),
+    revision_hash: text("revision_hash").notNull(),
+    created_by: bigint("created_by", { mode: "number" }).notNull(),
+    tenant_key: bigint("tenant_key", { mode: "number" }).notNull(),
+    voucher_key: bigint("voucher_key", { mode: "number" }).notNull(),
+    is_active: boolean("is_active").default(true).notNull(),
     journal_type: text("journal_type").default("normal").notNull(),
     slip_category: text("slip_category").default("ordinary").notNull(),
     adjustment_flag: text("adjustment_flag").default("none").notNull(),
     description: text("description"),
-    source_system: text("source_system"),
-    created_by: uuid("created_by").notNull(),
-    created_at: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    // Hash chain
-    lines_hash: text("lines_hash").notNull(),
-    prev_revision_hash: text("prev_revision_hash").notNull(),
-    revision_hash: text("revision_hash").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.key, t.revision] })]
+);
+
+export const journalLine = s.table(
+  "journal_line",
+  {
+    uuid: uuid("uuid").defaultRandom().primaryKey(),
+    journal_key: bigint("journal_key", { mode: "number" }).notNull(),
+    journal_revision: integer("journal_revision").notNull(),
+    tenant_key: bigint("tenant_key", { mode: "number" }).notNull(),
+    line_group: integer("line_group").notNull(),
+    side: text("side").notNull(),
+    account_key: bigint("account_key", { mode: "number" }).notNull(),
+    department_key: bigint("department_key", { mode: "number" }),
+    counterparty_key: bigint("counterparty_key", { mode: "number" }),
+    amount: decimal("amount", { precision: 15, scale: 0 }).notNull(),
+    description: text("description"),
   },
   (t) => [
-    uniqueIndex("journal_idempotency_code_revision_key").on(
-      t.idempotency_code,
-      t.revision
-    ),
+    foreignKey({
+      columns: [t.journal_key, t.journal_revision],
+      foreignColumns: [journal.key, journal.revision],
+    }),
   ]
 );
 
-export const journalLine = s.table("journal_line", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  tenant_id: uuid("tenant_id").notNull(),
-  journal_id: uuid("journal_id").notNull(),
-  line_group: integer("line_group").notNull(),
-  side: text("side").notNull(),
-  account_code: text("account_code").notNull(),
-  department_code: text("department_code"),
-  counterparty_code: text("counterparty_code"),
-  tax_class_code: text("tax_class_code"),
-  tax_rate: decimal("tax_rate", { precision: 5, scale: 4 }),
-  is_reduced: boolean("is_reduced"),
-  amount: decimal("amount", { precision: 15, scale: 0 }).notNull(),
-  description: text("description"),
-});
+export const journalTag = s.table(
+  "journal_tag",
+  {
+    uuid: uuid("uuid").defaultRandom().primaryKey(),
+    journal_key: bigint("journal_key", { mode: "number" }).notNull(),
+    journal_revision: integer("journal_revision").notNull(),
+    tenant_key: bigint("tenant_key", { mode: "number" }).notNull(),
+    tag_key: bigint("tag_key", { mode: "number" }).notNull(),
+    created_by: bigint("created_by", { mode: "number" }).notNull(),
+    created_at: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    foreignKey({
+      columns: [t.journal_key, t.journal_revision],
+      foreignColumns: [journal.key, journal.revision],
+    }),
+  ]
+);
 
-export const journalTag = s.table("journal_tag", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  tenant_id: uuid("tenant_id").notNull(),
-  journal_id: uuid("journal_id").notNull(),
-  tag_code: text("tag_code").notNull(),
-  created_by: uuid("created_by").notNull(),
-  created_at: timestamp("created_at", { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-});
+// ============================================================
+// 監査系
+// ============================================================
 
-export const journalAttachment = s.table("journal_attachment", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  tenant_id: uuid("tenant_id").notNull(),
-  idempotency_code: text("idempotency_code").notNull(),
-  file_name: text("file_name").notNull(),
-  file_path: text("file_path").notNull(),
-  mime_type: text("mime_type"),
-  created_by: uuid("created_by").notNull(),
-  created_at: timestamp("created_at", { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-});
+export const auditLog = s.table(
+  "audit_log",
+  {
+    uuid: uuid("uuid").defaultRandom().primaryKey(),
+    tenant_key: bigint("tenant_key", { mode: "number" }),
+    user_key: bigint("user_key", { mode: "number" }).notNull(),
+    user_role: text("user_role").notNull(),
+    action: text("action").notNull(),
+    entity_type: text("entity_type").notNull(),
+    entity_key: bigint("entity_key", { mode: "number" }).notNull(),
+    revision: integer("revision"),
+    detail: text("detail"),
+    source_ip: text("source_ip"),
+    created_at: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    index("idx_audit_log_tenant_created").on(t.tenant_key, t.created_at),
+    index("idx_audit_log_entity").on(t.entity_type, t.entity_key),
+  ]
+);

@@ -1,13 +1,44 @@
-export interface CurrentBook {
-  id: string;
-  tenant_id: string;
-  code: string;
-  display_code: string;
+// ============================================================
+// v2 Types — BIGINT key + revision pattern
+// ============================================================
+
+// Common fields for all append-only tables
+interface BaseEntity {
+  key: number;
   revision: number;
+  created_at: Date;
   valid_from: Date;
   valid_to: Date | null;
-  created_by: string;
-  created_at: Date;
+  lines_hash: string;
+  prev_revision_hash: string;
+  revision_hash: string;
+}
+
+// ── 基盤系 ──
+
+export interface CurrentTenant extends BaseEntity {
+  name: string;
+  locked_until: Date | null;
+}
+
+export interface CurrentRole extends BaseEntity {
+  code: string;
+  name: string;
+  is_active: boolean;
+}
+
+export interface CurrentUser extends BaseEntity {
+  external_id: string;
+  tenant_key: number;
+  role_key: number;
+}
+
+// ── マスタ系 ──
+
+export interface CurrentBook extends BaseEntity {
+  created_by: number;
+  tenant_key: number;
+  code: string;
   name: string;
   unit: string;
   unit_symbol: string;
@@ -16,202 +47,121 @@ export interface CurrentBook {
   is_active: boolean;
 }
 
-export interface CurrentAccount {
-  id: string;
-  book_code: string;
+export interface CurrentAccount extends BaseEntity {
+  created_by: number;
+  book_key: number;
   code: string;
-  display_code: string;
-  revision: number;
-  valid_from: Date;
-  valid_to: Date | null;
-  created_by: string;
-  created_at: Date;
   name: string;
-  is_active: boolean;
-  is_leaf: boolean;
   account_type: string;
-  sign: number;
-  parent_account_code: string | null;
-  unit_symbol: string;
-  unit_position: string;
+  is_active: boolean;
+  parent_account_key: number | null;
+  sign: number; // from current_account view
 }
 
-export interface CurrentTag {
-  id: string;
-  tenant_id: string;
+export interface CurrentFiscalPeriod extends BaseEntity {
+  created_by: number;
+  book_key: number;
   code: string;
-  display_code: string;
-  revision: number;
-  valid_from: Date;
-  valid_to: Date | null;
-  created_by: string;
-  created_at: Date;
+  start_date: Date;
+  end_date: Date;
+  status: string;
+  is_active: boolean;
+  parent_period_key: number | null;
+}
+
+export interface CurrentTag extends BaseEntity {
+  created_by: number;
+  tenant_key: number;
+  code: string;
   name: string;
   tag_type: string;
   is_active: boolean;
 }
 
-export interface CurrentFiscalPeriod {
-  id: string;
-  book_code: string;
+export interface CurrentDepartment extends BaseEntity {
+  created_by: number;
+  tenant_key: number;
   code: string;
-  display_code: string;
-  revision: number;
-  valid_from: Date;
-  valid_to: Date | null;
-  created_by: string;
-  created_at: Date;
-  fiscal_year: number;
-  period_no: number;
-  start_date: Date;
-  end_date: Date;
-  status: string;
-}
-
-export interface CurrentDepartment {
-  id: string;
-  tenant_id: string;
-  code: string;
-  display_code: string;
-  revision: number;
-  valid_from: Date;
-  valid_to: Date | null;
-  created_by: string;
-  created_at: Date;
   name: string;
-  parent_department_code: string | null;
   department_type: string | null;
   is_active: boolean;
+  parent_department_key: number | null;
 }
 
-export interface CurrentTaxClass {
-  id: string;
+export interface CurrentCounterparty extends BaseEntity {
+  created_by: number;
+  tenant_key: number;
   code: string;
-  display_code: string;
-  revision: number;
-  valid_from: Date;
-  valid_to: Date | null;
-  created_by: string;
-  created_at: Date;
-  name: string;
-  is_active: boolean;
-  direction: string | null;
-  is_taxable: boolean;
-  deduction_ratio: string | null; // Decimal comes as string from raw SQL
-  invoice_type: string | null;
-}
-
-export interface CurrentCounterparty {
-  id: string;
-  tenant_id: string;
-  code: string;
-  display_code: string;
-  revision: number;
-  valid_from: Date;
-  valid_to: Date | null;
-  created_by: string;
-  created_at: Date;
   name: string;
   is_active: boolean;
   qualified_invoice_number: string | null;
   is_qualified_issuer: boolean;
 }
 
-export interface CurrentTenantSetting {
-  id: string;
-  tenant_id: string;
-  revision: number;
-  valid_from: Date;
-  valid_to: Date | null;
-  created_by: string;
-  created_at: Date;
-  locked_until: Date | null;
-}
+// ── トランザクション系 ──
 
-export interface CurrentAccountMapping {
-  id: string;
-  book_code: string;
-  source_system: string;
-  source_field: string;
-  source_value: string;
-  side: string;
-  revision: number;
-  valid_from: Date;
-  valid_to: Date | null;
-  created_by: string;
-  created_at: Date;
-  is_active: boolean;
-  account_code: string;
-}
-
-export interface CurrentPaymentMapping {
-  id: string;
-  book_code: string;
-  source_system: string;
-  payment_method: string;
-  revision: number;
-  valid_from: Date;
-  valid_to: Date | null;
-  created_by: string;
-  created_at: Date;
-  is_active: boolean;
-  account_code: string;
-}
-
-export interface CurrentJournal {
+export interface VoucherRow extends BaseEntity {
+  created_by: number;
+  tenant_key: number;
+  idempotency_key: string;
+  book_key: number;
+  fiscal_period_key: number;
   voucher_code: string | null;
-  fiscal_period_code: string;
-  id: string;
-  tenant_id: string;
-  idempotency_code: string;
-  revision: number;
-  is_active: boolean;
   posted_date: Date;
+  description: string | null;
+  source_system: string | null;
+  sequence_no: number;
+  prev_header_hash: string;
+  header_hash: string;
+}
+
+export interface CurrentJournal extends BaseEntity {
+  created_by: number;
+  tenant_key: number;
+  voucher_key: number;
+  is_active: boolean;
   journal_type: string;
   slip_category: string;
   adjustment_flag: string;
   description: string | null;
-  source_system: string | null;
-  created_by: string;
-  created_at: Date;
-  // Hash chain
-  lines_hash: string;
-  prev_revision_hash: string;
-  revision_hash: string;
 }
 
 export interface JournalLineRow {
-  id: string;
-  tenant_id: string;
-  journal_id: string;
+  uuid: string;
+  journal_key: number;
+  journal_revision: number;
+  tenant_key: number;
   line_group: number;
   side: string;
-  account_code: string;
-  department_code: string | null;
-  counterparty_code: string | null;
-  tax_class_code: string | null;
-  tax_rate: string | null; // Decimal from raw SQL
-  is_reduced: boolean | null;
+  account_key: number;
+  department_key: number | null;
+  counterparty_key: number | null;
   amount: string; // Decimal from raw SQL
   description: string | null;
 }
 
 export interface JournalTagRow {
-  id: string;
-  tenant_id: string;
-  journal_id: string;
-  tag_code: string;
-  created_by: string;
+  uuid: string;
+  journal_key: number;
+  journal_revision: number;
+  tenant_key: number;
+  tag_key: number;
+  created_by: number;
   created_at: Date;
 }
 
-export interface JournalAttachmentRow {
-  id: string;
-  tenant_id: string;
-  idempotency_code: string;
-  file_name: string;
-  file_path: string;
-  mime_type: string | null;
-  created_by: string;
+// ── 監査系 ──
+
+export interface AuditLogRow {
+  uuid: string;
+  tenant_key: number | null;
+  user_key: number;
+  user_role: string;
+  action: string;
+  entity_type: string;
+  entity_key: number;
+  revision: number | null;
+  detail: string | null;
+  source_ip: string | null;
   created_at: Date;
 }

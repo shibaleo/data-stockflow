@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,9 +14,10 @@ import {
 import { MasterCombobox, type ComboOption } from "./master-combobox";
 import { api } from "@/lib/api-client";
 
-// ── Master data types ──
+// ── Master data types (v2: numeric ids) ──
 
 interface BookRow {
+  id: number;
   code: string;
   name: string;
   unit: string;
@@ -26,112 +27,108 @@ interface BookRow {
 }
 
 interface Account {
+  id: number;
   code: string;
-  display_code: string;
   name: string;
-  book_code: string;
-  unit_symbol: string;
-  unit_position: string;
+  book_id: number;
 }
 
 interface Department {
+  id: number;
   code: string;
-  display_code: string;
   name: string;
   is_active: boolean;
 }
 
 interface Counterparty {
+  id: number;
   code: string;
-  display_code: string;
-  name: string;
-  is_active: boolean;
-}
-
-interface TaxClass {
-  code: string;
-  display_code: string;
   name: string;
   is_active: boolean;
 }
 
 interface FiscalPeriod {
+  id: number;
   code: string;
-  display_code: string;
-  fiscal_year: number;
-  period_no: number;
+  start_date: string;
+  end_date: string;
   status: string;
 }
 
-interface JournalDetail {
-  idempotency_code: string;
+interface VoucherDetail {
+  id: number;
+  book_id: number;
+  fiscal_period_id: number;
+  voucher_code: string | null;
   posted_date: string;
-  fiscal_period_code: string;
-  journal_type: string;
-  slip_category: string;
   description: string | null;
-  lines: {
-    side: string;
-    account_code: string;
-    department_code: string | null;
-    counterparty_code: string | null;
-    tax_class_code: string | null;
-    amount: string;
+  journals: {
+    id: number;
+    revision: number;
+    journal_type: string;
+    slip_category: string;
+    adjustment_flag: string;
     description: string | null;
+    lines: {
+      side: string;
+      account_id: number;
+      department_id: number | null;
+      counterparty_id: number | null;
+      amount: string;
+      description: string | null;
+    }[];
   }[];
 }
 
 // ── Row model (勘定奉行風: 借方/貸方 ペア) ──
 
 interface RowData {
-  debit_account_code: string;
+  debit_account_id: string;
   debit_amount: string;
-  debit_department_code: string;
-  debit_counterparty_code: string;
-  debit_tax_class_code: string;
-  credit_account_code: string;
+  debit_department_id: string;
+  debit_counterparty_id: string;
+  credit_account_id: string;
   credit_amount: string;
-  credit_department_code: string;
-  credit_counterparty_code: string;
-  credit_tax_class_code: string;
+  credit_department_id: string;
+  credit_counterparty_id: string;
   description: string;
 }
 
 const EMPTY_ROW: RowData = {
-  debit_account_code: "",
+  debit_account_id: "",
   debit_amount: "",
-  debit_department_code: "",
-  debit_counterparty_code: "",
-  debit_tax_class_code: "",
-  credit_account_code: "",
+  debit_department_id: "",
+  debit_counterparty_id: "",
+  credit_account_id: "",
   credit_amount: "",
-  credit_department_code: "",
-  credit_counterparty_code: "",
-  credit_tax_class_code: "",
+  credit_department_id: "",
+  credit_counterparty_id: "",
   description: "",
 };
 
 const INITIAL_ROWS = 1;
 
 interface Props {
-  editCode: string | null;
+  /** Voucher ID to edit, or null for new */
+  editId: number | null;
   onSuccess: () => void;
   onCancel: () => void;
 }
 
-export function JournalForm({ editCode, onSuccess, onCancel }: Props) {
+export function JournalForm({ editId, onSuccess, onCancel }: Props) {
+  const [books, setBooks] = useState<BookRow[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [counterparties, setCounterparties] = useState<Counterparty[]>([]);
-  const [taxClasses, setTaxClasses] = useState<TaxClass[]>([]);
   const [fiscalPeriods, setFiscalPeriods] = useState<FiscalPeriod[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [bookId, setBookId] = useState<string>("");
   const [postedDate, setPostedDate] = useState(
     new Date().toISOString().slice(0, 10)
   );
-  const [fiscalPeriodCode, setFiscalPeriodCode] = useState("");
+  const [fiscalPeriodId, setFiscalPeriodId] = useState("");
   const [journalType, setJournalType] = useState("normal");
   const [slipCategory, setSlipCategory] = useState("ordinary");
   const [headerDescription, setHeaderDescription] = useState("");
@@ -139,46 +136,52 @@ export function JournalForm({ editCode, onSuccess, onCancel }: Props) {
     Array.from({ length: INITIAL_ROWS }, () => ({ ...EMPTY_ROW }))
   );
 
+  const selectedBook = books.find((b) => String(b.id) === bookId) ?? null;
+
   // ── Master data loading ──
   useEffect(() => {
     (async () => {
       try {
-        const [booksRes, deptRes, cpRes, tcRes] = await Promise.all([
+        const [booksRes, deptRes, cpRes] = await Promise.all([
           api.get<{ data: BookRow[] }>("/books"),
           api.get<{ data: Department[] }>("/departments"),
           api.get<{ data: Counterparty[] }>("/counterparties"),
-          api.get<{ data: TaxClass[] }>("/tax-classes"),
         ]);
 
         const activeBooks = booksRes.data.filter((b) => b.is_active);
+        setBooks(activeBooks);
         setDepartments(deptRes.data.filter((d) => d.is_active));
         setCounterparties(cpRes.data.filter((c) => c.is_active));
-        setTaxClasses(tcRes.data.filter((t) => t.is_active));
 
+        if (activeBooks.length > 0 && !bookId) {
+          setBookId(String(activeBooks[0].id));
+        }
+
+        // Load accounts and fiscal periods for all books
         const [accountResults, fpResults] = await Promise.all([
           Promise.all(
             activeBooks.map((b) =>
-              api.get<{ data: Account[] }>(`/books/${b.code}/accounts?limit=200`)
+              api.get<{ data: Account[] }>(`/books/${b.id}/accounts?limit=200`)
             )
           ),
           Promise.all(
             activeBooks.map((b) =>
-              api.get<{ data: FiscalPeriod[] }>(`/books/${b.code}/fiscal-periods?limit=50`)
+              api.get<{ data: FiscalPeriod[] }>(`/books/${b.id}/fiscal-periods?limit=50`)
             )
           ),
         ]);
 
         const allAccounts = accountResults.flatMap((r) => r.data);
         setAccounts(
-          Array.from(new Map(allAccounts.map((a) => [a.code, a])).values())
+          Array.from(new Map(allAccounts.map((a) => [a.id, a])).values())
         );
 
         const uniqueFps = Array.from(
-          new Map(fpResults.flatMap((r) => r.data).map((fp) => [fp.code, fp])).values()
+          new Map(fpResults.flatMap((r) => r.data).map((fp) => [fp.id, fp])).values()
         ).filter((fp) => fp.status === "open");
         setFiscalPeriods(uniqueFps);
-        if (uniqueFps.length > 0 && !fiscalPeriodCode) {
-          setFiscalPeriodCode(uniqueFps[0].code);
+        if (uniqueFps.length > 0 && !fiscalPeriodId) {
+          setFiscalPeriodId(String(uniqueFps[0].id));
         }
       } catch {
         setError("マスタデータの読み込みに失敗しました");
@@ -186,46 +189,50 @@ export function JournalForm({ editCode, onSuccess, onCancel }: Props) {
     })();
   }, []);
 
-  // ── Load existing journal for edit ──
+  // ── Load existing voucher for edit ──
   useEffect(() => {
-    if (!editCode) return;
+    if (!editId) return;
     setLoading(true);
     api
-      .get<{ data: JournalDetail }>(`/journals/${editCode}`)
+      .get<{ data: VoucherDetail }>(`/vouchers/${editId}`)
       .then((res) => {
-        const j = res.data;
-        setPostedDate(j.posted_date.slice(0, 10));
-        setFiscalPeriodCode(j.fiscal_period_code);
-        setJournalType(j.journal_type);
-        setSlipCategory(j.slip_category);
-        setHeaderDescription(j.description || "");
+        const v = res.data;
+        setBookId(String(v.book_id));
+        setPostedDate(v.posted_date.slice(0, 10));
+        setFiscalPeriodId(String(v.fiscal_period_id));
+        setHeaderDescription(v.description || "");
 
-        const debits = j.lines.filter((l) => l.side === "debit");
-        const credits = j.lines.filter((l) => l.side === "credit");
-        const maxLen = Math.max(debits.length, credits.length, INITIAL_ROWS);
-        const newRows: RowData[] = [];
-        for (let i = 0; i < maxLen; i++) {
-          const d = debits[i];
-          const c = credits[i];
-          newRows.push({
-            debit_account_code: d?.account_code || "",
-            debit_amount: d?.amount || "",
-            debit_department_code: d?.department_code || "",
-            debit_counterparty_code: d?.counterparty_code || "",
-            debit_tax_class_code: d?.tax_class_code || "",
-            credit_account_code: c?.account_code || "",
-            credit_amount: c?.amount || "",
-            credit_department_code: c?.department_code || "",
-            credit_counterparty_code: c?.counterparty_code || "",
-            credit_tax_class_code: c?.tax_class_code || "",
-            description: d?.description || c?.description || "",
-          });
+        // Use first journal for type/category
+        const j = v.journals[0];
+        if (j) {
+          setJournalType(j.journal_type);
+          setSlipCategory(j.slip_category);
+
+          const debits = j.lines.filter((l) => l.side === "debit");
+          const credits = j.lines.filter((l) => l.side === "credit");
+          const maxLen = Math.max(debits.length, credits.length, INITIAL_ROWS);
+          const newRows: RowData[] = [];
+          for (let i = 0; i < maxLen; i++) {
+            const d = debits[i];
+            const c = credits[i];
+            newRows.push({
+              debit_account_id: d ? String(d.account_id) : "",
+              debit_amount: d?.amount || "",
+              debit_department_id: d?.department_id ? String(d.department_id) : "",
+              debit_counterparty_id: d?.counterparty_id ? String(d.counterparty_id) : "",
+              credit_account_id: c ? String(c.account_id) : "",
+              credit_amount: c?.amount || "",
+              credit_department_id: c?.department_id ? String(c.department_id) : "",
+              credit_counterparty_id: c?.counterparty_id ? String(c.counterparty_id) : "",
+              description: d?.description || c?.description || "",
+            });
+          }
+          setRows(newRows);
         }
-        setRows(newRows);
       })
-      .catch(() => setError("仕訳の読み込みに失敗しました"))
+      .catch(() => setError("伝票の読み込みに失敗しました"))
       .finally(() => setLoading(false));
-  }, [editCode]);
+  }, [editId]);
 
   // ── Row helpers ──
   const updateRow = (index: number, field: keyof RowData, value: string) => {
@@ -239,64 +246,36 @@ export function JournalForm({ editCode, onSuccess, onCancel }: Props) {
     setRows((prev) => prev.filter((_, i) => i !== index));
 
   // ── Unit helpers ──
-  const getUnit = (accountCode: string) => {
-    const a = accounts.find((x) => x.code === accountCode);
-    return { symbol: a?.unit_symbol ?? "", position: a?.unit_position ?? "left" };
-  };
-
   const fmtUnit = (v: number, symbol: string, position: string) => {
     const formatted = v.toLocaleString();
     if (!symbol) return formatted;
     return position === "right" ? `${formatted} ${symbol}` : `${symbol} ${formatted}`;
   };
 
-  // ── Balance calculation per unit ──
-  const balanceByUnit = (() => {
-    const map = new Map<string, { symbol: string; position: string; debit: number; credit: number }>();
-    const ensure = (key: string, symbol: string, position: string) => {
-      if (!map.has(key)) map.set(key, { symbol, position, debit: 0, credit: 0 });
-      return map.get(key)!;
-    };
-    for (const row of rows) {
-      if (row.debit_account_code && parseFloat(row.debit_amount) > 0) {
-        const u = getUnit(row.debit_account_code);
-        ensure(u.symbol + u.position, u.symbol, u.position).debit += parseFloat(row.debit_amount);
-      }
-      if (row.credit_account_code && parseFloat(row.credit_amount) > 0) {
-        const u = getUnit(row.credit_account_code);
-        ensure(u.symbol + u.position, u.symbol, u.position).credit += parseFloat(row.credit_amount);
-      }
-    }
-    return Array.from(map.values());
-  })();
-
+  // ── Balance calculation ──
   const debitTotal = rows.reduce((s, r) => s + (parseFloat(r.debit_amount) || 0), 0);
   const creditTotal = rows.reduce((s, r) => s + (parseFloat(r.credit_amount) || 0), 0);
   const isBalanced = debitTotal === creditTotal && debitTotal > 0;
 
-  // ── Combobox options ──
+  // ── Combobox options (use numeric id as value) ──
   const accountOptions: ComboOption[] = accounts.map((a) => ({
-    value: a.code,
-    label: `${a.display_code} ${a.name}`,
+    value: String(a.id),
+    label: `${a.code} ${a.name}`,
   }));
   const deptOptions: ComboOption[] = departments.map((d) => ({
-    value: d.code,
-    label: `${d.display_code} ${d.name}`,
+    value: String(d.id),
+    label: `${d.code} ${d.name}`,
   }));
   const cpOptions: ComboOption[] = counterparties.map((c) => ({
-    value: c.code,
-    label: `${c.display_code} ${c.name}`,
-  }));
-  const tcOptions: ComboOption[] = taxClasses.map((t) => ({
-    value: t.code,
-    label: `${t.display_code} ${t.name}`,
+    value: String(c.id),
+    label: `${c.code} ${c.name}`,
   }));
 
   // ── Submit ──
   const handleSubmit = async () => {
     setError(null);
-    if (!postedDate || !fiscalPeriodCode) {
-      setError("伝票日付と会計期間は必須です");
+    if (!postedDate || !fiscalPeriodId || !bookId) {
+      setError("伝票日付、会計期間、帳簿は必須です");
       return;
     }
     if (!isBalanced) {
@@ -307,28 +286,26 @@ export function JournalForm({ editCode, onSuccess, onCancel }: Props) {
     const lines: {
       line_group: number;
       side: string;
-      account_code: string;
+      account_id: number;
       amount: number;
-      department_code?: string;
-      counterparty_code?: string;
-      tax_class_code?: string;
+      department_id?: number;
+      counterparty_id?: number;
       description?: string;
     }[] = [];
 
     let group = 1;
     for (const row of rows) {
-      const hasDebit = row.debit_account_code && parseFloat(row.debit_amount) > 0;
-      const hasCredit = row.credit_account_code && parseFloat(row.credit_amount) > 0;
+      const hasDebit = row.debit_account_id && parseFloat(row.debit_amount) > 0;
+      const hasCredit = row.credit_account_id && parseFloat(row.credit_amount) > 0;
 
       if (hasDebit) {
         lines.push({
           line_group: group,
           side: "debit",
-          account_code: row.debit_account_code,
+          account_id: Number(row.debit_account_id),
           amount: parseFloat(row.debit_amount),
-          department_code: row.debit_department_code || undefined,
-          counterparty_code: row.debit_counterparty_code || undefined,
-          tax_class_code: row.debit_tax_class_code || undefined,
+          department_id: row.debit_department_id ? Number(row.debit_department_id) : undefined,
+          counterparty_id: row.debit_counterparty_id ? Number(row.debit_counterparty_id) : undefined,
           description: row.description || undefined,
         });
       }
@@ -336,11 +313,10 @@ export function JournalForm({ editCode, onSuccess, onCancel }: Props) {
         lines.push({
           line_group: group,
           side: "credit",
-          account_code: row.credit_account_code,
+          account_id: Number(row.credit_account_id),
           amount: parseFloat(row.credit_amount),
-          department_code: row.credit_department_code || undefined,
-          counterparty_code: row.credit_counterparty_code || undefined,
-          tax_class_code: row.credit_tax_class_code || undefined,
+          department_id: row.credit_department_id ? Number(row.credit_department_id) : undefined,
+          counterparty_id: row.credit_counterparty_id ? Number(row.credit_counterparty_id) : undefined,
           description: hasDebit ? undefined : row.description || undefined,
         });
       }
@@ -354,23 +330,33 @@ export function JournalForm({ editCode, onSuccess, onCancel }: Props) {
 
     setLoading(true);
     try {
-      if (editCode) {
-        await api.put(`/journals/${editCode}`, {
-          posted_date: new Date(postedDate).toISOString(),
-          journal_type: journalType,
-          slip_category: slipCategory,
-          description: headerDescription || undefined,
-          lines,
-        });
+      if (editId) {
+        // Update the first journal of the voucher
+        const detail = await api.get<{ data: VoucherDetail }>(`/vouchers/${editId}`);
+        const journalId = detail.data.journals[0]?.id;
+        if (journalId) {
+          await api.put(`/vouchers/${editId}/journals/${journalId}`, {
+            journal_type: journalType,
+            slip_category: slipCategory,
+            description: headerDescription || undefined,
+            lines,
+          });
+        }
       } else {
-        await api.post("/journals", {
-          idempotency_code: `web:${crypto.randomUUID()}`,
-          fiscal_period_code: fiscalPeriodCode,
+        await api.post("/vouchers", {
+          idempotency_key: `web:${crypto.randomUUID()}`,
+          book_id: Number(bookId),
+          fiscal_period_id: Number(fiscalPeriodId),
           posted_date: new Date(postedDate).toISOString(),
-          journal_type: journalType,
-          slip_category: slipCategory,
           description: headerDescription || undefined,
-          lines,
+          journals: [
+            {
+              journal_type: journalType,
+              slip_category: slipCategory,
+              description: headerDescription || undefined,
+              lines,
+            },
+          ],
         });
       }
       onSuccess();
@@ -381,29 +367,21 @@ export function JournalForm({ editCode, onSuccess, onCancel }: Props) {
     }
   };
 
-  // ── Unit label beside amount input ──
-  const UnitLabel = ({ accountCode, side }: { accountCode: string; side: "left" | "right" }) => {
-    const u = getUnit(accountCode);
-    if (!u.symbol || u.position !== side) return null;
-    return <span className="text-[10px] text-muted-foreground shrink-0 px-1">{u.symbol}</span>;
-  };
-
-  // ── One side (debit or credit) of a row — 4 sub-rows like 勘定奉行 ──
+  // ── One side (debit or credit) of a row ──
   const SideCell = ({ row, i, side }: { row: RowData; i: number; side: "debit" | "credit" }) => {
-    const prefix = side === "debit" ? "debit" : "credit";
-    const acctCode = row[`${prefix}_account_code`];
+    const prefix = side;
+    const acctId = row[`${prefix}_account_id`];
     const amount = row[`${prefix}_amount`];
-    const deptCode = row[`${prefix}_department_code`];
-    const cpCode = row[`${prefix}_counterparty_code`];
-    const tcCode = row[`${prefix}_tax_class_code`];
+    const deptId = row[`${prefix}_department_id`];
+    const cpId = row[`${prefix}_counterparty_id`];
 
     return (
       <div className="divide-y divide-border">
         {/* Row 1: 部門 */}
         <MasterCombobox
           options={deptOptions}
-          value={deptCode}
-          onValueChange={(v) => updateRow(i, `${prefix}_department_code`, v)}
+          value={deptId}
+          onValueChange={(v) => updateRow(i, `${prefix}_department_id`, v)}
           placeholder="部門"
         />
         {/* Row 2: 勘定科目 + 金額 */}
@@ -411,13 +389,12 @@ export function JournalForm({ editCode, onSuccess, onCancel }: Props) {
           <div className="flex-1 min-w-0">
             <MasterCombobox
               options={accountOptions}
-              value={acctCode}
-              onValueChange={(v) => updateRow(i, `${prefix}_account_code`, v)}
+              value={acctId}
+              onValueChange={(v) => updateRow(i, `${prefix}_account_id`, v)}
               placeholder="勘定科目"
             />
           </div>
           <div className="flex items-center w-28 shrink-0 border-l border-border">
-            <UnitLabel accountCode={acctCode} side="left" />
             <Input
               type="number"
               min="0"
@@ -426,21 +403,13 @@ export function JournalForm({ editCode, onSuccess, onCancel }: Props) {
               onChange={(e) => updateRow(i, `${prefix}_amount`, e.target.value)}
               className="h-7 border-0 bg-transparent text-xs text-right shadow-none focus-visible:ring-0 flex-1"
             />
-            <UnitLabel accountCode={acctCode} side="right" />
           </div>
         </div>
-        {/* Row 3: 税区分 */}
-        <MasterCombobox
-          options={tcOptions}
-          value={tcCode}
-          onValueChange={(v) => updateRow(i, `${prefix}_tax_class_code`, v)}
-          placeholder="税区分"
-        />
-        {/* Row 4: 取引先 */}
+        {/* Row 3: 取引先 */}
         <MasterCombobox
           options={cpOptions}
-          value={cpCode}
-          onValueChange={(v) => updateRow(i, `${prefix}_counterparty_code`, v)}
+          value={cpId}
+          onValueChange={(v) => updateRow(i, `${prefix}_counterparty_id`, v)}
           placeholder="取引先"
         />
       </div>
@@ -453,10 +422,10 @@ export function JournalForm({ editCode, onSuccess, onCancel }: Props) {
       <div className="flex flex-wrap items-center gap-3 border-b border-border bg-card px-4 py-2">
         <span
           className={`rounded px-2 py-0.5 text-xs font-bold ${
-            editCode ? "bg-yellow-600 text-white" : "bg-green-600 text-white"
+            editId ? "bg-yellow-600 text-white" : "bg-green-600 text-white"
           }`}
         >
-          {editCode ? "修正" : "新規"}
+          {editId ? "修正" : "新規"}
         </span>
 
         <Select value={journalType} onValueChange={setJournalType}>
@@ -493,22 +462,41 @@ export function JournalForm({ editCode, onSuccess, onCancel }: Props) {
           />
         </div>
 
-        {!editCode && (
-          <div className="flex items-center gap-1">
-            <span className="text-xs text-muted-foreground">会計期間</span>
-            <Select value={fiscalPeriodCode} onValueChange={setFiscalPeriodCode}>
-              <SelectTrigger className="w-28 h-8 text-xs">
-                <SelectValue placeholder="選択" />
-              </SelectTrigger>
-              <SelectContent>
-                {fiscalPeriods.map((fp) => (
-                  <SelectItem key={fp.code} value={fp.code}>
-                    {fp.display_code}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+        {!editId && (
+          <>
+            {books.length > 1 && (
+              <div className="flex items-center gap-1">
+                <span className="text-xs text-muted-foreground">帳簿</span>
+                <Select value={bookId} onValueChange={setBookId}>
+                  <SelectTrigger className="w-32 h-8 text-xs">
+                    <SelectValue placeholder="選択" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {books.map((b) => (
+                      <SelectItem key={b.id} value={String(b.id)}>
+                        {b.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            <div className="flex items-center gap-1">
+              <span className="text-xs text-muted-foreground">会計期間</span>
+              <Select value={fiscalPeriodId} onValueChange={setFiscalPeriodId}>
+                <SelectTrigger className="w-28 h-8 text-xs">
+                  <SelectValue placeholder="選択" />
+                </SelectTrigger>
+                <SelectContent>
+                  {fiscalPeriods.map((fp) => (
+                    <SelectItem key={fp.id} value={String(fp.id)}>
+                      {fp.code}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </>
         )}
       </div>
 
@@ -533,10 +521,10 @@ export function JournalForm({ editCode, onSuccess, onCancel }: Props) {
             </tr>
             <tr className="bg-muted/40">
               <th className="border border-border px-2 py-1 text-center font-medium text-muted-foreground text-[10px]">
-                部門 / 勘定科目 / 税区分 / 取引先
+                部門 / 勘定科目 / 取引先
               </th>
               <th className="border border-border px-2 py-1 text-center font-medium text-muted-foreground text-[10px]">
-                部門 / 勘定科目 / 税区分 / 取引先
+                部門 / 勘定科目 / 取引先
               </th>
             </tr>
           </thead>
@@ -546,24 +534,20 @@ export function JournalForm({ editCode, onSuccess, onCancel }: Props) {
                 <td className="border border-border px-1 py-2 text-center text-muted-foreground font-mono">
                   {i + 1}
                 </td>
-                {/* Debit side */}
                 <td className="border border-border p-0">
                   <SideCell row={row} i={i} side="debit" />
                 </td>
-                {/* Credit side */}
                 <td className="border border-border p-0">
                   <SideCell row={row} i={i} side="credit" />
                 </td>
-                {/* Description */}
                 <td className="border border-border p-0">
                   <textarea
                     value={row.description}
                     onChange={(e) => updateRow(i, "description", e.target.value)}
-                    className="w-full h-full min-h-[7rem] resize-none border-0 bg-transparent px-2 py-1.5 text-xs outline-none focus:bg-accent/30"
+                    className="w-full h-full min-h-[5.5rem] resize-none border-0 bg-transparent px-2 py-1.5 text-xs outline-none focus:bg-accent/30"
                     placeholder="摘要"
                   />
                 </td>
-                {/* Remove */}
                 <td className="border border-border p-0.5 text-center align-top">
                   <button
                     onClick={() => removeRow(i)}
@@ -576,36 +560,32 @@ export function JournalForm({ editCode, onSuccess, onCancel }: Props) {
               </tr>
             ))}
           </tbody>
-          {/* ── Totals per unit ── */}
           <tfoot>
-            {balanceByUnit.map((u, idx) => {
-              const diff = u.debit - u.credit;
-              const fmt = (v: number) => fmtUnit(v, u.symbol, u.position);
-              return (
-                <React.Fragment key={idx}>
-                  <tr className="bg-muted/40 font-medium">
-                    <td className="border border-border" />
-                    <td className="border border-border px-2 py-1.5 text-right text-xs font-mono">
-                      借方合計{u.symbol && <span className="text-muted-foreground ml-1">({u.symbol})</span>}
-                      <span className="ml-2">{fmt(u.debit)}</span>
-                    </td>
-                    <td className="border border-border px-2 py-1.5 text-right text-xs font-mono">
-                      貸方合計
-                      <span className="ml-2">{fmt(u.credit)}</span>
-                    </td>
-                    <td className="border border-border px-2 py-1.5 text-center text-xs">
-                      差額
-                      <span
-                        className={`ml-2 font-mono ${diff === 0 ? "text-green-400" : "text-red-400"}`}
-                      >
-                        {fmt(diff)}
-                      </span>
-                    </td>
-                    <td className="border border-border" />
-                  </tr>
-                </React.Fragment>
-              );
-            })}
+            <tr className="bg-muted/40 font-medium">
+              <td className="border border-border" />
+              <td className="border border-border px-2 py-1.5 text-right text-xs font-mono">
+                借方合計
+                {selectedBook?.unit_symbol && <span className="text-muted-foreground ml-1">({selectedBook.unit_symbol})</span>}
+                <span className="ml-2">
+                  {fmtUnit(debitTotal, selectedBook?.unit_symbol ?? "", selectedBook?.unit_position ?? "left")}
+                </span>
+              </td>
+              <td className="border border-border px-2 py-1.5 text-right text-xs font-mono">
+                貸方合計
+                <span className="ml-2">
+                  {fmtUnit(creditTotal, selectedBook?.unit_symbol ?? "", selectedBook?.unit_position ?? "left")}
+                </span>
+              </td>
+              <td className="border border-border px-2 py-1.5 text-center text-xs">
+                差額
+                <span
+                  className={`ml-2 font-mono ${debitTotal - creditTotal === 0 ? "text-green-400" : "text-red-400"}`}
+                >
+                  {fmtUnit(debitTotal - creditTotal, selectedBook?.unit_symbol ?? "", selectedBook?.unit_position ?? "left")}
+                </span>
+              </td>
+              <td className="border border-border" />
+            </tr>
           </tfoot>
         </table>
       </div>

@@ -43,8 +43,8 @@ app.post("/token", async (c) => {
   }
 
   const token = await signToken(
-    body.user_id,
-    body.tenant_id,
+    Number(body.user_id),
+    Number(body.tenant_id),
     body.role as UserRole
   );
 

@@ -1,145 +1,48 @@
 import { createApp } from "@/lib/create-app";
-import { createRoute } from "@hono/zod-openapi";
-import { db } from "@/lib/db";
 import { fiscalPeriod } from "@/lib/db/schema";
-import {
-  listCurrent,
-  getCurrent,
-  getMaxRevision,
-  decodeCursor,
-  encodeCursor,
-} from "@/lib/append-only";
-import {
-  listQuerySchema,
-  codeParamSchema,
-  errorSchema,
-  paginatedSchema,
-  dataSchema,
-  createFiscalPeriodSchema,
-  updateFiscalPeriodSchema,
-  fiscalPeriodResponseSchema,
-} from "@/lib/validators";
-import { requireTenant, requireAuth, requireRole, requireBook } from "@/middleware/guards";
+import { requireAuth, requireBook } from "@/middleware/guards";
+import { fiscalPeriodResponseSchema, createFiscalPeriodSchema, updateFiscalPeriodSchema } from "@/lib/validators";
+import { createMapper, defineCrudRoutes, registerCrudHandlers } from "@/lib/crud-factory";
 import type { CurrentFiscalPeriod } from "@/lib/types";
-import { recordAudit } from "@/lib/audit";
 
 const app = createApp();
-app.use("*", requireTenant(), requireAuth(), requireBook());
+app.use("*", requireAuth(), requireBook());
 
-const list = createRoute({
-  method: "get",
-  path: "/",
-  tags: ["FiscalPeriods"],
-  summary: "List current fiscal periods",
-  request: { query: listQuerySchema },
-  responses: {
-    200: { description: "Success", content: { "application/json": { schema: paginatedSchema(fiscalPeriodResponseSchema) } } },
-  },
-});
+const routes = defineCrudRoutes("FiscalPeriods", "periodId", fiscalPeriodResponseSchema, createFiscalPeriodSchema, updateFiscalPeriodSchema);
 
-const get = createRoute({
-  method: "get",
-  path: "/{code}",
-  tags: ["FiscalPeriods"],
-  summary: "Get fiscal period by code",
-  request: { params: codeParamSchema },
-  responses: {
-    200: { description: "Success", content: { "application/json": { schema: dataSchema(fiscalPeriodResponseSchema) } } },
-    404: { description: "Not found", content: { "application/json": { schema: errorSchema } } },
-  },
-});
-
-const create = createRoute({
-  method: "post",
-  path: "/",
-  tags: ["FiscalPeriods"],
-  summary: "Create fiscal period",
-  request: { body: { content: { "application/json": { schema: createFiscalPeriodSchema } } } },
-  responses: {
-    201: { description: "Created", content: { "application/json": { schema: dataSchema(fiscalPeriodResponseSchema) } } },
-    409: { description: "Conflict", content: { "application/json": { schema: errorSchema } } },
-  },
-});
-
-const update = createRoute({
-  method: "put",
-  path: "/{code}",
-  tags: ["FiscalPeriods"],
-  summary: "Update fiscal period (new revision)",
-  request: { params: codeParamSchema, body: { content: { "application/json": { schema: updateFiscalPeriodSchema } } } },
-  responses: {
-    200: { description: "Updated", content: { "application/json": { schema: dataSchema(fiscalPeriodResponseSchema) } } },
-    404: { description: "Not found", content: { "application/json": { schema: errorSchema } } },
-  },
-});
-
-// FiscalPeriod has no is_active -- use status transitions instead
-// No DELETE/RESTORE for fiscal periods
-
-// ---- Handlers ----
-
-app.openapi(list, async (c) => {
-  const bookCode = c.get("bookCode");
-  const { limit: limitStr, cursor: cursorParam } = c.req.valid("query");
-  const limit = Math.min(Number(limitStr || 50), 200);
-
-  const rows = await listCurrent<CurrentFiscalPeriod>("current_fiscal_period", { book_code: bookCode }, {
-    limit, cursor: cursorParam ? decodeCursor(cursorParam) : undefined,
-  });
-
-  return c.json({ data: rows, next_cursor: rows.length === limit ? encodeCursor(rows[rows.length - 1]) : null }, 200);
-});
-
-app.openapi(get, async (c) => {
-  const bookCode = c.get("bookCode");
-  const { code } = c.req.valid("param");
-  const row = await getCurrent<CurrentFiscalPeriod>("current_fiscal_period", { book_code: bookCode, code });
-  if (!row) return c.json({ error: "Not found" }, 404);
-  return c.json({ data: row }, 200);
-});
-
-app.use(create.getRoutingPath(), requireRole("admin"));
-app.openapi(create, async (c) => {
-  const bookCode = c.get("bookCode");
-  const userId = c.get("userId");
-  const body = c.req.valid("json");
-
-  const [created] = await db.insert(fiscalPeriod).values({
-    book_code: bookCode, display_code: body.display_code, revision: 1,
-    valid_from: body.valid_from ? new Date(body.valid_from) : undefined,
-    created_by: userId, fiscal_year: body.fiscal_year, period_no: body.period_no,
-    start_date: new Date(body.start_date), end_date: new Date(body.end_date),
-    status: body.status,
-  }).returning();
-  recordAudit(c, { action: "create", entityType: "fiscal_period", entityCode: created.code, revision: 1 });
-  return c.json({ data: created }, 201);
-});
-
-app.use(update.getRoutingPath(), requireRole("admin"));
-app.openapi(update, async (c) => {
-  const bookCode = c.get("bookCode");
-  const userId = c.get("userId");
-  const { code } = c.req.valid("param");
-  const body = c.req.valid("json");
-
-  const current = await getCurrent<CurrentFiscalPeriod>("current_fiscal_period", { book_code: bookCode, code });
-  if (!current) return c.json({ error: "Not found" }, 404);
-
-  const maxRev = await getMaxRevision("fiscal_period", { book_code: bookCode, code });
-
-  const [updated] = await db.insert(fiscalPeriod).values({
-    book_code: bookCode, code,
-    display_code: body.display_code !== undefined ? body.display_code : current.display_code,
-    revision: maxRev + 1, valid_from: body.valid_from ? new Date(body.valid_from) : undefined,
-    created_by: userId,
-    fiscal_year: body.fiscal_year ?? current.fiscal_year,
-    period_no: body.period_no ?? current.period_no,
-    start_date: body.start_date ? new Date(body.start_date) : current.start_date,
-    end_date: body.end_date ? new Date(body.end_date) : current.end_date,
-    status: body.status ?? current.status,
-  }).returning();
-  recordAudit(c, { action: "update", entityType: "fiscal_period", entityCode: code, revision: maxRev + 1 });
-  return c.json({ data: updated }, 200);
+registerCrudHandlers<CurrentFiscalPeriod>(app, routes, {
+  table: fiscalPeriod, tableName: "fiscal_period", viewName: "current_fiscal_period", historyView: "history_fiscal_period",
+  entityType: "fiscal_period", idParam: "periodId",
+  mapRow: createMapper<CurrentFiscalPeriod>([], ["book_key", "parent_period_key"]),
+  scope: (c) => ({ book_key: c.get("bookKey") }),
+  buildCreate: (body, c) => ({
+    book_key: c.get("bookKey"), code: body.code,
+    start_date: new Date(body.start_date as string), end_date: new Date(body.end_date as string),
+    status: body.status ?? "open",
+    parent_period_key: body.parent_period_id ?? null,
+    created_by: c.get("userKey"),
+  }),
+  hashCreate: (body) => ({ code: body.code, start_date: body.start_date, end_date: body.end_date }),
+  buildUpdate: (body, cur, c) => ({
+    book_key: c.get("bookKey"), code: cur.code,
+    start_date: body.start_date ? new Date(body.start_date as string) : cur.start_date,
+    end_date: body.end_date ? new Date(body.end_date as string) : cur.end_date,
+    status: body.status ?? cur.status,
+    is_active: body.is_active ?? cur.is_active,
+    created_by: c.get("userKey"),
+  }),
+  hashUpdate: (body, cur) => ({
+    code: cur.code,
+    start_date: body.start_date ?? String(cur.start_date),
+    end_date: body.end_date ?? String(cur.end_date),
+  }),
+  buildDeactivate: (cur, c) => ({
+    book_key: c.get("bookKey"), code: cur.code,
+    start_date: cur.start_date, end_date: cur.end_date,
+    status: cur.status, parent_period_key: cur.parent_period_key,
+    created_by: c.get("userKey"),
+  }),
+  hashDeactivate: (cur) => ({ code: cur.code, start_date: String(cur.start_date), end_date: String(cur.end_date) }),
 });
 
 export default app;

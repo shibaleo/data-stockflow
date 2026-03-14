@@ -1,13 +1,13 @@
 import { createMiddleware } from "hono/factory";
 import { authenticate } from "@/lib/auth";
 
-export type UserRole = "platform" | "audit" | "tenant" | "admin" | "user";
+export type UserRole = "platform" | "audit" | "admin" | "user";
 
 export type AppVariables = {
-  tenantId: string;
-  userId: string;
+  tenantKey: number;
+  userKey: number;
   userRole: UserRole;
-  bookCode: string;
+  bookKey: number;
 };
 
 export const contextMiddleware = createMiddleware<{
@@ -16,8 +16,8 @@ export const contextMiddleware = createMiddleware<{
   try {
     const result = await authenticate(c.req.raw);
     if (result) {
-      c.set("tenantId", result.tenantId);
-      c.set("userId", result.userId);
+      c.set("tenantKey", result.tenantKey);
+      c.set("userKey", result.userKey);
       c.set("userRole", result.role);
     }
   } catch (e) {

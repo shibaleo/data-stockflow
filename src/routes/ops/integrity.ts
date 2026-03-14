@@ -7,7 +7,6 @@ import {
   computeLinesHash,
   computeRevisionHash,
   computeHeaderHash,
-  PRE_CHAIN_HASH,
   GENESIS_PREV_HASH,
   type LineHashInput,
 } from "@/lib/hash-chain";
@@ -23,13 +22,13 @@ app.use("*", requireTenant(), requireAuth());
 // ── Schemas ──
 
 const headerChainResultSchema = z.object({
-  status: z.enum(["valid", "broken", "pre_chain"]),
+  status: z.enum(["valid", "broken"]),
   total_headers: z.number(),
   verified_count: z.number(),
   first_break: z
     .object({
       sequence_no: z.number(),
-      idempotency_code: z.string(),
+      idempotency_key: z.string(),
       expected_hash: z.string(),
       actual_hash: z.string(),
     })
@@ -37,8 +36,8 @@ const headerChainResultSchema = z.object({
 });
 
 const revisionChainResultSchema = z.object({
-  status: z.enum(["valid", "broken", "pre_chain"]),
-  idempotency_code: z.string(),
+  status: z.enum(["valid", "broken"]),
+  journal_key: z.number(),
   total_revisions: z.number(),
   verified_count: z.number(),
   first_break: z
@@ -72,18 +71,18 @@ const headerChainRoute = createRoute({
 
 app.use(headerChainRoute.getRoutingPath(), requireRole("admin", "audit"));
 app.openapi(headerChainRoute, async (c) => {
-  const tenantId = c.get("tenantId");
+  const tenantKey = c.get("tenantKey");
 
   const { rows } = await db.execute(sql`
-    SELECT idempotency_code, tenant_id, sequence_no, prev_header_hash, header_hash, created_at
-    FROM "${sql.raw(S)}"."journal_header"
-    WHERE tenant_id = ${tenantId}
+    SELECT idempotency_key, tenant_key, sequence_no, prev_header_hash, header_hash, created_at
+    FROM ${sql.raw(`"${S}".voucher`)}
+    WHERE tenant_key = ${tenantKey} AND revision = 1
     ORDER BY sequence_no ASC
   `);
 
   type HeaderRow = {
-    idempotency_code: string;
-    tenant_id: string;
+    idempotency_key: string;
+    tenant_key: number;
     sequence_no: number;
     prev_header_hash: string;
     header_hash: string;
@@ -97,29 +96,11 @@ app.openapi(headerChainRoute, async (c) => {
     });
   }
 
-  // All PRE_CHAIN?
-  const allPreChain = headers.every((h) => h.header_hash === PRE_CHAIN_HASH);
-  if (allPreChain) {
-    return c.json({
-      data: {
-        status: "pre_chain" as const,
-        total_headers: headers.length,
-        verified_count: 0,
-        first_break: null,
-      },
-    });
-  }
-
   let verified = 0;
   let prevHash = "";
 
   for (let i = 0; i < headers.length; i++) {
     const h = headers[i];
-
-    if (h.header_hash === PRE_CHAIN_HASH) {
-      prevHash = h.header_hash;
-      continue;
-    }
 
     // Verify prev_header_hash linkage
     if (i > 0 && h.prev_header_hash !== prevHash) {
@@ -130,7 +111,7 @@ app.openapi(headerChainRoute, async (c) => {
           verified_count: verified,
           first_break: {
             sequence_no: h.sequence_no,
-            idempotency_code: h.idempotency_code,
+            idempotency_key: h.idempotency_key,
             expected_hash: prevHash,
             actual_hash: h.prev_header_hash,
           },
@@ -141,9 +122,9 @@ app.openapi(headerChainRoute, async (c) => {
     // Recompute hash
     const expected = computeHeaderHash({
       prev_header_hash: h.prev_header_hash,
-      tenant_id: h.tenant_id,
+      tenant_key: h.tenant_key,
       sequence_no: h.sequence_no,
-      idempotency_code: h.idempotency_code,
+      idempotency_key: h.idempotency_key,
       created_at:
         h.created_at instanceof Date
           ? h.created_at.toISOString()
@@ -158,7 +139,7 @@ app.openapi(headerChainRoute, async (c) => {
           verified_count: verified,
           first_break: {
             sequence_no: h.sequence_no,
-            idempotency_code: h.idempotency_code,
+            idempotency_key: h.idempotency_key,
             expected_hash: expected,
             actual_hash: h.header_hash,
           },
@@ -180,15 +161,15 @@ app.openapi(headerChainRoute, async (c) => {
   });
 });
 
-// ── GET /revision-chain/:code ──
+// ── GET /revision-chain/:journalId ──
 
 const revisionChainRoute = createRoute({
   method: "get",
-  path: "/revision-chain/{code}",
+  path: "/revision-chain/{journalId}",
   tags: ["Integrity"],
   summary: "Verify the revision chain for a specific journal",
   request: {
-    params: z.object({ code: z.string() }),
+    params: z.object({ journalId: z.string() }),
   },
   responses: {
     200: {
@@ -208,29 +189,24 @@ const revisionChainRoute = createRoute({
 
 app.use(revisionChainRoute.getRoutingPath(), requireRole("admin", "audit"));
 app.openapi(revisionChainRoute, async (c) => {
-  const tenantId = c.get("tenantId");
-  const { code } = c.req.valid("param");
+  const journalKey = Number(c.req.param("journalId"));
 
-  // Get all revisions ordered
   const { rows: revRows } = await db.execute(sql`
-    SELECT id, idempotency_code, revision, posted_date, journal_type,
-      slip_category, adjustment_flag, description, source_system,
+    SELECT key, revision, journal_type,
+      slip_category, adjustment_flag, description,
       lines_hash, prev_revision_hash, revision_hash
-    FROM "${sql.raw(S)}"."journal"
-    WHERE idempotency_code = ${code} AND tenant_id = ${tenantId}
+    FROM ${sql.raw(`"${S}".journal`)}
+    WHERE key = ${journalKey}
     ORDER BY revision ASC
   `);
 
   type RevRow = {
-    id: string;
-    idempotency_code: string;
+    key: number;
     revision: number;
-    posted_date: Date;
     journal_type: string;
     slip_category: string;
     adjustment_flag: string;
     description: string | null;
-    source_system: string | null;
     lines_hash: string;
     prev_revision_hash: string;
     revision_hash: string;
@@ -241,38 +217,18 @@ app.openapi(revisionChainRoute, async (c) => {
     return c.json({ error: "Journal not found" }, 404) as never;
   }
 
-  const allPreChain = revisions.every(
-    (r) => r.revision_hash === PRE_CHAIN_HASH,
-  );
-  if (allPreChain) {
-    return c.json({
-      data: {
-        status: "pre_chain" as const,
-        idempotency_code: code,
-        total_revisions: revisions.length,
-        verified_count: 0,
-        first_break: null,
-      },
-    }, 200);
-  }
-
   let verified = 0;
   let prevRevHash = "";
 
   for (let i = 0; i < revisions.length; i++) {
     const r = revisions[i];
 
-    if (r.revision_hash === PRE_CHAIN_HASH) {
-      prevRevHash = r.revision_hash;
-      continue;
-    }
-
     // Verify chain linkage
     if (i > 0 && r.prev_revision_hash !== prevRevHash) {
       return c.json({
         data: {
           status: "broken" as const,
-          idempotency_code: code,
+          journal_key: journalKey,
           total_revisions: revisions.length,
           verified_count: verified,
           first_break: {
@@ -287,22 +243,19 @@ app.openapi(revisionChainRoute, async (c) => {
 
     // Verify lines_hash
     const { rows: lineRows } = await db.execute(sql`
-      SELECT line_group, side, account_code, department_code, counterparty_code,
-        tax_class_code, tax_rate, is_reduced, amount, description
-      FROM "${sql.raw(S)}"."journal_line"
-      WHERE journal_id = ${r.id}
+      SELECT line_group, side, account_key, department_key, counterparty_key,
+        amount, description
+      FROM ${sql.raw(`"${S}".journal_line`)}
+      WHERE journal_key = ${journalKey} AND journal_revision = ${r.revision}
       ORDER BY line_group, side
     `);
     const linesInput: LineHashInput[] = (lineRows as JournalLineRow[]).map(
       (l) => ({
         line_group: l.line_group,
         side: l.side,
-        account_code: l.account_code,
-        department_code: l.department_code,
-        counterparty_code: l.counterparty_code,
-        tax_class_code: l.tax_class_code,
-        tax_rate: l.tax_rate,
-        is_reduced: l.is_reduced,
+        account_key: l.account_key,
+        department_key: l.department_key,
+        counterparty_key: l.counterparty_key,
         amount: String(l.amount),
         description: l.description,
       }),
@@ -312,7 +265,7 @@ app.openapi(revisionChainRoute, async (c) => {
       return c.json({
         data: {
           status: "broken" as const,
-          idempotency_code: code,
+          journal_key: journalKey,
           total_revisions: revisions.length,
           verified_count: verified,
           first_break: {
@@ -326,27 +279,21 @@ app.openapi(revisionChainRoute, async (c) => {
     }
 
     // Verify revision_hash
-    const postedDateIso =
-      r.posted_date instanceof Date
-        ? r.posted_date.toISOString()
-        : String(r.posted_date);
     const expectedRevHash = computeRevisionHash({
       prev_revision_hash: r.prev_revision_hash,
-      idempotency_code: r.idempotency_code,
+      journal_key: r.key,
       revision: r.revision,
-      posted_date: postedDateIso,
       journal_type: r.journal_type,
       slip_category: r.slip_category,
       adjustment_flag: r.adjustment_flag,
       description: r.description,
-      source_system: r.source_system,
       lines_hash: r.lines_hash,
     });
     if (expectedRevHash !== r.revision_hash) {
       return c.json({
         data: {
           status: "broken" as const,
-          idempotency_code: code,
+          journal_key: journalKey,
           total_revisions: revisions.length,
           verified_count: verified,
           first_break: {
@@ -366,7 +313,7 @@ app.openapi(revisionChainRoute, async (c) => {
   return c.json({
     data: {
       status: "valid" as const,
-      idempotency_code: code,
+      journal_key: journalKey,
       total_revisions: revisions.length,
       verified_count: verified,
       first_break: null,

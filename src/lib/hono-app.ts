@@ -6,24 +6,27 @@ import { requireWritable } from "@/middleware/guards";
 import { errorHandler } from "@/middleware/error-handler";
 import health from "@/routes/health";
 import auth from "@/routes/auth";
+import roles from "@/routes/roles";
+import users from "@/routes/users";
 import books from "@/routes/books";
 import accounts from "@/routes/accounts";
 import tags from "@/routes/tags";
 import departments from "@/routes/departments";
 import fiscalPeriods from "@/routes/fiscal-periods";
 import counterparties from "@/routes/counterparties";
-import taxClasses from "@/routes/tax-classes";
-import tenantSettings from "@/routes/tenant-settings";
-import accountMappings from "@/routes/account-mappings";
-import paymentMappings from "@/routes/payment-mappings";
+import vouchers from "@/routes/vouchers";
 import journals from "@/routes/journals";
+import journalOps from "@/routes/ops/journal-ops";
+import periodOps from "@/routes/ops/period-ops";
+import auditLogs from "@/routes/ops/audit-logs";
+import integrity from "@/routes/ops/integrity";
+import reports from "@/routes/reports";
 
 // ────────────────────────────────────────────
-// Atomic API v1 — /api/atom/v1
-// Minimal-unit CRUD operations
+// Unified API v1 — /api/v1
 // ────────────────────────────────────────────
 
-const atomApp = new OpenAPIHono({
+const app = new OpenAPIHono({
   defaultHook: (result, c) => {
     if (!result.success) {
       const firstIssue = result.error.issues[0];
@@ -33,97 +36,86 @@ const atomApp = new OpenAPIHono({
       return c.json({ error: msg }, 400);
     }
   },
-}).basePath("/api/atom/v1");
+}).basePath("/api/v1");
 
-atomApp.use("*", logger());
-atomApp.onError(errorHandler);
+app.use("*", logger());
+app.onError(errorHandler);
 
 // Public routes (no auth)
-atomApp.route("/health", health);
-atomApp.route("/auth", auth);
+app.route("/health", health);
+app.route("/auth", auth);
 
 // Context middleware for all subsequent routes
-atomApp.use("*", contextMiddleware);
+app.use("*", contextMiddleware);
 
 // Audit role enforcement: read-only for audit users
-atomApp.use("*", requireWritable());
+app.use("*", requireWritable());
 
-// Book management (tenant-scoped)
-atomApp.route("/books", books);
-
-// Book-scoped master routes (requireBook middleware is inside each route)
-atomApp.route("/books/:bookCode/accounts", accounts);
-atomApp.route("/books/:bookCode/fiscal-periods", fiscalPeriods);
-atomApp.route("/books/:bookCode/account-mappings", accountMappings);
-atomApp.route("/books/:bookCode/payment-mappings", paymentMappings);
+// Platform-scoped
+app.route("/roles", roles);
 
 // Tenant-scoped master routes
-atomApp.route("/tags", tags);
-atomApp.route("/departments", departments);
-atomApp.route("/counterparties", counterparties);
-atomApp.route("/tax-classes", taxClasses);
-atomApp.route("/tenant-settings", tenantSettings);
+app.route("/users", users);
+app.route("/books", books);
+app.route("/tags", tags);
+app.route("/departments", departments);
+app.route("/counterparties", counterparties);
+
+// Book-scoped master routes (requireBook middleware is inside each route)
+app.route("/books/:bookId/accounts", accounts);
+app.route("/books/:bookId/fiscal-periods", fiscalPeriods);
+app.route("/books/:bookId/reports", reports);
 
 // Transaction routes (tenant-scoped)
-atomApp.route("/journals", journals);
+app.route("/vouchers", vouchers);
+app.route("/vouchers/:voucherId/journals", journals);
+
+// Operations
+app.route("/journals", journalOps);
+app.route("/books/:bookId/periods", periodOps);
+
+// Audit & integrity
+app.route("/audit-logs", auditLogs);
+app.route("/integrity", integrity);
 
 // OpenAPI spec
-atomApp.doc("/doc", {
+app.doc("/doc", {
   openapi: "3.1.0",
   info: {
-    title: "data-stockflow Atomic API",
-    version: "1.0.0",
-    description: `Minimal-unit CRUD API for the append-only double-entry bookkeeping system.
+    title: "data-stockflow API",
+    version: "2.0.0",
+    description: `Unified API for the append-only double-entry bookkeeping system.
 
-## Book Layer
+## Key Concepts
 
-Resources are organized under books (帳簿). Each book represents an independent ledger with a single unit (JPY, USD, candy_pcs, etc.).
-
-- Book-scoped: \`/books/{bookCode}/accounts\`, \`/books/{bookCode}/fiscal-periods\`, etc.
-- Tenant-scoped: \`/journals\`, \`/tags\`, \`/departments\`, \`/counterparties\`
-
-Journals are tenant-level and can reference accounts from multiple books (cross-book transactions).
+- **BIGINT keys**: All entities use auto-incrementing BIGINT keys exposed as \`id\` in API responses.
+- **Voucher → Journal 2-layer**: Vouchers group one or more journals. Journals contain lines and tags.
+- **Append-only**: All writes are INSERT-only with incrementing revision numbers. No rows are ever updated or deleted.
+- **Hash chains**: Header chain on vouchers, revision chain on all entities for tamper detection.
 
 ## Double-Entry Convention
 
-Journal lines use standard double-entry bookkeeping format:
-- **amount**: Always a positive number representing the monetary value.
-- **side**: Either "debit" or "credit", indicating the accounting direction.
+Journal lines use standard double-entry format:
+- **amount**: Always positive.
+- **side**: "debit" or "credit".
+- Debit total must equal credit total per journal.
 
-Example — record "Expense 1000 / Cash 1000":
-\`\`\`json
-{
-  "lines": [
-    { "side": "debit",  "account_code": "expense", "amount": 1000, "line_group": 1 },
-    { "side": "credit", "account_code": "cash",    "amount": 1000, "line_group": 1 }
-  ]
-}
-\`\`\`
-The sum of all debit amounts must equal the sum of all credit amounts.
+## Resource Hierarchy
 
-## Append-Only Model
-
-All write operations (create, update, delete, restore) are INSERT-only with incrementing revision numbers. No rows are ever updated or deleted. The latest active revision represents the current state.
-
-## Roles
-
-| Role | Access |
-|------|--------|
-| platform | tax_class CRUD |
-| audit | Read-only (all GET endpoints) |
-| tenant | tenant_settings management |
-| admin | All master CRUD, all journal types |
-| user | Normal journals, tags, counterparties |`,
+- \`/roles\` — Platform-scoped
+- \`/users\`, \`/books\`, \`/tags\`, \`/departments\`, \`/counterparties\` — Tenant-scoped
+- \`/books/{bookId}/accounts\`, \`/books/{bookId}/fiscal-periods\` — Book-scoped
+- \`/vouchers\` → \`/vouchers/{voucherId}/journals\` — Transaction layer`,
   },
 });
 
 // Scalar API Reference UI
-atomApp.get(
+app.get(
   "/reference",
   apiReference({
-    url: "/api/atom/v1/doc",
+    url: "/api/v1/doc",
     theme: "kepler",
   })
 );
 
-export default atomApp;
+export default app;

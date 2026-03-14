@@ -4,7 +4,6 @@ import { sql } from "drizzle-orm";
 // ── Constants ──
 
 export const GENESIS_PREV_HASH = "0";
-export const PRE_CHAIN_HASH = "PRE_CHAIN";
 
 const S = "data_stockflow";
 
@@ -14,17 +13,23 @@ function sha256(...fields: string[]): string {
   return createHash("sha256").update(fields.join("|")).digest("hex");
 }
 
-// ── Lines hash ──
+// ── Entity hash (for all append-only tables) ──
+
+export function computeEntityHash(fields: Record<string, unknown>): string {
+  const sorted = Object.keys(fields)
+    .sort()
+    .map((k) => String(fields[k] ?? ""));
+  return sha256(...sorted);
+}
+
+// ── Lines hash (journal lines) ──
 
 export interface LineHashInput {
   line_group: number;
   side: string;
-  account_code: string;
-  department_code?: string | null;
-  counterparty_code?: string | null;
-  tax_class_code?: string | null;
-  tax_rate?: string | null;
-  is_reduced?: boolean | null;
+  account_key: number;
+  department_key?: number | null;
+  counterparty_key?: number | null;
   amount: string;
   description?: string | null;
 }
@@ -35,76 +40,67 @@ export function computeLinesHash(lines: LineHashInput[]): string {
   const sorted = [...lines].sort((a, b) => {
     if (a.line_group !== b.line_group) return a.line_group - b.line_group;
     if (a.side !== b.side) return a.side.localeCompare(b.side);
-    if (a.account_code !== b.account_code)
-      return a.account_code.localeCompare(b.account_code);
-    return a.amount.localeCompare(b.amount);
+    return Number(a.amount) - Number(b.amount);
   });
 
   const parts = sorted.map((l) =>
     [
       String(l.line_group),
       l.side,
-      l.account_code,
-      l.department_code ?? "",
-      l.counterparty_code ?? "",
-      l.tax_class_code ?? "",
-      l.tax_rate ?? "",
-      l.is_reduced != null ? String(l.is_reduced) : "",
+      String(l.account_key),
+      l.department_key != null ? String(l.department_key) : "",
+      l.counterparty_key != null ? String(l.counterparty_key) : "",
       l.amount,
       l.description ?? "",
-    ].join("|"),
+    ].join("|")
   );
 
   return sha256(parts.join(";"));
 }
 
-// ── Revision chain hash ──
+// ── Revision chain hash (journal) ──
 
 export interface RevisionHashInput {
   prev_revision_hash: string;
-  idempotency_code: string;
+  journal_key: number;
   revision: number;
-  posted_date: string;
   journal_type: string;
   slip_category: string;
   adjustment_flag: string;
   description: string | null;
-  source_system: string | null;
   lines_hash: string;
 }
 
 export function computeRevisionHash(input: RevisionHashInput): string {
   return sha256(
     input.prev_revision_hash,
-    input.idempotency_code,
+    String(input.journal_key),
     String(input.revision),
-    input.posted_date,
     input.journal_type,
     input.slip_category,
     input.adjustment_flag,
     input.description ?? "",
-    input.source_system ?? "",
-    input.lines_hash,
+    input.lines_hash
   );
 }
 
-// ── Header chain hash ──
+// ── Header chain hash (voucher) ──
 
 export interface HeaderHashInput {
   prev_header_hash: string;
-  tenant_id: string;
+  tenant_key: number;
   sequence_no: number;
-  idempotency_code: string;
+  idempotency_key: string;
   created_at: string;
 }
 
 export function computeHeaderHash(input: HeaderHashInput): string {
   return sha256(
     input.prev_header_hash,
-    input.tenant_id,
+    String(input.tenant_key),
     String(input.sequence_no),
-    input.idempotency_code,
-    input.created_at,
+    input.idempotency_key,
+    input.created_at
   );
 }
 
@@ -115,18 +111,18 @@ type Tx = any;
 
 export async function acquireNextHeaderSequence(
   tx: Tx,
-  tenantId: string,
+  tenantKey: number
 ): Promise<{ nextSequenceNo: number; prevHeaderHash: string }> {
   const lockKeyResult = await tx.execute(
-    sql`SELECT hashtext(${tenantId}) AS lock_key`,
+    sql`SELECT hashtext(${String(tenantKey)}) AS lock_key`
   );
   const lockKey = (lockKeyResult.rows[0] as { lock_key: number }).lock_key;
   await tx.execute(sql`SELECT pg_advisory_xact_lock(${lockKey})`);
 
   const { rows } = await tx.execute(sql`
     SELECT sequence_no, header_hash
-    FROM "${sql.raw(S)}"."journal_header"
-    WHERE tenant_id = ${tenantId}
+    FROM ${sql.raw(`"${S}".voucher`)}
+    WHERE tenant_key = ${tenantKey}
     ORDER BY sequence_no DESC
     LIMIT 1
   `);
@@ -144,22 +140,22 @@ export async function acquireNextHeaderSequence(
 
 export async function getPrevRevisionHash(
   tx: Tx,
-  idempotencyCode: string,
-  currentRevision: number,
+  journalKey: number,
+  currentRevision: number
 ): Promise<string> {
   if (currentRevision === 1) return GENESIS_PREV_HASH;
 
   const { rows } = await tx.execute(sql`
     SELECT revision_hash
-    FROM "${sql.raw(S)}"."journal"
-    WHERE idempotency_code = ${idempotencyCode}
+    FROM ${sql.raw(`"${S}".journal`)}
+    WHERE key = ${journalKey}
       AND revision = ${currentRevision - 1}
     LIMIT 1
   `);
 
   if (rows.length === 0) {
     throw new Error(
-      `Missing previous revision ${currentRevision - 1} for ${idempotencyCode}`,
+      `Missing previous revision ${currentRevision - 1} for journal key ${journalKey}`
     );
   }
 

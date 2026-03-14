@@ -63,8 +63,5 @@ function createApiHelpers(basePrefix: string) {
   };
 }
 
-/** Atomic API — CRUD operations */
-export const api = createApiHelpers("/api/atom/v1");
-
-/** Operations API — business operations & reports */
-export const opsApi = createApiHelpers("/api/ops/v1");
+/** Unified API v1 */
+export const api = createApiHelpers("/api/v1");

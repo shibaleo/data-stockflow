@@ -4,9 +4,11 @@ import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
 import type { AppVariables, UserRole } from "./context";
 
+const S = "data_stockflow";
+
 export const requireTenant = () =>
   createMiddleware<{ Variables: AppVariables }>(async (c, next) => {
-    if (!c.get("tenantId")) {
+    if (!c.get("tenantKey")) {
       throw new HTTPException(401, { message: "Authentication required" });
     }
     await next();
@@ -14,7 +16,7 @@ export const requireTenant = () =>
 
 export const requireAuth = () =>
   createMiddleware<{ Variables: AppVariables }>(async (c, next) => {
-    if (!c.get("tenantId") || !c.get("userId") || !c.get("userRole")) {
+    if (!c.get("tenantKey") || !c.get("userKey") || !c.get("userRole")) {
       throw new HTTPException(401, { message: "Authentication required" });
     }
     await next();
@@ -32,34 +34,37 @@ export const requireRole = (...roles: UserRole[]) =>
   });
 
 /**
- * Resolve bookCode path param → verify tenant ownership + active status.
- * Sets c.get("bookCode") for downstream handlers.
+ * Resolve bookId path param → verify tenant ownership + active status.
+ * Sets c.get("bookKey") for downstream handlers.
  */
 export const requireBook = () =>
   createMiddleware<{ Variables: AppVariables }>(async (c, next) => {
-    const bookCode = c.req.param("bookCode");
-    if (!bookCode) {
-      throw new HTTPException(400, { message: "bookCode is required" });
+    const bookIdParam = c.req.param("bookId");
+    if (!bookIdParam) {
+      throw new HTTPException(400, { message: "bookId is required" });
     }
-    const tenantId = c.get("tenantId");
+    const bookKey = Number(bookIdParam);
+    if (!Number.isFinite(bookKey)) {
+      throw new HTTPException(400, { message: "bookId must be a number" });
+    }
+    const tenantKey = c.get("tenantKey");
     const { rows } = await db.execute(sql`
-      SELECT code, is_active FROM "data_stockflow"."current_book"
-      WHERE tenant_id = ${tenantId} AND code = ${bookCode}
+      SELECT key, is_active FROM ${sql.raw(`"${S}".current_book`)}
+      WHERE tenant_key = ${tenantKey} AND key = ${bookKey}
       LIMIT 1
     `);
     if (rows.length === 0) {
       throw new HTTPException(404, { message: "Book not found" });
     }
-    if (!rows[0].is_active) {
+    if (!(rows[0] as { is_active: boolean }).is_active) {
       throw new HTTPException(410, { message: "Book is deactivated" });
     }
-    c.set("bookCode", bookCode);
+    c.set("bookKey", bookKey);
     await next();
   });
 
 /**
- * Reject write operations (POST/PUT/DELETE/PATCH) for audit role.
- * Audit users can only read data.
+ * Reject write operations for audit role.
  */
 export const requireWritable = () =>
   createMiddleware<{ Variables: AppVariables }>(async (c, next) => {

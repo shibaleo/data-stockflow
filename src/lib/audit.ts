@@ -19,16 +19,15 @@ export type AuditEntityType =
   | "department"
   | "fiscal_period"
   | "counterparty"
-  | "tax_class"
-  | "tenant_setting"
-  | "account_mapping"
-  | "payment_mapping"
-  | "journal";
+  | "voucher"
+  | "journal"
+  | "role"
+  | "user";
 
 interface AuditEntry {
   action: AuditAction;
   entityType: AuditEntityType;
-  entityCode: string;
+  entityKey: number;
   revision?: number;
   detail?: unknown;
 }
@@ -40,23 +39,22 @@ export function recordAudit(
   c: Context<{ Variables: AppVariables }>,
   entry: AuditEntry
 ): void {
-  const tenantId = c.get("tenantId") || null;
-  const userId = c.get("userId");
+  const tenantKey = c.get("tenantKey") || null;
+  const userKey = c.get("userKey");
   const userRole = c.get("userRole");
   const sourceIp =
     c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ||
     c.req.header("x-real-ip") ||
     null;
 
-  // Fire-and-forget: don't await, don't block API response
   db.insert(auditLog)
     .values({
-      tenant_id: tenantId,
-      user_id: userId,
+      tenant_key: tenantKey,
+      user_key: userKey,
       user_role: userRole,
       action: entry.action,
       entity_type: entry.entityType,
-      entity_code: entry.entityCode,
+      entity_key: entry.entityKey,
       revision: entry.revision ?? null,
       detail: entry.detail ? JSON.stringify(entry.detail) : null,
       source_ip: sourceIp,
