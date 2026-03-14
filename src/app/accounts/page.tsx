@@ -22,28 +22,20 @@ import {
   DialogFooter,
   DialogDescription,
 } from "@/components/ui/dialog";
+import { BookSelector } from "@/components/shared/book-selector";
+import { useBooks } from "@/hooks/use-books";
 import { api, ApiError } from "@/lib/api-client";
 
 interface AccountRow {
+  id: number;
+  book_id: number;
   code: string;
-  display_code: string;
   name: string;
   account_type: string;
   sign: number;
   is_active: boolean;
-  is_leaf: boolean;
-  parent_account_code: string | null;
+  parent_account_id: number | null;
   revision: number;
-}
-
-interface BookRow {
-  code: string;
-  name: string;
-  unit: string;
-  unit_symbol: string;
-  unit_position: string;
-  type_labels: Record<string, string>;
-  is_active: boolean;
 }
 
 const ACCOUNT_TYPES = [
@@ -73,13 +65,12 @@ const TYPE_LABEL: Record<string, string> = {
 // ── Tree helpers ──
 
 interface TreeNode {
+  id: number;
   code: string;
-  displayCode: string;
   name: string;
   accountType: string;
   isActive: boolean;
-  isLeaf: boolean;
-  parentCode: string | null;
+  parentId: number | null;
   revision: number;
   children: TreeNode[];
   depth: number;
@@ -88,17 +79,16 @@ interface TreeNode {
 
 function buildTree(accounts: AccountRow[], types: string[]): TreeNode[] {
   const filtered = accounts.filter((a) => types.includes(a.account_type));
-  const nodeMap = new Map<string, TreeNode>();
+  const nodeMap = new Map<number, TreeNode>();
 
   for (const a of filtered) {
-    nodeMap.set(a.code, {
+    nodeMap.set(a.id, {
+      id: a.id,
       code: a.code,
-      displayCode: a.display_code,
       name: a.name,
       accountType: a.account_type,
       isActive: a.is_active,
-      isLeaf: a.is_leaf,
-      parentCode: a.parent_account_code,
+      parentId: a.parent_account_id,
       revision: a.revision,
       children: [],
       depth: 0,
@@ -108,16 +98,16 @@ function buildTree(accounts: AccountRow[], types: string[]): TreeNode[] {
 
   const roots: TreeNode[] = [];
   for (const node of nodeMap.values()) {
-    if (node.parentCode && nodeMap.has(node.parentCode)) {
-      nodeMap.get(node.parentCode)!.children.push(node);
-      nodeMap.get(node.parentCode)!.hasChildren = true;
+    if (node.parentId && nodeMap.has(node.parentId)) {
+      nodeMap.get(node.parentId)!.children.push(node);
+      nodeMap.get(node.parentId)!.hasChildren = true;
     } else {
       roots.push(node);
     }
   }
 
   function sortAndSetDepth(nodes: TreeNode[], depth: number) {
-    nodes.sort((a, b) => a.displayCode.localeCompare(b.displayCode));
+    nodes.sort((a, b) => a.code.localeCompare(b.code));
     for (const n of nodes) {
       n.depth = depth;
       sortAndSetDepth(n.children, depth + 1);
@@ -127,12 +117,12 @@ function buildTree(accounts: AccountRow[], types: string[]): TreeNode[] {
   return roots;
 }
 
-function flattenTree(nodes: TreeNode[], collapsed: Set<string>): TreeNode[] {
+function flattenTree(nodes: TreeNode[], collapsed: Set<number>): TreeNode[] {
   const result: TreeNode[] = [];
   function walk(list: TreeNode[]) {
     for (const n of list) {
       result.push(n);
-      if (n.hasChildren && !collapsed.has(n.code)) {
+      if (n.hasChildren && !collapsed.has(n.id)) {
         walk(n.children);
       }
     }
@@ -147,19 +137,12 @@ export default function AccountsPage() {
   const [accounts, setAccounts] = useState<AccountRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [editCode, setEditCode] = useState<string | null>(null);
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-  const [selectedCode, setSelectedCode] = useState<string | null>(null);
+  const [editId, setEditId] = useState<number | null>(null);
+  const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
+  const [selectedId, setSelectedId] = useState<number | null>(null);
   const [showInactive, setShowInactive] = useState(false);
 
-  // Book state
-  const [books, setBooks] = useState<BookRow[]>([]);
-  const [selectedBookCode, setSelectedBookCode] = useState<string>("");
-
-  const selectedBook = useMemo(
-    () => books.find((b) => b.code === selectedBookCode) ?? null,
-    [books, selectedBookCode],
-  );
+  const { books, selectedBookId, setSelectedBookId, selectedBook } = useBooks();
 
   const sections = useMemo(() => {
     const labels = selectedBook?.type_labels ?? {};
@@ -172,11 +155,11 @@ export default function AccountsPage() {
     ];
   }, [selectedBook]);
 
-  const toggleCollapse = (code: string) => {
+  const toggleCollapse = (id: number) => {
     setCollapsed((prev) => {
       const next = new Set(prev);
-      if (next.has(code)) next.delete(code);
-      else next.add(code);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   };
@@ -187,34 +170,17 @@ export default function AccountsPage() {
   );
 
   const selectedAccount = useMemo(
-    () => (selectedCode ? accounts.find((a) => a.code === selectedCode) ?? null : null),
-    [accounts, selectedCode],
+    () => (selectedId ? accounts.find((a) => a.id === selectedId) ?? null : null),
+    [accounts, selectedId],
   );
 
-  // Fetch books on mount
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await api.get<{ data: BookRow[] }>("/books");
-        const active = res.data.filter((b) => b.is_active);
-        setBooks(active);
-        if (active.length > 0) {
-          setSelectedBookCode(active[0].code);
-        }
-      } catch (e) {
-        const msg = e instanceof ApiError ? e.body.error : "帳簿の取得に失敗しました";
-        toast.error(msg);
-      }
-    })();
-  }, []);
-
   const fetchAccounts = useCallback(async () => {
-    if (!selectedBookCode) return;
+    if (!selectedBookId) return;
     setLoading(true);
     try {
       const qs = showInactive ? "&include_inactive=true" : "";
       const res = await api.get<{ data: AccountRow[] }>(
-        `/books/${selectedBookCode}/accounts?limit=200${qs}`
+        `/books/${selectedBookId}/accounts?limit=200${qs}`
       );
       setAccounts(res.data);
     } catch (e) {
@@ -223,26 +189,26 @@ export default function AccountsPage() {
     } finally {
       setLoading(false);
     }
-  }, [selectedBookCode, showInactive]);
+  }, [selectedBookId, showInactive]);
 
   useEffect(() => {
     fetchAccounts();
   }, [fetchAccounts]);
 
   const handleCreate = () => {
-    setEditCode(null);
+    setEditId(null);
     setDialogOpen(true);
   };
 
-  const handleEdit = (code: string) => {
-    setEditCode(code);
+  const handleEdit = (id: number) => {
+    setEditId(id);
     setDialogOpen(true);
   };
 
-  const handleDelete = async (code: string) => {
+  const handleDelete = async (id: number) => {
     if (!confirm("この勘定科目を無効化しますか？")) return;
     try {
-      await api.delete(`/books/${selectedBookCode}/accounts/${code}`);
+      await api.delete(`/books/${selectedBookId}/accounts/${id}`);
       toast.success("勘定科目を無効化しました");
       fetchAccounts();
     } catch (e) {
@@ -251,9 +217,9 @@ export default function AccountsPage() {
     }
   };
 
-  const handleRestore = async (code: string) => {
+  const handleRestore = async (id: number) => {
     try {
-      await api.post(`/books/${selectedBookCode}/accounts/${code}/restore`, {});
+      await api.post(`/books/${selectedBookId}/accounts/${id}/restore`, {});
       toast.success("勘定科目を復元しました");
       fetchAccounts();
     } catch (e) {
@@ -263,7 +229,7 @@ export default function AccountsPage() {
   };
 
   const handleSuccess = () => {
-    toast.success(editCode ? "勘定科目を更新しました" : "勘定科目を作成しました");
+    toast.success(editId ? "勘定科目を更新しました" : "勘定科目を作成しました");
     setDialogOpen(false);
     fetchAccounts();
   };
@@ -273,27 +239,12 @@ export default function AccountsPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-4">
-          <h2 className="text-xl font-semibold">勘定科目</h2>
-          {books.length > 1 && (
-            <Select value={selectedBookCode} onValueChange={setSelectedBookCode}>
-              <SelectTrigger className="w-48 h-8">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {books.map((b) => (
-                  <SelectItem key={b.code} value={b.code}>
-                    {b.name}
-                    <span className="text-muted-foreground ml-1 text-xs">({b.unit})</span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-          {books.length === 1 && selectedBook && (
-            <Badge variant="outline" className="text-xs">
-              {selectedBook.name} ({selectedBook.unit})
-            </Badge>
-          )}
+          <h2 className="text-xl font-semibold">科目</h2>
+          <BookSelector
+            books={books}
+            selectedBookId={selectedBookId}
+            onValueChange={setSelectedBookId}
+          />
         </div>
         <div className="flex gap-2">
           <Button
@@ -321,7 +272,7 @@ export default function AccountsPage() {
       ) : (
         <div className="flex gap-6">
           {/* Tree sections */}
-          <div className={`flex-1 min-w-0 space-y-6 ${selectedAccount ? "" : ""}`}>
+          <div className="flex-1 min-w-0 space-y-6">
             {trees.map(({ title, roots }) => {
               if (roots.length === 0) return null;
               const flat = flattenTree(roots, collapsed);
@@ -331,9 +282,9 @@ export default function AccountsPage() {
                   title={title}
                   nodes={flat}
                   collapsed={collapsed}
-                  selectedCode={selectedCode}
+                  selectedId={selectedId}
                   onToggleCollapse={toggleCollapse}
-                  onSelect={setSelectedCode}
+                  onSelect={setSelectedId}
                 />
               );
             })}
@@ -344,10 +295,10 @@ export default function AccountsPage() {
             <AccountPropertyPanel
               account={selectedAccount}
               accounts={accounts}
-              onClose={() => setSelectedCode(null)}
-              onEdit={() => handleEdit(selectedAccount.code)}
-              onDelete={() => handleDelete(selectedAccount.code)}
-              onRestore={() => handleRestore(selectedAccount.code)}
+              onClose={() => setSelectedId(null)}
+              onEdit={() => handleEdit(selectedAccount.id)}
+              onDelete={() => handleDelete(selectedAccount.id)}
+              onRestore={() => handleRestore(selectedAccount.id)}
             />
           )}
         </div>
@@ -364,9 +315,9 @@ export default function AccountsPage() {
       <AccountDialog
         open={dialogOpen}
         onOpenChange={setDialogOpen}
-        editCode={editCode}
+        editId={editId}
         accounts={accounts}
-        bookCode={selectedBookCode}
+        bookId={selectedBookId}
         onSuccess={handleSuccess}
       />
     </div>
@@ -379,16 +330,16 @@ function AccountSection({
   title,
   nodes,
   collapsed,
-  selectedCode,
+  selectedId,
   onToggleCollapse,
   onSelect,
 }: {
   title: string;
   nodes: TreeNode[];
-  collapsed: Set<string>;
-  selectedCode: string | null;
-  onToggleCollapse: (code: string) => void;
-  onSelect: (code: string) => void;
+  collapsed: Set<number>;
+  selectedId: number | null;
+  onToggleCollapse: (id: number) => void;
+  onSelect: (id: number) => void;
 }) {
   return (
     <div>
@@ -400,11 +351,11 @@ function AccountSection({
           <tbody>
             {nodes.map((node) => (
               <tr
-                key={node.code}
+                key={node.id}
                 className={`border-b border-border/30 transition-colors cursor-pointer ${
                   !node.isActive ? "opacity-50" : ""
-                } ${selectedCode === node.code ? "bg-accent" : "hover:bg-accent/20"}`}
-                onClick={() => onSelect(node.code)}
+                } ${selectedId === node.id ? "bg-accent" : "hover:bg-accent/20"}`}
+                onClick={() => onSelect(node.id)}
               >
                 <td
                   className="py-2 px-3"
@@ -416,10 +367,10 @@ function AccountSection({
                         className="mr-1.5 text-muted-foreground hover:text-foreground transition-colors"
                         onClick={(e) => {
                           e.stopPropagation();
-                          onToggleCollapse(node.code);
+                          onToggleCollapse(node.id);
                         }}
                       >
-                        {collapsed.has(node.code) ? (
+                        {collapsed.has(node.id) ? (
                           <ChevronRight className="h-4 w-4" />
                         ) : (
                           <ChevronDown className="h-4 w-4" />
@@ -431,7 +382,7 @@ function AccountSection({
                       <span className="mr-1.5 w-4" />
                     )}
                     <span className="font-mono text-xs text-muted-foreground mr-2">
-                      {node.displayCode}
+                      {node.code}
                     </span>
                     <span className={node.hasChildren ? "font-medium" : ""}>
                       {node.name}
@@ -469,14 +420,13 @@ function AccountPropertyPanel({
   onDelete: () => void;
   onRestore: () => void;
 }) {
-  const parent = account.parent_account_code
-    ? accounts.find((a) => a.code === account.parent_account_code)
+  const parent = account.parent_account_id
+    ? accounts.find((a) => a.id === account.parent_account_id)
     : null;
-  const children = accounts.filter((a) => a.parent_account_code === account.code);
+  const children = accounts.filter((a) => a.parent_account_id === account.id);
 
   return (
     <div className="w-80 shrink-0 border border-border rounded-md p-4 space-y-4 self-start sticky top-6">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <h3 className="font-semibold text-base truncate">{account.name}</h3>
         <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose}>
@@ -484,10 +434,9 @@ function AccountPropertyPanel({
         </Button>
       </div>
 
-      {/* Properties */}
       <div className="space-y-3 text-sm">
-        <PropertyRow label="コード" value={account.display_code} mono />
-        <PropertyRow label="内部コード" value={account.code} mono />
+        <PropertyRow label="コード" value={account.code} mono />
+        <PropertyRow label="ID" value={String(account.id)} mono />
         <PropertyRow label="分類">
           <Badge variant="secondary">{TYPE_LABEL[account.account_type] || account.account_type}</Badge>
         </PropertyRow>
@@ -502,7 +451,7 @@ function AccountPropertyPanel({
         <PropertyRow label="親科目">
           {parent ? (
             <span className="text-xs">
-              <span className="font-mono text-muted-foreground mr-1">{parent.display_code}</span>
+              <span className="font-mono text-muted-foreground mr-1">{parent.code}</span>
               {parent.name}
             </span>
           ) : (
@@ -515,8 +464,8 @@ function AccountPropertyPanel({
             <span className="text-muted-foreground text-xs">子科目</span>
             <div className="mt-1 space-y-0.5">
               {children.map((child) => (
-                <div key={child.code} className="text-xs flex items-center gap-1">
-                  <span className="font-mono text-muted-foreground">{child.display_code}</span>
+                <div key={child.id} className="text-xs flex items-center gap-1">
+                  <span className="font-mono text-muted-foreground">{child.code}</span>
                   <span className={!child.is_active ? "opacity-50" : ""}>{child.name}</span>
                 </div>
               ))}
@@ -525,7 +474,6 @@ function AccountPropertyPanel({
         )}
       </div>
 
-      {/* Actions */}
       <div className="flex gap-2 pt-2 border-t border-border">
         {account.is_active ? (
           <>
@@ -574,72 +522,72 @@ function PropertyRow({
 interface DialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  editCode: string | null;
+  editId: number | null;
   accounts: AccountRow[];
-  bookCode: string;
+  bookId: string;
   onSuccess: () => void;
 }
 
 function AccountDialog({
   open,
   onOpenChange,
-  editCode,
+  editId,
   accounts,
-  bookCode,
+  bookId,
   onSuccess,
 }: DialogProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [displayCode, setDisplayCode] = useState("");
+  const [code, setCode] = useState("");
   const [name, setName] = useState("");
   const [accountType, setAccountType] = useState("asset");
-  const [parentAccountCode, setParentAccountCode] = useState("");
+  const [parentAccountId, setParentAccountId] = useState("__none__");
 
-  // Load existing account for edit
   useEffect(() => {
     if (!open) {
-      setDisplayCode("");
+      setCode("");
       setName("");
       setAccountType("asset");
-      setParentAccountCode("__none__");
+      setParentAccountId("__none__");
       setError(null);
       return;
     }
-    if (!editCode) return;
+    if (!editId) return;
 
-    const existing = accounts.find((a) => a.code === editCode);
+    const existing = accounts.find((a) => a.id === editId);
     if (existing) {
-      setDisplayCode(existing.display_code);
+      setCode(existing.code);
       setName(existing.name);
       setAccountType(existing.account_type);
-      setParentAccountCode(existing.parent_account_code || "__none__");
+      setParentAccountId(existing.parent_account_id ? String(existing.parent_account_id) : "__none__");
     }
-  }, [open, editCode, accounts]);
+  }, [open, editId, accounts]);
 
   const handleSubmit = async () => {
     setError(null);
 
-    if (!displayCode.trim() || !name.trim()) {
+    if (!code.trim() || !name.trim()) {
       setError("コードと科目名は必須です");
       return;
     }
 
     setLoading(true);
     try {
-      if (editCode) {
-        await api.put(`/books/${bookCode}/accounts/${editCode}`, {
-          display_code: displayCode.trim(),
+      const parentId = parentAccountId !== "__none__" ? Number(parentAccountId) : undefined;
+      if (editId) {
+        await api.put(`/books/${bookId}/accounts/${editId}`, {
+          code: code.trim(),
           name,
           account_type: accountType,
-          parent_account_code: parentAccountCode && parentAccountCode !== "__none__" ? parentAccountCode : null,
+          parent_account_id: parentId ?? null,
         });
       } else {
-        await api.post(`/books/${bookCode}/accounts`, {
-          display_code: displayCode.trim(),
+        await api.post(`/books/${bookId}/accounts`, {
+          code: code.trim(),
           name: name.trim(),
           account_type: accountType,
-          parent_account_code: parentAccountCode && parentAccountCode !== "__none__" ? parentAccountCode : undefined,
+          parent_account_id: parentId,
         });
       }
       onSuccess();
@@ -655,10 +603,10 @@ function AccountDialog({
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>
-            {editCode ? "勘定科目の編集" : "勘定科目の新規作成"}
+            {editId ? "勘定科目の編集" : "勘定科目の新規作成"}
           </DialogTitle>
           <DialogDescription>
-            {editCode
+            {editId
               ? "勘定科目を更新します（新しいリビジョンが作成されます）"
               : "新しい勘定科目を作成します"}
           </DialogDescription>
@@ -668,8 +616,8 @@ function AccountDialog({
           <div className="space-y-2">
             <Label>コード</Label>
             <Input
-              value={displayCode}
-              onChange={(e) => setDisplayCode(e.target.value)}
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
               placeholder="例: 1000"
               className="font-mono"
             />
@@ -701,10 +649,10 @@ function AccountDialog({
           </div>
 
           <div className="space-y-2">
-            <Label>親科目コード（任意）</Label>
+            <Label>親科目（任意）</Label>
             <Select
-              value={parentAccountCode}
-              onValueChange={setParentAccountCode}
+              value={parentAccountId}
+              onValueChange={setParentAccountId}
             >
               <SelectTrigger>
                 <SelectValue placeholder="なし" />
@@ -712,10 +660,10 @@ function AccountDialog({
               <SelectContent>
                 <SelectItem value="__none__">なし</SelectItem>
                 {accounts
-                  .filter((a) => a.is_active && a.code !== editCode)
+                  .filter((a) => a.is_active && a.id !== editId)
                   .map((a) => (
-                    <SelectItem key={a.code} value={a.code}>
-                      {a.display_code} {a.name}
+                    <SelectItem key={a.id} value={String(a.id)}>
+                      {a.code} {a.name}
                     </SelectItem>
                   ))}
               </SelectContent>
@@ -734,7 +682,7 @@ function AccountDialog({
             キャンセル
           </Button>
           <Button onClick={handleSubmit} disabled={loading}>
-            {loading ? "保存中..." : editCode ? "更新" : "作成"}
+            {loading ? "保存中..." : editId ? "更新" : "作成"}
           </Button>
         </DialogFooter>
       </DialogContent>

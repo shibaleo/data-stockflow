@@ -11,7 +11,6 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   PenLine,
-  Settings,
   Tag,
 } from "lucide-react";
 import { UserButton, useUser } from "@clerk/nextjs";
@@ -21,13 +20,12 @@ const EXPANDED_WIDTH = 224;
 const COLLAPSED_WIDTH = 56;
 
 const navItems = [
-  { href: "/journals", label: "仕訳入力", icon: PenLine },
+  { href: "/vouchers", label: "取引", icon: PenLine },
   { href: "/aggregation", label: "集計", icon: BarChart3 },
-  { href: "/accounts", label: "勘定科目", icon: BookOpen },
+  { href: "/accounts", label: "科目", icon: BookOpen },
   { href: "/tags", label: "タグ", icon: Tag },
-  { href: "/fiscal-periods", label: "会計期間", icon: Calendar },
+  { href: "/fiscal-periods", label: "期間", icon: Calendar },
   { href: "/books", label: "帳簿", icon: Library },
-  { href: "/settings", label: "設定", icon: Settings },
 ];
 
 export function SidebarNav({

@@ -12,29 +12,25 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { api, opsApi, ApiError } from "@/lib/api-client";
-
-interface BookRow {
-  code: string;
-  name: string;
-  unit: string;
-  unit_symbol: string;
-  unit_position: string;
-  type_labels: Record<string, string>;
-  is_active: boolean;
-}
+import { BookSelector } from "@/components/shared/book-selector";
+import { useBooks } from "@/hooks/use-books";
+import { api, ApiError } from "@/lib/api-client";
 
 // ── Types ──
 
 interface BalanceItem {
-  account_code: string;
-  display_code: string;
+  account_id: number;
+  code: string;
   name: string;
   account_type: string;
   sign: number;
-  parent_account_code: string | null;
-  parent_display_code: string | null;
+  parent_account_id: number | null;
   balance: string;
+}
+
+interface PeriodInfo {
+  id: number;
+  code: string;
 }
 
 type Tab = "bs" | "pl";
@@ -52,13 +48,12 @@ function formatAmount(amount: number, symbol = "", position: "left" | "right" = 
 }
 
 interface TreeNode {
+  id: number;
   code: string;
-  displayCode: string;
   name: string;
   accountType: string;
   sign: number;
-  parentCode: string | null;
-  parentDisplayCode: string | null;
+  parentId: number | null;
   ownBalance: number; // raw signed balance from DB
   subtotal: number; // display amount = sum of children * sign, or own * sign if leaf
   children: TreeNode[];
@@ -68,18 +63,17 @@ interface TreeNode {
 
 function buildTree(items: BalanceItem[], types: string[]): TreeNode[] {
   const filtered = items.filter((i) => types.includes(i.account_type));
-  const nodeMap = new Map<string, TreeNode>();
+  const nodeMap = new Map<number, TreeNode>();
 
   // Create nodes
   for (const item of filtered) {
-    nodeMap.set(item.account_code, {
-      code: item.account_code,
-      displayCode: item.display_code,
+    nodeMap.set(item.account_id, {
+      id: item.account_id,
+      code: item.code,
       name: item.name,
       accountType: item.account_type,
       sign: item.sign,
-      parentCode: item.parent_account_code,
-      parentDisplayCode: item.parent_display_code,
+      parentId: item.parent_account_id,
       ownBalance: Number(item.balance),
       subtotal: 0,
       children: [],
@@ -91,8 +85,8 @@ function buildTree(items: BalanceItem[], types: string[]): TreeNode[] {
   // Link parent → children
   const roots: TreeNode[] = [];
   for (const node of nodeMap.values()) {
-    if (node.parentCode && nodeMap.has(node.parentCode)) {
-      const parent = nodeMap.get(node.parentCode)!;
+    if (node.parentId && nodeMap.has(node.parentId)) {
+      const parent = nodeMap.get(node.parentId)!;
       parent.children.push(node);
       parent.isLeaf = false;
     } else {
@@ -100,9 +94,9 @@ function buildTree(items: BalanceItem[], types: string[]): TreeNode[] {
     }
   }
 
-  // Sort children by display_code
+  // Sort children by code
   function sortChildren(nodes: TreeNode[]) {
-    nodes.sort((a, b) => a.displayCode.localeCompare(b.displayCode));
+    nodes.sort((a, b) => a.code.localeCompare(b.code));
     for (const n of nodes) sortChildren(n.children);
   }
   sortChildren(roots);
@@ -156,19 +150,12 @@ const DEFAULT_TYPE_LABELS: Record<string, string> = {
 
 export default function ReportsPage() {
   const [data, setData] = useState<BalanceItem[]>([]);
-  const [periods, setPeriods] = useState<string[]>([]);
+  const [periods, setPeriods] = useState<PeriodInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>("pl");
   const [viewMode, setViewMode] = useState<ViewMode>("tree");
 
-  // Book state
-  const [books, setBooks] = useState<BookRow[]>([]);
-  const [selectedBookCode, setSelectedBookCode] = useState<string>("");
-
-  const selectedBook = useMemo(
-    () => books.find((b) => b.code === selectedBookCode) ?? null,
-    [books, selectedBookCode],
-  );
+  const { books, selectedBookId, setSelectedBookId, selectedBook } = useBooks();
 
   const fmt = useCallback(
     (amount: number) =>
@@ -195,33 +182,16 @@ export default function ReportsPage() {
   const [periodFrom, setPeriodFrom] = useState<string>("__all__");
   const [periodTo, setPeriodTo] = useState<string>("__all__");
 
-  // Fetch books on mount
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await api.get<{ data: BookRow[] }>("/books");
-        const active = res.data.filter((b) => b.is_active);
-        setBooks(active);
-        if (active.length > 0) {
-          setSelectedBookCode(active[0].code);
-        }
-      } catch (e) {
-        const msg = e instanceof ApiError ? e.body.error : "帳簿の取得に失敗しました";
-        toast.error(msg);
-      }
-    })();
-  }, []);
-
   const fetchData = useCallback(async () => {
-    if (!selectedBookCode) return;
+    if (!selectedBookId) return;
     setLoading(true);
     try {
       const params = new URLSearchParams();
       if (periodFrom !== "__all__") params.set("period_from", periodFrom);
       if (periodTo !== "__all__") params.set("period_to", periodTo);
       const qs = params.toString();
-      const res = await opsApi.get<{ data: BalanceItem[]; periods: string[] }>(
-        `/books/${selectedBookCode}/reports/balances${qs ? `?${qs}` : ""}`
+      const res = await api.get<{ data: BalanceItem[]; periods: PeriodInfo[] }>(
+        `/books/${selectedBookId}/reports/balances${qs ? `?${qs}` : ""}`
       );
       setData(res.data);
       setPeriods(res.periods);
@@ -232,7 +202,7 @@ export default function ReportsPage() {
     } finally {
       setLoading(false);
     }
-  }, [selectedBookCode, periodFrom, periodTo]);
+  }, [selectedBookId, periodFrom, periodTo]);
 
   useEffect(() => {
     fetchData();
@@ -273,26 +243,11 @@ export default function ReportsPage() {
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-4">
           <h2 className="text-xl font-semibold">集計</h2>
-          {books.length > 1 && (
-            <Select value={selectedBookCode} onValueChange={setSelectedBookCode}>
-              <SelectTrigger className="w-48 h-8">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {books.map((b) => (
-                  <SelectItem key={b.code} value={b.code}>
-                    {b.name}
-                    <span className="text-muted-foreground ml-1 text-xs">({b.unit})</span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-          {books.length === 1 && selectedBook && (
-            <Badge variant="outline" className="text-xs">
-              {selectedBook.name} ({selectedBook.unit})
-            </Badge>
-          )}
+          <BookSelector
+            books={books}
+            selectedBookId={selectedBookId}
+            onValueChange={setSelectedBookId}
+          />
         </div>
         <div className="flex gap-2">
           <Button
@@ -323,8 +278,8 @@ export default function ReportsPage() {
           <SelectContent>
             <SelectItem value="__all__">最初から</SelectItem>
             {periods.map((p) => (
-              <SelectItem key={p} value={p}>
-                {p}
+              <SelectItem key={p.id} value={p.code}>
+                {p.code}
               </SelectItem>
             ))}
           </SelectContent>
@@ -337,8 +292,8 @@ export default function ReportsPage() {
           <SelectContent>
             <SelectItem value="__all__">最新まで</SelectItem>
             {periods.map((p) => (
-              <SelectItem key={p} value={p}>
-                {p}
+              <SelectItem key={p.id} value={p.code}>
+                {p.code}
               </SelectItem>
             ))}
           </SelectContent>
@@ -455,7 +410,7 @@ function TreeSection({
           <tbody>
             {flat.map((node) => (
               <tr
-                key={node.code}
+                key={node.id}
                 className={`border-b border-border/30 hover:bg-accent/20 transition-colors ${
                   !node.isLeaf ? "font-medium" : ""
                 }`}
@@ -465,7 +420,7 @@ function TreeSection({
                   style={{ paddingLeft: `${node.depth * 24 + 12}px` }}
                 >
                   <span className="font-mono text-xs text-muted-foreground mr-2">
-                    {node.displayCode}
+                    {node.code}
                   </span>
                   {node.name}
                 </td>
@@ -626,7 +581,7 @@ function TAccountSide({
           <tbody>
             {flat.map((node) => (
               <tr
-                key={node.code}
+                key={node.id}
                 className={`border-b border-border/30 ${
                   !node.isLeaf ? "font-medium" : ""
                 }`}
@@ -636,7 +591,7 @@ function TAccountSide({
                   style={{ paddingLeft: `${node.depth * 16 + 8}px` }}
                 >
                   <span className="font-mono text-muted-foreground mr-1">
-                    {node.displayCode}
+                    {node.code}
                   </span>
                   {node.name}
                 </td>
