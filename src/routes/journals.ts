@@ -291,8 +291,6 @@ app.openapi(create, async (c) => {
     const a = (aRows as CurrentAccount[])[0] ?? null;
     if (!a)
       return c.json({ error: `account_code '${ac}' not found or inactive` }, 422);
-    if (!a.is_leaf)
-      return c.json({ error: `account_code '${ac}' is not a leaf account (cannot post to summary accounts)` }, 422);
   }
 
   const deptCodes = [
@@ -545,8 +543,6 @@ app.openapi(update, async (c) => {
     const a = (aRows as CurrentAccount[])[0] ?? null;
     if (!a)
       return c.json({ error: `account_code '${ac}' not found or inactive` }, 422);
-    if (!a.is_leaf)
-      return c.json({ error: `account_code '${ac}' is not a leaf account (cannot post to summary accounts)` }, 422);
   }
 
   if (body.tags?.length) {

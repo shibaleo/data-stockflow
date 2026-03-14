@@ -152,10 +152,9 @@ app.openapi(create, async (c) => {
   }
 
   const created = await db.transaction(async (tx: typeof db) => {
-    // If parent is currently a leaf, transition it and create a filler child
+    // If parent is currently a leaf, mark it as non-leaf
     if (parent && parent.is_leaf) {
       const parentMaxRev = await getMaxRevision("account", { book_code: bookCode, code: parent.code });
-      // Mark parent as non-leaf
       await tx.insert(account).values({
         book_code: bookCode, code: parent.code, display_code: parent.display_code,
         revision: parentMaxRev + 1, created_by: userId, name: parent.name,
@@ -164,24 +163,6 @@ app.openapi(create, async (c) => {
         parent_account_code: parent.parent_account_code,
       });
       recordAudit(c, { action: "update", entityType: "account", entityCode: parent.code, revision: parentMaxRev + 1, detail: { reason: "is_leaf=false (child created)" } });
-
-      // Create filler "other" child
-      const [filler] = await tx.insert(account).values({
-        book_code: bookCode, display_code: parent.display_code, revision: 1,
-        created_by: userId, name: `${parent.name}（その他）`,
-        is_active: true, is_leaf: true,
-        account_type: parent.account_type,
-        parent_account_code: parent.code,
-      }).returning();
-      recordAudit(c, { action: "create", entityType: "account", entityCode: filler.code, revision: 1, detail: { reason: "filler for parent", parent_code: parent.code } });
-
-      // Reassign existing journal lines from parent to filler
-      await tx.execute(sql`
-        UPDATE "data_stockflow"."journal_line"
-        SET account_code = ${filler.code}
-        WHERE account_code = ${parent.code}
-          AND tenant_id = ${tenantId}
-      `);
     }
 
     // Create the new account
