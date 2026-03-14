@@ -8,13 +8,13 @@ import {
   fiscalPeriodResponseSchema,
 } from "@/lib/validators";
 import type { AppVariables } from "@/middleware/context";
-import { requireTenant, requireAuth, requireRole } from "@/middleware/guards";
+import { requireTenant, requireAuth, requireRole, requireBook } from "@/middleware/guards";
 import type { CurrentFiscalPeriod } from "@/lib/types";
 import { recordAudit } from "@/lib/audit";
 
 const app = new OpenAPIHono<{ Variables: AppVariables }>();
 
-app.use("*", requireTenant(), requireAuth());
+app.use("*", requireTenant(), requireAuth(), requireBook());
 
 // ────────────────────────────────────────────
 // POST /periods/{code}/close
@@ -55,13 +55,13 @@ const close = createRoute({
 
 app.use(close.getRoutingPath(), requireRole("tenant", "admin"));
 app.openapi(close, async (c) => {
-  const tenantId = c.get("tenantId");
+  const bookCode = c.get("bookCode");
   const userId = c.get("userId");
   const { code } = c.req.valid("param");
 
   const current = await getCurrent<CurrentFiscalPeriod>(
     "current_fiscal_period",
-    { tenant_id: tenantId, code }
+    { book_code: bookCode, code }
   );
   if (!current) return c.json({ error: "Fiscal period not found" }, 404);
 
@@ -73,13 +73,13 @@ app.openapi(close, async (c) => {
   }
 
   const maxRev = await getMaxRevision("fiscal_period", {
-    tenant_id: tenantId,
+    book_code: bookCode,
     code,
   });
 
   const updated = await prisma.fiscalPeriod.create({
     data: {
-      tenant_id: tenantId,
+      book_code: bookCode,
       code,
       display_code: current.display_code,
       revision: maxRev + 1,
@@ -135,13 +135,13 @@ const reopen = createRoute({
 
 app.use(reopen.getRoutingPath(), requireRole("tenant", "admin"));
 app.openapi(reopen, async (c) => {
-  const tenantId = c.get("tenantId");
+  const bookCode = c.get("bookCode");
   const userId = c.get("userId");
   const { code } = c.req.valid("param");
 
   const current = await getCurrent<CurrentFiscalPeriod>(
     "current_fiscal_period",
-    { tenant_id: tenantId, code }
+    { book_code: bookCode, code }
   );
   if (!current) return c.json({ error: "Fiscal period not found" }, 404);
 
@@ -153,13 +153,13 @@ app.openapi(reopen, async (c) => {
   }
 
   const maxRev = await getMaxRevision("fiscal_period", {
-    tenant_id: tenantId,
+    book_code: bookCode,
     code,
   });
 
   const updated = await prisma.fiscalPeriod.create({
     data: {
-      tenant_id: tenantId,
+      book_code: bookCode,
       code,
       display_code: current.display_code,
       revision: maxRev + 1,

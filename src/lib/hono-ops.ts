@@ -25,15 +25,15 @@ opsApp.use("*", contextMiddleware);
 // Audit role enforcement
 opsApp.use("*", requireWritable());
 
-// Business operation routes
+// Tenant-scoped operation routes
 opsApp.route("/journals", journalOps);
-opsApp.route("/periods", periodOps);
 
-// Audit log routes
+// Book-scoped operation routes (requireBook middleware is inside each route)
+opsApp.route("/books/:bookCode/periods", periodOps);
+opsApp.route("/books/:bookCode/reports", reports);
+
+// Audit log routes (tenant-scoped)
 opsApp.route("/audit-logs", auditLogs);
-
-// Report routes
-opsApp.route("/reports", reports);
 
 // OpenAPI spec
 opsApp.doc("/doc", {
@@ -45,8 +45,8 @@ opsApp.doc("/doc", {
 
 Provides higher-level operations that compose atomic API primitives:
 - **Journal reversal** — Generate full-amount counter-entries
-- **Period close/reopen** — Fiscal period lifecycle management
-- **Reports** — Aggregated financial data (balances, trial balance, ledger)
+- **Period close/reopen** — Fiscal period lifecycle management (book-scoped)
+- **Reports** — Aggregated financial data (balances per book)
 
 ## Roles
 

@@ -13,7 +13,7 @@
 -- =============================================================================
 -- 2026-01, 2026-02, 2026-03 が必要
 
-INSERT INTO data_accounting.fiscal_period
+INSERT INTO data_stockflow.fiscal_period
   (tenant_id, display_code, revision, created_by, fiscal_year, period_no, start_date, end_date, status)
 SELECT
   '00000000-0000-0000-0000-000000000001',
@@ -26,7 +26,7 @@ FROM (VALUES
   ('2026-03', 2026, 3, '2026-03-01'::date, '2026-03-31'::date)
 ) AS v(display_code, fiscal_year, period_no, start_date, end_date)
 WHERE NOT EXISTS (
-  SELECT 1 FROM data_accounting.current_fiscal_period cfp
+  SELECT 1 FROM data_stockflow.current_fiscal_period cfp
   WHERE cfp.tenant_id = '00000000-0000-0000-0000-000000000001'
     AND cfp.display_code = v.display_code
 );
@@ -112,11 +112,11 @@ special_ids AS (
   ]::bigint[]) AS zaim_id
 ),
 fp AS (
-  SELECT code, display_code FROM data_accounting.current_fiscal_period
+  SELECT code, display_code FROM data_stockflow.current_fiscal_period
   WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
 ),
 tags AS (
-  SELECT code, display_code FROM data_accounting.current_tag
+  SELECT code, display_code FROM data_stockflow.current_tag
   WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
 ),
 -- 処理対象の payment レコード
@@ -134,14 +134,14 @@ src AS (
     AND z.amount <> 0
     AND z.zaim_id NOT IN (SELECT zaim_id FROM special_ids)
     AND NOT EXISTS (
-      SELECT 1 FROM data_accounting.journal_header jh
+      SELECT 1 FROM data_stockflow.journal_header jh
       WHERE jh.idempotency_code = 'zaim:' || z.zaim_id
         AND jh.tenant_id = '00000000-0000-0000-0000-000000000001'
     )
 ),
 -- Insert journal_header
 new_headers AS (
-  INSERT INTO data_accounting.journal_header (idempotency_code, tenant_id, fiscal_period_code, created_by)
+  INSERT INTO data_stockflow.journal_header (idempotency_code, tenant_id, fiscal_period_code, created_by)
   SELECT 'zaim:' || s.zaim_id, '00000000-0000-0000-0000-000000000001', s.fiscal_period_code,
     '00000000-0000-0000-0000-000000000099'
   FROM src s
@@ -149,7 +149,7 @@ new_headers AS (
 ),
 -- Insert journal
 new_journals AS (
-  INSERT INTO data_accounting.journal
+  INSERT INTO data_stockflow.journal
     (tenant_id, idempotency_code, revision, posted_date, journal_type, slip_category, description, source_system, created_by)
   SELECT
     '00000000-0000-0000-0000-000000000001',
@@ -164,34 +164,34 @@ new_journals AS (
 ),
 -- Debit line (expense)
 ins_debit AS (
-  INSERT INTO data_accounting.journal_line
+  INSERT INTO data_stockflow.journal_line
     (tenant_id, journal_id, line_group, side, account_code, amount)
   SELECT '00000000-0000-0000-0000-000000000001', nj.id, 1, 'debit', s.expense_account, -s.amount
   FROM new_journals nj JOIN src s ON nj.idempotency_code = 'zaim:' || s.zaim_id
 ),
 -- Credit line (BS account)
 ins_credit AS (
-  INSERT INTO data_accounting.journal_line
+  INSERT INTO data_stockflow.journal_line
     (tenant_id, journal_id, line_group, side, account_code, amount)
   SELECT '00000000-0000-0000-0000-000000000001', nj.id, 1, 'credit', s.bs_account, s.amount
   FROM new_journals nj JOIN src s ON nj.idempotency_code = 'zaim:' || s.zaim_id
 ),
 -- Tag: ZAIM (source)
 ins_tag_zaim AS (
-  INSERT INTO data_accounting.journal_tag (tenant_id, journal_id, tag_code, created_by)
+  INSERT INTO data_stockflow.journal_tag (tenant_id, journal_id, tag_code, created_by)
   SELECT '00000000-0000-0000-0000-000000000001', nj.id, t.code, '00000000-0000-0000-0000-000000000099'
   FROM new_journals nj CROSS JOIN tags t WHERE t.display_code = 'ZAIM'
 ),
 -- Tag: category label
 ins_tag_cat AS (
-  INSERT INTO data_accounting.journal_tag (tenant_id, journal_id, tag_code, created_by)
+  INSERT INTO data_stockflow.journal_tag (tenant_id, journal_id, tag_code, created_by)
   SELECT '00000000-0000-0000-0000-000000000001', nj.id, t.code, '00000000-0000-0000-0000-000000000099'
   FROM new_journals nj JOIN src s ON nj.idempotency_code = 'zaim:' || s.zaim_id
   JOIN tags t ON t.display_code = s.tag1 WHERE s.tag1 IS NOT NULL
 ),
 -- Tag: genre label
 ins_tag_genre AS (
-  INSERT INTO data_accounting.journal_tag (tenant_id, journal_id, tag_code, created_by)
+  INSERT INTO data_stockflow.journal_tag (tenant_id, journal_id, tag_code, created_by)
   SELECT '00000000-0000-0000-0000-000000000001', nj.id, t.code, '00000000-0000-0000-0000-000000000099'
   FROM new_journals nj JOIN src s ON nj.idempotency_code = 'zaim:' || s.zaim_id
   JOIN tags t ON t.display_code = s.tag2 WHERE s.tag2 IS NOT NULL
@@ -222,11 +222,11 @@ income_map(category_name, account_code) AS (VALUES
   ('Extraordinary revenue','4520'),('Business income','4520'),('Other','4520')
 ),
 fp AS (
-  SELECT code, display_code FROM data_accounting.current_fiscal_period
+  SELECT code, display_code FROM data_stockflow.current_fiscal_period
   WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
 ),
 tags AS (
-  SELECT code, display_code FROM data_accounting.current_tag
+  SELECT code, display_code FROM data_stockflow.current_tag
   WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
 ),
 src AS (
@@ -241,20 +241,20 @@ src AS (
   WHERE z.mode = 'income'
     AND z.amount <> 0
     AND NOT EXISTS (
-      SELECT 1 FROM data_accounting.journal_header jh
+      SELECT 1 FROM data_stockflow.journal_header jh
       WHERE jh.idempotency_code = 'zaim:' || z.zaim_id
         AND jh.tenant_id = '00000000-0000-0000-0000-000000000001'
     )
 ),
 new_headers AS (
-  INSERT INTO data_accounting.journal_header (idempotency_code, tenant_id, fiscal_period_code, created_by)
+  INSERT INTO data_stockflow.journal_header (idempotency_code, tenant_id, fiscal_period_code, created_by)
   SELECT 'zaim:' || s.zaim_id, '00000000-0000-0000-0000-000000000001', s.fiscal_period_code,
     '00000000-0000-0000-0000-000000000099'
   FROM src s
   RETURNING idempotency_code
 ),
 new_journals AS (
-  INSERT INTO data_accounting.journal
+  INSERT INTO data_stockflow.journal
     (tenant_id, idempotency_code, revision, posted_date, journal_type, slip_category, description, source_system, created_by)
   SELECT
     '00000000-0000-0000-0000-000000000001',
@@ -266,19 +266,19 @@ new_journals AS (
   RETURNING id, idempotency_code
 ),
 ins_debit AS (
-  INSERT INTO data_accounting.journal_line
+  INSERT INTO data_stockflow.journal_line
     (tenant_id, journal_id, line_group, side, account_code, amount)
   SELECT '00000000-0000-0000-0000-000000000001', nj.id, 1, 'debit', s.bs_account, -s.amount
   FROM new_journals nj JOIN src s ON nj.idempotency_code = 'zaim:' || s.zaim_id
 ),
 ins_credit AS (
-  INSERT INTO data_accounting.journal_line
+  INSERT INTO data_stockflow.journal_line
     (tenant_id, journal_id, line_group, side, account_code, amount)
   SELECT '00000000-0000-0000-0000-000000000001', nj.id, 1, 'credit', s.revenue_account, s.amount
   FROM new_journals nj JOIN src s ON nj.idempotency_code = 'zaim:' || s.zaim_id
 ),
 ins_tag_zaim AS (
-  INSERT INTO data_accounting.journal_tag (tenant_id, journal_id, tag_code, created_by)
+  INSERT INTO data_stockflow.journal_tag (tenant_id, journal_id, tag_code, created_by)
   SELECT '00000000-0000-0000-0000-000000000001', nj.id, t.code, '00000000-0000-0000-0000-000000000099'
   FROM new_journals nj CROSS JOIN tags t WHERE t.display_code = 'ZAIM'
 )
@@ -304,11 +304,11 @@ WITH bs_map(zaim_account, account_code) AS (VALUES
   ('LN_STUDENT','2510'),('LN_SCHOLARSHIP','2510'),('LN_TUITION_CPA','2521'),('LN_ORTHODONTIST','2522')
 ),
 fp AS (
-  SELECT code, display_code FROM data_accounting.current_fiscal_period
+  SELECT code, display_code FROM data_stockflow.current_fiscal_period
   WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
 ),
 tags AS (
-  SELECT code, display_code FROM data_accounting.current_tag
+  SELECT code, display_code FROM data_stockflow.current_tag
   WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
 ),
 src AS (
@@ -323,20 +323,20 @@ src AS (
   WHERE z.mode = 'transfer'
     AND z.amount <> 0
     AND NOT EXISTS (
-      SELECT 1 FROM data_accounting.journal_header jh
+      SELECT 1 FROM data_stockflow.journal_header jh
       WHERE jh.idempotency_code = 'zaim:' || z.zaim_id
         AND jh.tenant_id = '00000000-0000-0000-0000-000000000001'
     )
 ),
 new_headers AS (
-  INSERT INTO data_accounting.journal_header (idempotency_code, tenant_id, fiscal_period_code, created_by)
+  INSERT INTO data_stockflow.journal_header (idempotency_code, tenant_id, fiscal_period_code, created_by)
   SELECT 'zaim:' || s.zaim_id, '00000000-0000-0000-0000-000000000001', s.fiscal_period_code,
     '00000000-0000-0000-0000-000000000099'
   FROM src s
   RETURNING idempotency_code
 ),
 new_journals AS (
-  INSERT INTO data_accounting.journal
+  INSERT INTO data_stockflow.journal
     (tenant_id, idempotency_code, revision, posted_date, journal_type, slip_category, description, source_system, created_by)
   SELECT
     '00000000-0000-0000-0000-000000000001',
@@ -348,19 +348,19 @@ new_journals AS (
   RETURNING id, idempotency_code
 ),
 ins_debit AS (
-  INSERT INTO data_accounting.journal_line
+  INSERT INTO data_stockflow.journal_line
     (tenant_id, journal_id, line_group, side, account_code, amount)
   SELECT '00000000-0000-0000-0000-000000000001', nj.id, 1, 'debit', s.to_account, -s.amount
   FROM new_journals nj JOIN src s ON nj.idempotency_code = 'zaim:' || s.zaim_id
 ),
 ins_credit AS (
-  INSERT INTO data_accounting.journal_line
+  INSERT INTO data_stockflow.journal_line
     (tenant_id, journal_id, line_group, side, account_code, amount)
   SELECT '00000000-0000-0000-0000-000000000001', nj.id, 1, 'credit', s.from_account, s.amount
   FROM new_journals nj JOIN src s ON nj.idempotency_code = 'zaim:' || s.zaim_id
 ),
 ins_tag_zaim AS (
-  INSERT INTO data_accounting.journal_tag (tenant_id, journal_id, tag_code, created_by)
+  INSERT INTO data_stockflow.journal_tag (tenant_id, journal_id, tag_code, created_by)
   SELECT '00000000-0000-0000-0000-000000000001', nj.id, t.code, '00000000-0000-0000-0000-000000000099'
   FROM new_journals nj CROSS JOIN tags t WHERE t.display_code = 'ZAIM'
 )
@@ -373,14 +373,14 @@ SELECT count(*) AS transfer_count FROM new_journals;
 -- 4a: Inconsistent 4件 → 5510 雑損
 -- 通常の payment と同じ構造だが expense_account を 5510 に固定
 WITH fp AS (
-  SELECT code, display_code FROM data_accounting.current_fiscal_period
+  SELECT code, display_code FROM data_stockflow.current_fiscal_period
   WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
 ),
 bs_map(zaim_account, account_code) AS (VALUES
   ('CY_MOBILE_SUICA','1120'),('CC_VIEW','2110')
 ),
 tags AS (
-  SELECT code, display_code FROM data_accounting.current_tag
+  SELECT code, display_code FROM data_stockflow.current_tag
   WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
 ),
 src AS (
@@ -393,19 +393,19 @@ src AS (
   JOIN fp ON fp.display_code = to_char(z.transaction_date, 'YYYY-MM')
   WHERE z.zaim_id IN (9077802313, 9192458733, 9583681629, 9636625320)
     AND NOT EXISTS (
-      SELECT 1 FROM data_accounting.journal_header jh
+      SELECT 1 FROM data_stockflow.journal_header jh
       WHERE jh.idempotency_code = 'zaim:' || z.zaim_id
         AND jh.tenant_id = '00000000-0000-0000-0000-000000000001'
     )
 ),
 new_headers AS (
-  INSERT INTO data_accounting.journal_header (idempotency_code, tenant_id, fiscal_period_code, created_by)
+  INSERT INTO data_stockflow.journal_header (idempotency_code, tenant_id, fiscal_period_code, created_by)
   SELECT 'zaim:' || s.zaim_id, '00000000-0000-0000-0000-000000000001', s.fiscal_period_code,
     '00000000-0000-0000-0000-000000000099'
   FROM src s RETURNING idempotency_code
 ),
 new_journals AS (
-  INSERT INTO data_accounting.journal
+  INSERT INTO data_stockflow.journal
     (tenant_id, idempotency_code, revision, posted_date, journal_type, slip_category, description, source_system, created_by)
   SELECT '00000000-0000-0000-0000-000000000001', nh.idempotency_code, 1,
     s.transaction_date::timestamptz, 'auto', 'payment',
@@ -415,17 +415,17 @@ new_journals AS (
   RETURNING id, idempotency_code
 ),
 ins_debit AS (
-  INSERT INTO data_accounting.journal_line (tenant_id, journal_id, line_group, side, account_code, amount)
+  INSERT INTO data_stockflow.journal_line (tenant_id, journal_id, line_group, side, account_code, amount)
   SELECT '00000000-0000-0000-0000-000000000001', nj.id, 1, 'debit', s.expense_account, -s.amount
   FROM new_journals nj JOIN src s ON nj.idempotency_code = 'zaim:' || s.zaim_id
 ),
 ins_credit AS (
-  INSERT INTO data_accounting.journal_line (tenant_id, journal_id, line_group, side, account_code, amount)
+  INSERT INTO data_stockflow.journal_line (tenant_id, journal_id, line_group, side, account_code, amount)
   SELECT '00000000-0000-0000-0000-000000000001', nj.id, 1, 'credit', s.bs_account, s.amount
   FROM new_journals nj JOIN src s ON nj.idempotency_code = 'zaim:' || s.zaim_id
 ),
 ins_tag AS (
-  INSERT INTO data_accounting.journal_tag (tenant_id, journal_id, tag_code, created_by)
+  INSERT INTO data_stockflow.journal_tag (tenant_id, journal_id, tag_code, created_by)
   SELECT '00000000-0000-0000-0000-000000000001', nj.id, t.code, '00000000-0000-0000-0000-000000000099'
   FROM new_journals nj CROSS JOIN tags t WHERE t.display_code = 'ZAIM'
 )
@@ -435,11 +435,11 @@ SELECT count(*) AS inconsistent_count FROM new_journals;
 -- PD_Kindle_Unlimited(1450) → 資本仮勘定(3100) への振替
 -- debit: 3100 -11000 / credit: 1450 +11000
 WITH fp AS (
-  SELECT code FROM data_accounting.current_fiscal_period
+  SELECT code FROM data_stockflow.current_fiscal_period
   WHERE tenant_id = '00000000-0000-0000-0000-000000000001' AND display_code = '2025-03'
 ),
 tags AS (
-  SELECT code, display_code FROM data_accounting.current_tag
+  SELECT code, display_code FROM data_stockflow.current_tag
   WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
 ),
 src AS (
@@ -447,20 +447,20 @@ src AS (
   FROM data_presentation.fct_zaim_transactions z
   WHERE z.zaim_id = 9051472899
     AND NOT EXISTS (
-      SELECT 1 FROM data_accounting.journal_header jh
+      SELECT 1 FROM data_stockflow.journal_header jh
       WHERE jh.idempotency_code = 'zaim:9051472899'
         AND jh.tenant_id = '00000000-0000-0000-0000-000000000001'
     )
 ),
 new_header AS (
-  INSERT INTO data_accounting.journal_header (idempotency_code, tenant_id, fiscal_period_code, created_by)
+  INSERT INTO data_stockflow.journal_header (idempotency_code, tenant_id, fiscal_period_code, created_by)
   SELECT 'zaim:9051472899', '00000000-0000-0000-0000-000000000001', fp.code,
     '00000000-0000-0000-0000-000000000099'
   FROM src, fp
   RETURNING idempotency_code
 ),
 new_journal AS (
-  INSERT INTO data_accounting.journal
+  INSERT INTO data_stockflow.journal
     (tenant_id, idempotency_code, revision, posted_date, journal_type, slip_category, description, source_system, created_by)
   SELECT '00000000-0000-0000-0000-000000000001', nh.idempotency_code, 1,
     s.transaction_date::timestamptz, 'auto', 'transfer',
@@ -470,17 +470,17 @@ new_journal AS (
   RETURNING id, idempotency_code
 ),
 ins_debit AS (
-  INSERT INTO data_accounting.journal_line (tenant_id, journal_id, line_group, side, account_code, amount)
+  INSERT INTO data_stockflow.journal_line (tenant_id, journal_id, line_group, side, account_code, amount)
   SELECT '00000000-0000-0000-0000-000000000001', nj.id, 1, 'debit', '3100', -11000
   FROM new_journal nj
 ),
 ins_credit AS (
-  INSERT INTO data_accounting.journal_line (tenant_id, journal_id, line_group, side, account_code, amount)
+  INSERT INTO data_stockflow.journal_line (tenant_id, journal_id, line_group, side, account_code, amount)
   SELECT '00000000-0000-0000-0000-000000000001', nj.id, 1, 'credit', '1450', 11000
   FROM new_journal nj
 ),
 ins_tag AS (
-  INSERT INTO data_accounting.journal_tag (tenant_id, journal_id, tag_code, created_by)
+  INSERT INTO data_stockflow.journal_tag (tenant_id, journal_id, tag_code, created_by)
   SELECT '00000000-0000-0000-0000-000000000001', nj.id, t.code, '00000000-0000-0000-0000-000000000099'
   FROM new_journal nj CROSS JOIN tags t WHERE t.display_code = 'ZAIM'
 )
@@ -490,11 +490,11 @@ SELECT count(*) AS initial_balance_count FROM new_journal;
 -- ETC代金おまけ → 4520 雑収入（支出モードだが実質収益）
 -- debit: 1110 現金 -100 / credit: 4520 雑収入 +100
 WITH fp AS (
-  SELECT code FROM data_accounting.current_fiscal_period
+  SELECT code FROM data_stockflow.current_fiscal_period
   WHERE tenant_id = '00000000-0000-0000-0000-000000000001' AND display_code = '2025-08'
 ),
 tags AS (
-  SELECT code, display_code FROM data_accounting.current_tag
+  SELECT code, display_code FROM data_stockflow.current_tag
   WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
 ),
 src AS (
@@ -502,20 +502,20 @@ src AS (
   FROM data_presentation.fct_zaim_transactions z
   WHERE z.zaim_id = 9114838232
     AND NOT EXISTS (
-      SELECT 1 FROM data_accounting.journal_header jh
+      SELECT 1 FROM data_stockflow.journal_header jh
       WHERE jh.idempotency_code = 'zaim:9114838232'
         AND jh.tenant_id = '00000000-0000-0000-0000-000000000001'
     )
 ),
 new_header AS (
-  INSERT INTO data_accounting.journal_header (idempotency_code, tenant_id, fiscal_period_code, created_by)
+  INSERT INTO data_stockflow.journal_header (idempotency_code, tenant_id, fiscal_period_code, created_by)
   SELECT 'zaim:9114838232', '00000000-0000-0000-0000-000000000001', fp.code,
     '00000000-0000-0000-0000-000000000099'
   FROM src, fp
   RETURNING idempotency_code
 ),
 new_journal AS (
-  INSERT INTO data_accounting.journal
+  INSERT INTO data_stockflow.journal
     (tenant_id, idempotency_code, revision, posted_date, journal_type, slip_category, description, source_system, created_by)
   SELECT '00000000-0000-0000-0000-000000000001', nh.idempotency_code, 1,
     s.transaction_date::timestamptz, 'auto', 'receipt', 'ETC代金おまけ',
@@ -524,17 +524,17 @@ new_journal AS (
   RETURNING id, idempotency_code
 ),
 ins_debit AS (
-  INSERT INTO data_accounting.journal_line (tenant_id, journal_id, line_group, side, account_code, amount)
+  INSERT INTO data_stockflow.journal_line (tenant_id, journal_id, line_group, side, account_code, amount)
   SELECT '00000000-0000-0000-0000-000000000001', nj.id, 1, 'debit', '1110', -100
   FROM new_journal nj
 ),
 ins_credit AS (
-  INSERT INTO data_accounting.journal_line (tenant_id, journal_id, line_group, side, account_code, amount)
+  INSERT INTO data_stockflow.journal_line (tenant_id, journal_id, line_group, side, account_code, amount)
   SELECT '00000000-0000-0000-0000-000000000001', nj.id, 1, 'credit', '4520', 100
   FROM new_journal nj
 ),
 ins_tag AS (
-  INSERT INTO data_accounting.journal_tag (tenant_id, journal_id, tag_code, created_by)
+  INSERT INTO data_stockflow.journal_tag (tenant_id, journal_id, tag_code, created_by)
   SELECT '00000000-0000-0000-0000-000000000001', nj.id, t.code, '00000000-0000-0000-0000-000000000099'
   FROM new_journal nj CROSS JOIN tags t WHERE t.display_code = 'ZAIM'
 )

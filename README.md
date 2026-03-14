@@ -40,7 +40,7 @@ cp .env.example .env
 
 ```env
 # Neon PostgreSQL (direct TCP)
-DATABASE_URL="postgresql://neondb_owner:PASSWORD@ep-xxx.aws.neon.tech/neondb?sslmode=require&search_path=data_accounting"
+DATABASE_URL="postgresql://neondb_owner:PASSWORD@ep-xxx.aws.neon.tech/neondb?sslmode=require&search_path=data_stockflow"
 
 # Clerk
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...

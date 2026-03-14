@@ -20,33 +20,45 @@ async function main() {
   console.log(`  Tenant: ${TENANT_ID}`);
   console.log(`  User:   ${USER_ID}`);
 
+  // ---- Book ----
+  const book = await prisma.book.create({
+    data: {
+      tenant_id: TENANT_ID,
+      code: "default",
+      display_code: "default",
+      name: "JPY Ledger",
+      unit: "JPY",
+      created_by: USER_ID,
+    },
+  });
+  console.log(`  Book: ${book.code} (${book.unit}) created`);
+
   // ---- Accounts ----
   const accounts = [
-    { code: "1000", name: "Cash", account_type: "asset", sign: -1 },
-    { code: "1100", name: "Accounts Receivable", account_type: "asset", sign: -1 },
-    { code: "1200", name: "Inventory", account_type: "asset", sign: -1 },
-    { code: "2000", name: "Accounts Payable", account_type: "liability", sign: 1 },
-    { code: "2100", name: "Short-term Borrowings", account_type: "liability", sign: 1 },
-    { code: "3000", name: "Capital Stock", account_type: "equity", sign: 1 },
-    { code: "3100", name: "Retained Earnings", account_type: "equity", sign: 1 },
-    { code: "4000", name: "Sales Revenue", account_type: "revenue", sign: 1 },
-    { code: "5000", name: "Cost of Goods Sold", account_type: "expense", sign: -1 },
-    { code: "5100", name: "Salaries Expense", account_type: "expense", sign: -1 },
-    { code: "5200", name: "Rent Expense", account_type: "expense", sign: -1 },
-    { code: "5300", name: "Utilities Expense", account_type: "expense", sign: -1 },
+    { code: "1000", name: "Cash", account_type: "asset" },
+    { code: "1100", name: "Accounts Receivable", account_type: "asset" },
+    { code: "1200", name: "Inventory", account_type: "asset" },
+    { code: "2000", name: "Accounts Payable", account_type: "liability" },
+    { code: "2100", name: "Short-term Borrowings", account_type: "liability" },
+    { code: "3000", name: "Capital Stock", account_type: "equity" },
+    { code: "3100", name: "Retained Earnings", account_type: "equity" },
+    { code: "4000", name: "Sales Revenue", account_type: "revenue" },
+    { code: "5000", name: "Cost of Goods Sold", account_type: "expense" },
+    { code: "5100", name: "Salaries Expense", account_type: "expense" },
+    { code: "5200", name: "Rent Expense", account_type: "expense" },
+    { code: "5300", name: "Utilities Expense", account_type: "expense" },
   ];
 
   for (const a of accounts) {
     await prisma.account.create({
       data: {
-        tenant_id: TENANT_ID,
+        book_code: book.code,
         code: a.code,
         display_code: a.code,
         revision: 1,
         created_by: USER_ID,
         name: a.name,
         account_type: a.account_type,
-        sign: a.sign,
       },
     });
   }
@@ -55,7 +67,7 @@ async function main() {
   // ---- Fiscal Period ----
   await prisma.fiscalPeriod.create({
     data: {
-      tenant_id: TENANT_ID,
+      book_code: book.code,
       code: "2026-01",
       display_code: "2026-01",
       revision: 1,

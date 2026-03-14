@@ -5,7 +5,7 @@
 Zaim API does not expose account opening balances. The `raw_zaim__account` table only
 contains metadata (name, sort, active flag) — no balance field.
 Therefore, initial balances must be derived by comparing Zaim app balances with the
-cumulative transaction totals already migrated into `data_accounting`.
+cumulative transaction totals already migrated into `data_stockflow`.
 
 ## Formula
 
@@ -78,25 +78,25 @@ The journal uses `idempotency_code = 'initial_balance:all'`. To update:
 1. Delete existing entry:
 
 ```sql
-DELETE FROM data_accounting.journal_tag
+DELETE FROM data_stockflow.journal_tag
 WHERE journal_id IN (
-  SELECT id FROM data_accounting.journal
+  SELECT id FROM data_stockflow.journal
   WHERE idempotency_code = 'initial_balance:all'
     AND tenant_id = '00000000-0000-0000-0000-000000000001'
 );
 
-DELETE FROM data_accounting.journal_line
+DELETE FROM data_stockflow.journal_line
 WHERE journal_id IN (
-  SELECT id FROM data_accounting.journal
+  SELECT id FROM data_stockflow.journal
   WHERE idempotency_code = 'initial_balance:all'
     AND tenant_id = '00000000-0000-0000-0000-000000000001'
 );
 
-DELETE FROM data_accounting.journal
+DELETE FROM data_stockflow.journal
 WHERE idempotency_code = 'initial_balance:all'
   AND tenant_id = '00000000-0000-0000-0000-000000000001';
 
-DELETE FROM data_accounting.journal_header
+DELETE FROM data_stockflow.journal_header
 WHERE idempotency_code = 'initial_balance:all'
   AND tenant_id = '00000000-0000-0000-0000-000000000001';
 ```
@@ -107,31 +107,31 @@ WHERE idempotency_code = 'initial_balance:all'
 
 ```sql
 WITH fp AS (
-  SELECT code FROM data_accounting.current_fiscal_period
+  SELECT code FROM data_stockflow.current_fiscal_period
   WHERE tenant_id = '00000000-0000-0000-0000-000000000001' AND display_code = '2025-03'
 ),
 acct AS (
-  SELECT code, display_code FROM data_accounting.current_account
+  SELECT code, display_code FROM data_stockflow.current_account
   WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
 ),
 capital AS (
   SELECT code FROM acct WHERE display_code = '3100'
 ),
 new_header AS (
-  INSERT INTO data_accounting.journal_header
+  INSERT INTO data_stockflow.journal_header
     (idempotency_code, tenant_id, fiscal_period_code, created_by)
   SELECT 'initial_balance:all', '00000000-0000-0000-0000-000000000001', fp.code,
     '00000000-0000-0000-0000-000000000099'
   FROM fp
   WHERE NOT EXISTS (
-    SELECT 1 FROM data_accounting.journal_header jh
+    SELECT 1 FROM data_stockflow.journal_header jh
     WHERE jh.idempotency_code = 'initial_balance:all'
       AND jh.tenant_id = '00000000-0000-0000-0000-000000000001'
   )
   RETURNING idempotency_code
 ),
 new_journal AS (
-  INSERT INTO data_accounting.journal
+  INSERT INTO data_stockflow.journal
     (tenant_id, idempotency_code, revision, posted_date,
      journal_type, slip_category, description, source_system, created_by)
   SELECT '00000000-0000-0000-0000-000000000001', nh.idempotency_code, 1,
@@ -163,7 +163,7 @@ adjustments(account_code, account_type, initial_balance, line_no) AS (VALUES
   ('2522', 'liability', 720000, 18)
 ),
 ins_asset_debit AS (
-  INSERT INTO data_accounting.journal_line
+  INSERT INTO data_stockflow.journal_line
     (tenant_id, journal_id, line_group, side, account_code, amount)
   SELECT '00000000-0000-0000-0000-000000000001', nj.id, adj.line_no, 'debit',
     a.code, -adj.initial_balance
@@ -173,7 +173,7 @@ ins_asset_debit AS (
   RETURNING 1 AS x
 ),
 ins_asset_credit AS (
-  INSERT INTO data_accounting.journal_line
+  INSERT INTO data_stockflow.journal_line
     (tenant_id, journal_id, line_group, side, account_code, amount)
   SELECT '00000000-0000-0000-0000-000000000001', nj.id, adj.line_no, 'credit',
     c.code, adj.initial_balance
@@ -182,7 +182,7 @@ ins_asset_credit AS (
   RETURNING 1 AS x
 ),
 ins_liab_debit AS (
-  INSERT INTO data_accounting.journal_line
+  INSERT INTO data_stockflow.journal_line
     (tenant_id, journal_id, line_group, side, account_code, amount)
   SELECT '00000000-0000-0000-0000-000000000001', nj.id, adj.line_no, 'debit',
     c.code, -adj.initial_balance
@@ -191,7 +191,7 @@ ins_liab_debit AS (
   RETURNING 1 AS x
 ),
 ins_liab_credit AS (
-  INSERT INTO data_accounting.journal_line
+  INSERT INTO data_stockflow.journal_line
     (tenant_id, journal_id, line_group, side, account_code, amount)
   SELECT '00000000-0000-0000-0000-000000000001', nj.id, adj.line_no, 'credit',
     a.code, adj.initial_balance
@@ -216,10 +216,10 @@ SELECT ze.account_code, a.name, ze.zaim_balance,
   -COALESCE(SUM(jl.amount), 0) AS db_balance,
   ze.zaim_balance - (-COALESCE(SUM(jl.amount), 0)) AS diff
 FROM zaim_expected ze
-JOIN data_accounting.current_account a
+JOIN data_stockflow.current_account a
   ON a.display_code = ze.account_code
   AND a.tenant_id = '00000000-0000-0000-0000-000000000001'
-LEFT JOIN data_accounting.journal_line jl
+LEFT JOIN data_stockflow.journal_line jl
   ON jl.account_code = a.code AND jl.tenant_id = a.tenant_id
 GROUP BY ze.account_code, a.name, a.account_type, ze.zaim_balance
 ORDER BY ze.account_code;

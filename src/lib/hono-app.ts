@@ -6,6 +6,7 @@ import { requireWritable } from "@/middleware/guards";
 import { errorHandler } from "@/middleware/error-handler";
 import health from "@/routes/health";
 import auth from "@/routes/auth";
+import books from "@/routes/books";
 import accounts from "@/routes/accounts";
 import tags from "@/routes/tags";
 import departments from "@/routes/departments";
@@ -37,18 +38,23 @@ atomApp.use("*", contextMiddleware);
 // Audit role enforcement: read-only for audit users
 atomApp.use("*", requireWritable());
 
-// Master routes
-atomApp.route("/accounts", accounts);
+// Book management (tenant-scoped)
+atomApp.route("/books", books);
+
+// Book-scoped master routes (requireBook middleware is inside each route)
+atomApp.route("/books/:bookCode/accounts", accounts);
+atomApp.route("/books/:bookCode/fiscal-periods", fiscalPeriods);
+atomApp.route("/books/:bookCode/account-mappings", accountMappings);
+atomApp.route("/books/:bookCode/payment-mappings", paymentMappings);
+
+// Tenant-scoped master routes
 atomApp.route("/tags", tags);
 atomApp.route("/departments", departments);
-atomApp.route("/fiscal-periods", fiscalPeriods);
 atomApp.route("/counterparties", counterparties);
 atomApp.route("/tax-classes", taxClasses);
 atomApp.route("/tenant-settings", tenantSettings);
-atomApp.route("/account-mappings", accountMappings);
-atomApp.route("/payment-mappings", paymentMappings);
 
-// Transaction routes
+// Transaction routes (tenant-scoped)
 atomApp.route("/journals", journals);
 
 // OpenAPI spec
@@ -58,6 +64,15 @@ atomApp.doc("/doc", {
     title: "data-stockflow Atomic API",
     version: "1.0.0",
     description: `Minimal-unit CRUD API for the append-only double-entry bookkeeping system.
+
+## Book Layer
+
+Resources are organized under books (帳簿). Each book represents an independent ledger with a single unit (JPY, USD, candy_pcs, etc.).
+
+- Book-scoped: \`/books/{bookCode}/accounts\`, \`/books/{bookCode}/fiscal-periods\`, etc.
+- Tenant-scoped: \`/journals\`, \`/tags\`, \`/departments\`, \`/counterparties\`
+
+Journals are tenant-level and can reference accounts from multiple books (cross-book transactions).
 
 ## Double-Entry Convention
 

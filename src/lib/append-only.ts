@@ -1,15 +1,20 @@
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 
-const S = "data_accounting";
+const S = "data_stockflow";
 
 /**
  * List current (latest active revision) records from a current_* view.
  * Cursor-based pagination using (created_at, id).
+ *
+ * scopeFilter can be:
+ * - { tenant_id: string } for tenant-scoped views
+ * - { book_code: string } for book-scoped views
+ * - null for global views (e.g. tax_class)
  */
 export async function listCurrent<T>(
   viewName: string,
-  tenantFilter: { tenant_id: string } | null,
+  scopeFilter: { tenant_id: string } | { book_code: string } | null,
   options: {
     limit?: number;
     cursor?: { created_at: string; id: string };
@@ -17,32 +22,45 @@ export async function listCurrent<T>(
 ): Promise<T[]> {
   const limit = Math.min(options.limit ?? 50, 200);
 
-  if (tenantFilter && options.cursor) {
+  // Determine filter column and value
+  let filterCol: string | null = null;
+  let filterVal: string | null = null;
+  if (scopeFilter) {
+    if ("tenant_id" in scopeFilter) {
+      filterCol = "tenant_id";
+      filterVal = scopeFilter.tenant_id;
+    } else {
+      filterCol = "book_code";
+      filterVal = scopeFilter.book_code;
+    }
+  }
+
+  if (filterCol && filterVal && options.cursor) {
     return prisma.$queryRawUnsafe<T[]>(
       `SELECT * FROM "${S}"."${viewName}"
-       WHERE tenant_id = $1
+       WHERE "${filterCol}" = $1
          AND (created_at, id) < ($2::timestamptz, $3::uuid)
        ORDER BY created_at DESC, id DESC
        LIMIT $4`,
-      tenantFilter.tenant_id,
+      filterVal,
       options.cursor.created_at,
       options.cursor.id,
       limit
     );
   }
 
-  if (tenantFilter) {
+  if (filterCol && filterVal) {
     return prisma.$queryRawUnsafe<T[]>(
       `SELECT * FROM "${S}"."${viewName}"
-       WHERE tenant_id = $1
+       WHERE "${filterCol}" = $1
        ORDER BY created_at DESC, id DESC
        LIMIT $2`,
-      tenantFilter.tenant_id,
+      filterVal,
       limit
     );
   }
 
-  // No tenant filter (e.g. tax_class)
+  // No filter (e.g. tax_class)
   if (options.cursor) {
     return prisma.$queryRawUnsafe<T[]>(
       `SELECT * FROM "${S}"."${viewName}"

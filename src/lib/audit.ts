@@ -12,6 +12,7 @@ export type AuditAction =
   | "reopen";
 
 export type AuditEntityType =
+  | "book"
   | "account"
   | "tag"
   | "department"

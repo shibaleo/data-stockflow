@@ -15,7 +15,7 @@
 - **マルチテナント**: テナント単位でデータを分離する。`tax_class` のみグローバル（プラットフォーム管理のため全テナント共通）。他のすべてのテーブルは `tenant_id UUID NOT NULL` を持つ
 - **監査証跡**: すべてのテーブルに `created_by UUID NOT NULL`（操作者）を持つ。append-only モデルにより各 INSERT が監査イベントとなり、「誰が・いつ・何を」が自動的に記録される。ユーザー管理は外部（認証基盤）の責務で、DB は UUID を受け取るのみ
 - **符号付き金額モデル**: `journal_line.amount` は符号付き（貸方=正, 借方=負）。`SUM(amount) = 0` が仕訳の均衡恒等式。DB 層の Constraint Trigger で保証する
-- **口座残高**: `SUM(amount) * account.sign`。`account.sign` は `account_type` と独立（控除科目対応）
+- **口座残高**: `SUM(amount) * sign`。`sign` は `account_type` から導出（asset/expense=-1, liability/equity/revenue=+1）。`current_account` ビューが計算済みの `sign` を提供する
 - **命名規約**:
   - 業務日付: `posted_date`
   - 自由記述: `description`

@@ -70,18 +70,22 @@ CREATE TABLE account (
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
   -- 属性
   name          TEXT NOT NULL,
-  unit          TEXT NOT NULL DEFAULT 'JPY',
   is_active     BOOL NOT NULL DEFAULT true,
+  is_leaf       BOOL NOT NULL DEFAULT true, -- true=記帳可能（末端）, false=集約専用（子を持つ）
   account_type  TEXT NOT NULL
     CHECK (account_type IN ('asset', 'liability', 'equity', 'revenue', 'expense')),
-  sign          INT NOT NULL             -- +1=貸方正(credit-normal), -1=借方正(debit-normal)。account_type と独立（控除科目対応）
-    CHECK (sign IN (1, -1)),
   parent_account_code TEXT,              -- → account.code [identity]（自己参照で階層構造）
   UNIQUE (tenant_id, code, revision)
 );
 
+-- sign は account_type から導出。unit は勘定科目の属性ではない（当面 JPY 固定）
 CREATE VIEW current_account AS
-  SELECT DISTINCT ON (tenant_id, code) *
+  SELECT DISTINCT ON (tenant_id, code)
+    id, tenant_id, code, display_code, revision,
+    valid_from, valid_to, created_by, created_at,
+    name, is_active, is_leaf, account_type,
+    CASE WHEN account_type IN ('asset', 'expense') THEN -1 ELSE 1 END AS sign,
+    parent_account_code
   FROM account
   WHERE valid_from <= now()
     AND (valid_to IS NULL OR valid_to > now())
@@ -257,7 +261,7 @@ CREATE VIEW current_journal AS
 - **税区分は仕訳行のプロパティ** (`journal_line.tax_class_code`): 同一口座でも取引ごとに税率・インボイス区分が異なりうるため、仕訳行で保持。デフォルト値はマッピングルール層（呼び出し元）が付与
 - **符号付き金額モデル**: `amount` は符号付き（貸方=正, 借方=負）。`side` は表示用に残す。`SUM(amount) = 0` が仕訳の均衡恒等式
 - **均衡制約は DB 層**: Constraint Trigger（DEFERRABLE INITIALLY DEFERRED）で `SUM(amount) = 0` を保証。行単位の検証（side と amount 符号の整合等）は App 層
-- **account.sign は account_type と独立**: 口座残高 = `SUM(amount) * account.sign`。控除科目（貸倒引当金=資産だが貸方正 sign=+1、自己株式=純資産だが借方正 sign=-1）に対応するため、admin が口座ごとに設定。account_type からの自動導出はしない
+- **sign は account_type から導出**: 口座残高 = `SUM(amount) * sign`。`current_account` ビューが `CASE WHEN account_type IN ('asset', 'expense') THEN -1 ELSE 1 END` で計算。評価勘定（貸倒引当金等）は同じ account_type の sign を使い、残高の符号が逆になることで表現する
 
 ### 仕訳の例: 食品100円(税8%) + 物品100円(税10%) を現金で購入
 

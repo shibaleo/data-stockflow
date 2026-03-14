@@ -10,7 +10,7 @@ import {
 import type { AppVariables } from "@/middleware/context";
 import { requireTenant, requireAuth, requireRole } from "@/middleware/guards";
 
-const S = "data_accounting";
+const S = "data_stockflow";
 
 const app = new OpenAPIHono<{ Variables: AppVariables }>();
 

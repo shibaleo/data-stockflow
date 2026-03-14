@@ -1,4 +1,4 @@
-export interface CurrentAccount {
+export interface CurrentBook {
   id: string;
   tenant_id: string;
   code: string;
@@ -10,7 +10,23 @@ export interface CurrentAccount {
   created_at: Date;
   name: string;
   unit: string;
+  type_labels: Record<string, string>;
   is_active: boolean;
+}
+
+export interface CurrentAccount {
+  id: string;
+  book_code: string;
+  code: string;
+  display_code: string;
+  revision: number;
+  valid_from: Date;
+  valid_to: Date | null;
+  created_by: string;
+  created_at: Date;
+  name: string;
+  is_active: boolean;
+  is_leaf: boolean;
   account_type: string;
   sign: number;
   parent_account_code: string | null;
@@ -33,7 +49,7 @@ export interface CurrentTag {
 
 export interface CurrentFiscalPeriod {
   id: string;
-  tenant_id: string;
+  book_code: string;
   code: string;
   display_code: string;
   revision: number;
@@ -110,7 +126,7 @@ export interface CurrentTenantSetting {
 
 export interface CurrentAccountMapping {
   id: string;
-  tenant_id: string;
+  book_code: string;
   source_system: string;
   source_field: string;
   source_value: string;
@@ -126,7 +142,7 @@ export interface CurrentAccountMapping {
 
 export interface CurrentPaymentMapping {
   id: string;
-  tenant_id: string;
+  book_code: string;
   source_system: string;
   payment_method: string;
   revision: number;

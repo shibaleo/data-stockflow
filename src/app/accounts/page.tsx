@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { Plus, Pencil, Trash2, RefreshCw, Undo2, ArrowUpDown, ArrowUp, ArrowDown, ChevronRight, ChevronDown } from "lucide-react";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { Plus, Pencil, Trash2, RefreshCw, Undo2, ChevronRight, ChevronDown, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,12 +28,20 @@ interface AccountRow {
   code: string;
   display_code: string;
   name: string;
-  unit: string;
   account_type: string;
   sign: number;
   is_active: boolean;
+  is_leaf: boolean;
   parent_account_code: string | null;
   revision: number;
+}
+
+interface BookRow {
+  code: string;
+  name: string;
+  unit: string;
+  type_labels: Record<string, string>;
+  is_active: boolean;
 }
 
 const ACCOUNT_TYPES = [
@@ -44,6 +52,14 @@ const ACCOUNT_TYPES = [
   { value: "expense", label: "費用" },
 ] as const;
 
+const DEFAULT_TYPE_LABELS: Record<string, string> = {
+  asset: "資産の部",
+  liability: "負債の部",
+  equity: "純資産の部",
+  revenue: "収益の部",
+  expense: "費用の部",
+};
+
 const TYPE_LABEL: Record<string, string> = {
   asset: "資産",
   liability: "負債",
@@ -52,31 +68,106 @@ const TYPE_LABEL: Record<string, string> = {
   expense: "費用",
 };
 
-const SIGN_LABEL: Record<number, string> = {
-  1: "貸方正 (+1)",
-  [-1]: "借方正 (-1)",
-};
+// ── Tree helpers ──
+
+interface TreeNode {
+  code: string;
+  displayCode: string;
+  name: string;
+  accountType: string;
+  isActive: boolean;
+  isLeaf: boolean;
+  parentCode: string | null;
+  revision: number;
+  children: TreeNode[];
+  depth: number;
+  hasChildren: boolean;
+}
+
+function buildTree(accounts: AccountRow[], types: string[]): TreeNode[] {
+  const filtered = accounts.filter((a) => types.includes(a.account_type));
+  const nodeMap = new Map<string, TreeNode>();
+
+  for (const a of filtered) {
+    nodeMap.set(a.code, {
+      code: a.code,
+      displayCode: a.display_code,
+      name: a.name,
+      accountType: a.account_type,
+      isActive: a.is_active,
+      isLeaf: a.is_leaf,
+      parentCode: a.parent_account_code,
+      revision: a.revision,
+      children: [],
+      depth: 0,
+      hasChildren: false,
+    });
+  }
+
+  const roots: TreeNode[] = [];
+  for (const node of nodeMap.values()) {
+    if (node.parentCode && nodeMap.has(node.parentCode)) {
+      nodeMap.get(node.parentCode)!.children.push(node);
+      nodeMap.get(node.parentCode)!.hasChildren = true;
+    } else {
+      roots.push(node);
+    }
+  }
+
+  function sortAndSetDepth(nodes: TreeNode[], depth: number) {
+    nodes.sort((a, b) => a.displayCode.localeCompare(b.displayCode));
+    for (const n of nodes) {
+      n.depth = depth;
+      sortAndSetDepth(n.children, depth + 1);
+    }
+  }
+  sortAndSetDepth(roots, 0);
+  return roots;
+}
+
+function flattenTree(nodes: TreeNode[], collapsed: Set<string>): TreeNode[] {
+  const result: TreeNode[] = [];
+  function walk(list: TreeNode[]) {
+    for (const n of list) {
+      result.push(n);
+      if (n.hasChildren && !collapsed.has(n.code)) {
+        walk(n.children);
+      }
+    }
+  }
+  walk(nodes);
+  return result;
+}
+
+// ── Main Page ──
 
 export default function AccountsPage() {
   const [accounts, setAccounts] = useState<AccountRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editCode, setEditCode] = useState<string | null>(null);
-
-  type SortKey = "display_code" | "name" | "account_type" | "sign" | "is_active" | "revision";
-  type SortDir = "asc" | "desc";
-  const [sortKey, setSortKey] = useState<SortKey>("display_code");
-  const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [selectedCode, setSelectedCode] = useState<string | null>(null);
 
-  const toggleSort = (key: SortKey) => {
-    if (sortKey === key) {
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    } else {
-      setSortKey(key);
-      setSortDir("asc");
-    }
-  };
+  // Book state
+  const [books, setBooks] = useState<BookRow[]>([]);
+  const [selectedBookCode, setSelectedBookCode] = useState<string>("");
+
+  const selectedBook = useMemo(
+    () => books.find((b) => b.code === selectedBookCode) ?? null,
+    [books, selectedBookCode],
+  );
+
+  const sections = useMemo(() => {
+    const labels = selectedBook?.type_labels ?? {};
+    return [
+      { types: ["asset"], title: labels.asset || DEFAULT_TYPE_LABELS.asset },
+      { types: ["liability"], title: labels.liability || DEFAULT_TYPE_LABELS.liability },
+      { types: ["equity"], title: labels.equity || DEFAULT_TYPE_LABELS.equity },
+      { types: ["revenue"], title: labels.revenue || DEFAULT_TYPE_LABELS.revenue },
+      { types: ["expense"], title: labels.expense || DEFAULT_TYPE_LABELS.expense },
+    ];
+  }, [selectedBook]);
 
   const toggleCollapse = (code: string) => {
     setCollapsed((prev) => {
@@ -87,80 +178,48 @@ export default function AccountsPage() {
     });
   };
 
-  // Build tree-ordered flat list with depth info
-  type AccountWithDepth = AccountRow & { depth: number; hasChildren: boolean };
+  const trees = useMemo(
+    () => sections.map((s) => ({ ...s, roots: buildTree(accounts, s.types) })),
+    [accounts, sections],
+  );
 
-  const treeAccounts: AccountWithDepth[] = (() => {
-    const compareFn = (a: AccountRow, b: AccountRow) => {
-      const dir = sortDir === "asc" ? 1 : -1;
-      const va = a[sortKey];
-      const vb = b[sortKey];
-      if (typeof va === "string" && typeof vb === "string") return va.localeCompare(vb, "ja") * dir;
-      if (typeof va === "number" && typeof vb === "number") return (va - vb) * dir;
-      if (typeof va === "boolean" && typeof vb === "boolean") return (Number(va) - Number(vb)) * dir;
-      return 0;
-    };
+  const selectedAccount = useMemo(
+    () => (selectedCode ? accounts.find((a) => a.code === selectedCode) ?? null : null),
+    [accounts, selectedCode],
+  );
 
-    // Group by parent
-    const childrenOf = new Map<string | null, AccountRow[]>();
-    for (const a of accounts) {
-      const key = a.parent_account_code;
-      if (!childrenOf.has(key)) childrenOf.set(key, []);
-      childrenOf.get(key)!.push(a);
-    }
-
-    const result: AccountWithDepth[] = [];
-    const walk = (parentCode: string | null, depth: number) => {
-      const siblings = childrenOf.get(parentCode);
-      if (!siblings) return;
-      siblings.sort(compareFn);
-      for (const a of siblings) {
-        const hasChildren = childrenOf.has(a.code) && childrenOf.get(a.code)!.length > 0;
-        result.push({ ...a, depth, hasChildren });
-        if (hasChildren && !collapsed.has(a.code)) {
-          walk(a.code, depth + 1);
+  // Fetch books on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await api.get<{ data: BookRow[] }>("/books");
+        const active = res.data.filter((b) => b.is_active);
+        setBooks(active);
+        if (active.length > 0) {
+          setSelectedBookCode(active[0].code);
         }
+      } catch (e) {
+        const msg = e instanceof ApiError ? e.body.error : "帳簿の取得に失敗しました";
+        toast.error(msg);
       }
-    };
-    walk(null, 0);
-
-    // Orphans: accounts whose parent_account_code doesn't match any existing code
-    const allCodes = new Set(accounts.map((a) => a.code));
-    const orphans = accounts.filter(
-      (a) => a.parent_account_code && !allCodes.has(a.parent_account_code) && !result.some((r) => r.code === a.code)
-    );
-    if (orphans.length > 0) {
-      orphans.sort(compareFn);
-      for (const a of orphans) {
-        result.push({ ...a, depth: 0, hasChildren: false });
-      }
-    }
-
-    return result;
-  })();
-
-  const SortIcon = ({ col }: { col: SortKey }) => {
-    if (sortKey !== col) return <ArrowUpDown className="h-3 w-3 ml-1 opacity-40" />;
-    return sortDir === "asc"
-      ? <ArrowUp className="h-3 w-3 ml-1" />
-      : <ArrowDown className="h-3 w-3 ml-1" />;
-  };
+    })();
+  }, []);
 
   const fetchAccounts = useCallback(async () => {
+    if (!selectedBookCode) return;
     setLoading(true);
     try {
       const res = await api.get<{ data: AccountRow[] }>(
-        "/accounts?limit=200"
+        `/books/${selectedBookCode}/accounts?limit=200`
       );
       setAccounts(res.data);
     } catch (e) {
-      const msg =
-        e instanceof ApiError ? e.body.error : "勘定科目の取得に失敗しました";
+      const msg = e instanceof ApiError ? e.body.error : "勘定科目の取得に失敗しました";
       toast.error(msg);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [selectedBookCode]);
 
   useEffect(() => {
     fetchAccounts();
@@ -179,40 +238,59 @@ export default function AccountsPage() {
   const handleDelete = async (code: string) => {
     if (!confirm("この勘定科目を無効化しますか？")) return;
     try {
-      await api.delete(`/accounts/${code}`);
+      await api.delete(`/books/${selectedBookCode}/accounts/${code}`);
       toast.success("勘定科目を無効化しました");
       fetchAccounts();
     } catch (e) {
-      const msg =
-        e instanceof ApiError ? e.body.error : "無効化に失敗しました";
+      const msg = e instanceof ApiError ? e.body.error : "無効化に失敗しました";
       toast.error(msg);
     }
   };
 
   const handleRestore = async (code: string) => {
     try {
-      await api.post(`/accounts/${code}/restore`, {});
+      await api.post(`/books/${selectedBookCode}/accounts/${code}/restore`, {});
       toast.success("勘定科目を復元しました");
       fetchAccounts();
     } catch (e) {
-      const msg =
-        e instanceof ApiError ? e.body.error : "復元に失敗しました";
+      const msg = e instanceof ApiError ? e.body.error : "復元に失敗しました";
       toast.error(msg);
     }
   };
 
   const handleSuccess = () => {
-    toast.success(
-      editCode ? "勘定科目を更新しました" : "勘定科目を作成しました"
-    );
+    toast.success(editCode ? "勘定科目を更新しました" : "勘定科目を作成しました");
     setDialogOpen(false);
     fetchAccounts();
   };
 
   return (
     <div className="p-4 md:p-6">
+      {/* Header */}
       <div className="flex items-center justify-between mb-6">
-        <h2 className="text-xl font-semibold">勘定科目</h2>
+        <div className="flex items-center gap-4">
+          <h2 className="text-xl font-semibold">勘定科目</h2>
+          {books.length > 1 && (
+            <Select value={selectedBookCode} onValueChange={setSelectedBookCode}>
+              <SelectTrigger className="w-48 h-8">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {books.map((b) => (
+                  <SelectItem key={b.code} value={b.code}>
+                    {b.name}
+                    <span className="text-muted-foreground ml-1 text-xs">({b.unit})</span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          {books.length === 1 && selectedBook && (
+            <Badge variant="outline" className="text-xs">
+              {selectedBook.name} ({selectedBook.unit})
+            </Badge>
+          )}
+        </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={fetchAccounts}>
             <RefreshCw className="h-4 w-4" />
@@ -225,123 +303,41 @@ export default function AccountsPage() {
       </div>
 
       {loading ? (
-        <div className="text-center py-12 text-muted-foreground">
-          読み込み中...
-        </div>
+        <div className="text-center py-12 text-muted-foreground">読み込み中...</div>
       ) : accounts.length === 0 ? (
-        <div className="text-center py-12 text-muted-foreground">
-          勘定科目がありません
-        </div>
+        <div className="text-center py-12 text-muted-foreground">勘定科目がありません</div>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border text-left text-muted-foreground">
-                {([
-                  ["display_code", "コード"],
-                  ["name", "科目名"],
-                  ["account_type", "分類"],
-                  ["sign", "符号"],
-                  ["is_active", "状態"],
-                  ["revision", "Rev"],
-                ] as [SortKey, string][]).map(([key, label]) => (
-                  <th key={key} className="pb-3 pr-4 font-medium">
-                    <button
-                      className="inline-flex items-center hover:text-foreground transition-colors"
-                      onClick={() => toggleSort(key)}
-                    >
-                      {label}
-                      <SortIcon col={key} />
-                    </button>
-                  </th>
-                ))}
-                <th className="pb-3 font-medium w-28">操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {treeAccounts.map((a) => (
-                <tr
-                  key={a.code}
-                  className={`border-b border-border/50 hover:bg-accent/30 transition-colors ${
-                    !a.is_active ? "opacity-50" : ""
-                  }`}
-                >
-                  <td className="py-3 pr-4 font-mono text-xs">{a.display_code}</td>
-                  <td className="py-3 pr-4">
-                    <div className="flex items-center" style={{ paddingLeft: `${a.depth * 20}px` }}>
-                      {a.hasChildren ? (
-                        <button
-                          className="mr-1 text-muted-foreground hover:text-foreground transition-colors"
-                          onClick={() => toggleCollapse(a.code)}
-                        >
-                          {collapsed.has(a.code)
-                            ? <ChevronRight className="h-4 w-4" />
-                            : <ChevronDown className="h-4 w-4" />}
-                        </button>
-                      ) : a.depth > 0 ? (
-                        <span className="mr-1 w-4 text-center text-muted-foreground/50">└</span>
-                      ) : (
-                        <span className="mr-1 w-4" />
-                      )}
-                      {a.name}
-                    </div>
-                  </td>
-                  <td className="py-3 pr-4">
-                    <Badge variant="secondary">
-                      {TYPE_LABEL[a.account_type] || a.account_type}
-                    </Badge>
-                  </td>
-                  <td className="py-3 pr-4 text-xs text-muted-foreground">
-                    {a.sign === 1 ? "貸方(+)" : "借方(-)"}
-                  </td>
-                  <td className="py-3 pr-4">
-                    {a.is_active ? (
-                      <Badge className="bg-green-900/30 text-green-400 border-green-800/50">
-                        有効
-                      </Badge>
-                    ) : (
-                      <Badge className="bg-red-900/30 text-red-400 border-red-800/50">
-                        無効
-                      </Badge>
-                    )}
-                  </td>
-                  <td className="py-3 pr-4 text-muted-foreground">
-                    {a.revision}
-                  </td>
-                  <td className="py-3">
-                    <div className="flex gap-1">
-                      {a.is_active ? (
-                        <>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleEdit(a.code)}
-                          >
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleDelete(a.code)}
-                          >
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
-                        </>
-                      ) : (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleRestore(a.code)}
-                        >
-                          <Undo2 className="h-4 w-4 text-green-400" />
-                        </Button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="flex gap-6">
+          {/* Tree sections */}
+          <div className={`flex-1 min-w-0 space-y-6 ${selectedAccount ? "" : ""}`}>
+            {trees.map(({ title, roots }) => {
+              if (roots.length === 0) return null;
+              const flat = flattenTree(roots, collapsed);
+              return (
+                <AccountSection
+                  key={title}
+                  title={title}
+                  nodes={flat}
+                  collapsed={collapsed}
+                  selectedCode={selectedCode}
+                  onToggleCollapse={toggleCollapse}
+                  onSelect={setSelectedCode}
+                />
+              );
+            })}
+          </div>
+
+          {/* Property panel */}
+          {selectedAccount && (
+            <AccountPropertyPanel
+              account={selectedAccount}
+              accounts={accounts}
+              onClose={() => setSelectedCode(null)}
+              onEdit={() => handleEdit(selectedAccount.code)}
+              onDelete={() => handleDelete(selectedAccount.code)}
+              onRestore={() => handleRestore(selectedAccount.code)}
+            />
+          )}
         </div>
       )}
 
@@ -358,8 +354,205 @@ export default function AccountsPage() {
         onOpenChange={setDialogOpen}
         editCode={editCode}
         accounts={accounts}
+        bookCode={selectedBookCode}
         onSuccess={handleSuccess}
       />
+    </div>
+  );
+}
+
+// ── Account Section (per account_type group) ──
+
+function AccountSection({
+  title,
+  nodes,
+  collapsed,
+  selectedCode,
+  onToggleCollapse,
+  onSelect,
+}: {
+  title: string;
+  nodes: TreeNode[];
+  collapsed: Set<string>;
+  selectedCode: string | null;
+  onToggleCollapse: (code: string) => void;
+  onSelect: (code: string) => void;
+}) {
+  return (
+    <div>
+      <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+        {title}
+      </h3>
+      <div className="border border-border rounded-md overflow-hidden">
+        <table className="w-full text-sm">
+          <tbody>
+            {nodes.map((node) => (
+              <tr
+                key={node.code}
+                className={`border-b border-border/30 transition-colors cursor-pointer ${
+                  !node.isActive ? "opacity-50" : ""
+                } ${selectedCode === node.code ? "bg-accent" : "hover:bg-accent/20"}`}
+                onClick={() => onSelect(node.code)}
+              >
+                <td
+                  className="py-2 px-3"
+                  style={{ paddingLeft: `${node.depth * 24 + 12}px` }}
+                >
+                  <div className="flex items-center">
+                    {node.hasChildren ? (
+                      <button
+                        className="mr-1.5 text-muted-foreground hover:text-foreground transition-colors"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onToggleCollapse(node.code);
+                        }}
+                      >
+                        {collapsed.has(node.code) ? (
+                          <ChevronRight className="h-4 w-4" />
+                        ) : (
+                          <ChevronDown className="h-4 w-4" />
+                        )}
+                      </button>
+                    ) : node.depth > 0 ? (
+                      <span className="mr-1.5 w-4 text-center text-muted-foreground/40">└</span>
+                    ) : (
+                      <span className="mr-1.5 w-4" />
+                    )}
+                    <span className="font-mono text-xs text-muted-foreground mr-2">
+                      {node.displayCode}
+                    </span>
+                    <span className={node.hasChildren ? "font-medium" : ""}>
+                      {node.name}
+                    </span>
+                    {!node.isActive && (
+                      <Badge className="ml-2 bg-red-900/30 text-red-400 border-red-800/50 text-xs py-0">
+                        無効
+                      </Badge>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ── Property Panel ──
+
+function AccountPropertyPanel({
+  account,
+  accounts,
+  onClose,
+  onEdit,
+  onDelete,
+  onRestore,
+}: {
+  account: AccountRow;
+  accounts: AccountRow[];
+  onClose: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+  onRestore: () => void;
+}) {
+  const parent = account.parent_account_code
+    ? accounts.find((a) => a.code === account.parent_account_code)
+    : null;
+  const children = accounts.filter((a) => a.parent_account_code === account.code);
+
+  return (
+    <div className="w-80 shrink-0 border border-border rounded-md p-4 space-y-4 self-start sticky top-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <h3 className="font-semibold text-base truncate">{account.name}</h3>
+        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose}>
+          <X className="h-4 w-4" />
+        </Button>
+      </div>
+
+      {/* Properties */}
+      <div className="space-y-3 text-sm">
+        <PropertyRow label="コード" value={account.display_code} mono />
+        <PropertyRow label="内部コード" value={account.code} mono />
+        <PropertyRow label="分類">
+          <Badge variant="secondary">{TYPE_LABEL[account.account_type] || account.account_type}</Badge>
+        </PropertyRow>
+        <PropertyRow label="状態">
+          {account.is_active ? (
+            <Badge className="bg-green-900/30 text-green-400 border-green-800/50">有効</Badge>
+          ) : (
+            <Badge className="bg-red-900/30 text-red-400 border-red-800/50">無効</Badge>
+          )}
+        </PropertyRow>
+        <PropertyRow label="リビジョン" value={String(account.revision)} mono />
+        <PropertyRow label="親科目">
+          {parent ? (
+            <span className="text-xs">
+              <span className="font-mono text-muted-foreground mr-1">{parent.display_code}</span>
+              {parent.name}
+            </span>
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          )}
+        </PropertyRow>
+
+        {children.length > 0 && (
+          <div>
+            <span className="text-muted-foreground text-xs">子科目</span>
+            <div className="mt-1 space-y-0.5">
+              {children.map((child) => (
+                <div key={child.code} className="text-xs flex items-center gap-1">
+                  <span className="font-mono text-muted-foreground">{child.display_code}</span>
+                  <span className={!child.is_active ? "opacity-50" : ""}>{child.name}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Actions */}
+      <div className="flex gap-2 pt-2 border-t border-border">
+        {account.is_active ? (
+          <>
+            <Button variant="outline" size="sm" className="flex-1" onClick={onEdit}>
+              <Pencil className="h-3.5 w-3.5 mr-1" />
+              編集
+            </Button>
+            <Button variant="outline" size="sm" onClick={onDelete}>
+              <Trash2 className="h-3.5 w-3.5 text-destructive" />
+            </Button>
+          </>
+        ) : (
+          <Button variant="outline" size="sm" className="flex-1" onClick={onRestore}>
+            <Undo2 className="h-3.5 w-3.5 mr-1 text-green-400" />
+            復元
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function PropertyRow({
+  label,
+  value,
+  mono,
+  children,
+}: {
+  label: string;
+  value?: string;
+  mono?: boolean;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-2">
+      <span className="text-muted-foreground text-xs shrink-0">{label}</span>
+      {children ?? (
+        <span className={`text-right ${mono ? "font-mono text-xs" : "text-sm"}`}>{value}</span>
+      )}
     </div>
   );
 }
@@ -371,6 +564,7 @@ interface DialogProps {
   onOpenChange: (open: boolean) => void;
   editCode: string | null;
   accounts: AccountRow[];
+  bookCode: string;
   onSuccess: () => void;
 }
 
@@ -379,6 +573,7 @@ function AccountDialog({
   onOpenChange,
   editCode,
   accounts,
+  bookCode,
   onSuccess,
 }: DialogProps) {
   const [loading, setLoading] = useState(false);
@@ -387,8 +582,6 @@ function AccountDialog({
   const [displayCode, setDisplayCode] = useState("");
   const [name, setName] = useState("");
   const [accountType, setAccountType] = useState("asset");
-  const [sign, setSign] = useState(-1);
-  const [unit, setUnit] = useState("JPY");
   const [parentAccountCode, setParentAccountCode] = useState("");
 
   // Load existing account for edit
@@ -397,8 +590,6 @@ function AccountDialog({
       setDisplayCode("");
       setName("");
       setAccountType("asset");
-      setSign(-1);
-      setUnit("JPY");
       setParentAccountCode("__none__");
       setError(null);
       return;
@@ -410,22 +601,9 @@ function AccountDialog({
       setDisplayCode(existing.display_code);
       setName(existing.name);
       setAccountType(existing.account_type);
-      setSign(existing.sign);
-      setUnit(existing.unit);
       setParentAccountCode(existing.parent_account_code || "__none__");
     }
   }, [open, editCode, accounts]);
-
-  // Auto-set sign based on account type
-  const handleTypeChange = (type: string) => {
-    setAccountType(type);
-    // Default: asset/expense → -1 (borrower positive), liability/equity/revenue → +1 (creditor positive)
-    if (type === "asset" || type === "expense") {
-      setSign(-1);
-    } else {
-      setSign(1);
-    }
-  };
 
   const handleSubmit = async () => {
     setError(null);
@@ -438,21 +616,17 @@ function AccountDialog({
     setLoading(true);
     try {
       if (editCode) {
-        await api.put(`/accounts/${editCode}`, {
+        await api.put(`/books/${bookCode}/accounts/${editCode}`, {
           display_code: displayCode.trim(),
           name,
           account_type: accountType,
-          sign,
-          unit,
           parent_account_code: parentAccountCode && parentAccountCode !== "__none__" ? parentAccountCode : null,
         });
       } else {
-        await api.post("/accounts", {
+        await api.post(`/books/${bookCode}/accounts`, {
           display_code: displayCode.trim(),
           name: name.trim(),
           account_type: accountType,
-          sign,
-          unit,
           parent_account_code: parentAccountCode && parentAccountCode !== "__none__" ? parentAccountCode : undefined,
         });
       }
@@ -498,47 +672,20 @@ function AccountDialog({
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>分類</Label>
-              <Select value={accountType} onValueChange={handleTypeChange}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {ACCOUNT_TYPES.map((t) => (
-                    <SelectItem key={t.value} value={t.value}>
-                      {t.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label>符号</Label>
-              <Select
-                value={String(sign)}
-                onValueChange={(v) => setSign(Number(v))}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="-1">借方正 (-1)</SelectItem>
-                  <SelectItem value="1">貸方正 (+1)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
           <div className="space-y-2">
-            <Label>通貨</Label>
-            <Input
-              value={unit}
-              onChange={(e) => setUnit(e.target.value)}
-              placeholder="JPY"
-            />
+            <Label>分類</Label>
+            <Select value={accountType} onValueChange={setAccountType}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {ACCOUNT_TYPES.map((t) => (
+                  <SelectItem key={t.value} value={t.value}>
+                    {t.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="space-y-2">

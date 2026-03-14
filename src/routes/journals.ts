@@ -37,7 +37,7 @@ import type {
 } from "@/lib/types";
 import { recordAudit } from "@/lib/audit";
 
-const S = "data_accounting";
+const S = "data_stockflow";
 
 const app = new OpenAPIHono<{ Variables: AppVariables }>();
 
@@ -127,12 +127,33 @@ app.openapi(list, async (c) => {
   const tenantId = c.get("tenantId");
   const { limit: limitStr, cursor: cursorParam } = c.req.valid("query");
   const limit = Math.min(Number(limitStr || 50), 200);
+  const cursor = cursorParam ? decodeCursor(cursorParam) : undefined;
 
-  const rows = await listCurrent<CurrentJournal>(
-    "current_journal",
-    { tenant_id: tenantId },
-    { limit, cursor: cursorParam ? decodeCursor(cursorParam) : undefined }
-  );
+  // Exclude journals whose accounts belong to deactivated books
+  const cursorClause = cursor
+    ? `AND (cj.created_at, cj.id) < ($2::timestamptz, $3::uuid)`
+    : "";
+  const limitParam = cursor ? "$4" : "$2";
+
+  const sql = `
+    SELECT cj.* FROM "${S}"."current_journal" cj
+    WHERE cj.tenant_id = $1
+      AND NOT EXISTS (
+        SELECT 1 FROM "${S}"."journal_line" jl
+        JOIN "${S}"."current_account" ca ON ca.code = jl.account_code
+        JOIN "${S}"."current_book" cb ON cb.code = ca.book_code
+        WHERE jl.journal_id = cj.id AND cb.is_active = false
+      )
+      ${cursorClause}
+    ORDER BY cj.created_at DESC, cj.id DESC
+    LIMIT ${limitParam}
+  `;
+
+  const rows = cursor
+    ? await prisma.$queryRawUnsafe<CurrentJournal[]>(
+        sql, tenantId, cursor.created_at, cursor.id, limit
+      )
+    : await prisma.$queryRawUnsafe<CurrentJournal[]>(sql, tenantId, limit);
 
   return c.json({
     data: rows,
@@ -181,11 +202,15 @@ app.openapi(create, async (c) => {
   const userId = c.get("userId");
   const body = c.req.valid("json");
 
-  // 1. Validate fiscal_period exists and is open
-  const fp = await getCurrent<CurrentFiscalPeriod>(
-    "current_fiscal_period",
-    { tenant_id: tenantId, code: body.fiscal_period_code }
+  // 1. Validate fiscal_period exists and is open (in any active book under this tenant)
+  const fpRows = await prisma.$queryRawUnsafe<CurrentFiscalPeriod[]>(
+    `SELECT fp.* FROM "${S}"."current_fiscal_period" fp
+     JOIN "${S}"."current_book" cb ON cb.code = fp.book_code
+     WHERE cb.tenant_id = $1 AND fp.code = $2 AND cb.is_active = true LIMIT 1`,
+    tenantId,
+    body.fiscal_period_code
   );
+  const fp = fpRows[0] ?? null;
   if (!fp)
     return c.json({ error: "fiscal_period_code not found" }, 422);
   if (fp.status !== "open")
@@ -237,15 +262,21 @@ app.openapi(create, async (c) => {
     amount: l.side === "debit" ? -l.amount : l.amount,
   }));
 
-  // 5. Validate reference codes
+  // 5. Validate reference codes (only active books)
   const accountCodes = [...new Set(body.lines.map((l) => l.account_code))];
   for (const ac of accountCodes) {
-    const a = await getCurrent<CurrentAccount>("current_account", {
-      tenant_id: tenantId,
-      code: ac,
-    });
+    const aRows = await prisma.$queryRawUnsafe<CurrentAccount[]>(
+      `SELECT ca.* FROM "${S}"."current_account" ca
+       JOIN "${S}"."current_book" cb ON cb.code = ca.book_code
+       WHERE cb.tenant_id = $1 AND ca.code = $2 AND cb.is_active = true LIMIT 1`,
+      tenantId,
+      ac
+    );
+    const a = aRows[0] ?? null;
     if (!a)
       return c.json({ error: `account_code '${ac}' not found` }, 422);
+    if (!a.is_leaf)
+      return c.json({ error: `account_code '${ac}' is not a leaf account (cannot post to summary accounts)` }, 422);
   }
 
   const deptCodes = [
@@ -450,15 +481,21 @@ app.openapi(update, async (c) => {
     amount: l.side === "debit" ? -l.amount : l.amount,
   }));
 
-  // 5. Validate reference codes (same as POST)
+  // 5. Validate reference codes (only active books, same as POST)
   const accountCodes = [...new Set(body.lines.map((l) => l.account_code))];
   for (const ac of accountCodes) {
-    const a = await getCurrent<CurrentAccount>("current_account", {
-      tenant_id: tenantId,
-      code: ac,
-    });
+    const aRows = await prisma.$queryRawUnsafe<CurrentAccount[]>(
+      `SELECT ca.* FROM "${S}"."current_account" ca
+       JOIN "${S}"."current_book" cb ON cb.code = ca.book_code
+       WHERE cb.tenant_id = $1 AND ca.code = $2 AND cb.is_active = true LIMIT 1`,
+      tenantId,
+      ac
+    );
+    const a = aRows[0] ?? null;
     if (!a)
       return c.json({ error: `account_code '${ac}' not found` }, 422);
+    if (!a.is_leaf)
+      return c.json({ error: `account_code '${ac}' is not a leaf account (cannot post to summary accounts)` }, 422);
   }
 
   if (body.tags?.length) {

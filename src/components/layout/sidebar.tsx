@@ -7,6 +7,7 @@ import {
   BarChart3,
   BookOpen,
   Calendar,
+  Library,
   PanelLeftClose,
   PanelLeftOpen,
   PenLine,
@@ -25,6 +26,7 @@ const navItems = [
   { href: "/accounts", label: "勘定科目", icon: BookOpen },
   { href: "/tags", label: "タグ", icon: Tag },
   { href: "/fiscal-periods", label: "会計期間", icon: Calendar },
+  { href: "/books", label: "帳簿", icon: Library },
   { href: "/settings", label: "設定", icon: Settings },
 ];
 

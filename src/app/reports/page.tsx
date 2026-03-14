@@ -12,7 +12,15 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { opsApi, ApiError } from "@/lib/api-client";
+import { api, opsApi, ApiError } from "@/lib/api-client";
+
+interface BookRow {
+  code: string;
+  name: string;
+  unit: string;
+  type_labels: Record<string, string>;
+  is_active: boolean;
+}
 
 // ── Types ──
 
@@ -134,6 +142,14 @@ function sumRoots(roots: TreeNode[]): number {
 
 // ── Main Page ──
 
+const DEFAULT_TYPE_LABELS: Record<string, string> = {
+  asset: "資産の部",
+  liability: "負債の部",
+  equity: "純資産の部",
+  revenue: "収益の部",
+  expense: "費用の部",
+};
+
 export default function ReportsPage() {
   const [data, setData] = useState<BalanceItem[]>([]);
   const [periods, setPeriods] = useState<string[]>([]);
@@ -141,11 +157,49 @@ export default function ReportsPage() {
   const [tab, setTab] = useState<Tab>("pl");
   const [viewMode, setViewMode] = useState<ViewMode>("tree");
 
+  // Book state
+  const [books, setBooks] = useState<BookRow[]>([]);
+  const [selectedBookCode, setSelectedBookCode] = useState<string>("");
+
+  const selectedBook = useMemo(
+    () => books.find((b) => b.code === selectedBookCode) ?? null,
+    [books, selectedBookCode],
+  );
+
+  const typeLabels = useMemo(() => {
+    const labels = selectedBook?.type_labels ?? {};
+    return {
+      asset: labels.asset || DEFAULT_TYPE_LABELS.asset,
+      liability: labels.liability || DEFAULT_TYPE_LABELS.liability,
+      equity: labels.equity || DEFAULT_TYPE_LABELS.equity,
+      revenue: labels.revenue || DEFAULT_TYPE_LABELS.revenue,
+      expense: labels.expense || DEFAULT_TYPE_LABELS.expense,
+    };
+  }, [selectedBook]);
+
   // Period filter state
   const [periodFrom, setPeriodFrom] = useState<string>("__all__");
   const [periodTo, setPeriodTo] = useState<string>("__all__");
 
+  // Fetch books on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await api.get<{ data: BookRow[] }>("/books");
+        const active = res.data.filter((b) => b.is_active);
+        setBooks(active);
+        if (active.length > 0) {
+          setSelectedBookCode(active[0].code);
+        }
+      } catch (e) {
+        const msg = e instanceof ApiError ? e.body.error : "帳簿の取得に失敗しました";
+        toast.error(msg);
+      }
+    })();
+  }, []);
+
   const fetchData = useCallback(async () => {
+    if (!selectedBookCode) return;
     setLoading(true);
     try {
       const params = new URLSearchParams();
@@ -153,7 +207,7 @@ export default function ReportsPage() {
       if (periodTo !== "__all__") params.set("period_to", periodTo);
       const qs = params.toString();
       const res = await opsApi.get<{ data: BalanceItem[]; periods: string[] }>(
-        `/reports/balances${qs ? `?${qs}` : ""}`
+        `/books/${selectedBookCode}/reports/balances${qs ? `?${qs}` : ""}`
       );
       setData(res.data);
       setPeriods(res.periods);
@@ -164,7 +218,7 @@ export default function ReportsPage() {
     } finally {
       setLoading(false);
     }
-  }, [periodFrom, periodTo]);
+  }, [selectedBookCode, periodFrom, periodTo]);
 
   useEffect(() => {
     fetchData();
@@ -203,7 +257,29 @@ export default function ReportsPage() {
     <div className="p-4 md:p-6">
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-xl font-semibold">財務レポート</h2>
+        <div className="flex items-center gap-4">
+          <h2 className="text-xl font-semibold">財務レポート</h2>
+          {books.length > 1 && (
+            <Select value={selectedBookCode} onValueChange={setSelectedBookCode}>
+              <SelectTrigger className="w-48 h-8">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {books.map((b) => (
+                  <SelectItem key={b.code} value={b.code}>
+                    {b.name}
+                    <span className="text-muted-foreground ml-1 text-xs">({b.unit})</span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          {books.length === 1 && selectedBook && (
+            <Badge variant="outline" className="text-xs">
+              {selectedBook.name} ({selectedBook.unit})
+            </Badge>
+          )}
+        </div>
         <div className="flex gap-2">
           <Button
             variant="outline"
@@ -291,6 +367,7 @@ export default function ReportsPage() {
             liabilityTotal={liabilityTotal}
             equityTotal={equityTotal}
             netIncome={netIncome}
+            typeLabels={typeLabels}
           />
         ) : (
           <TreeProfitLoss
@@ -299,6 +376,7 @@ export default function ReportsPage() {
             revenueTotal={revenueTotal}
             expenseTotal={expenseTotal}
             netIncome={netIncome}
+            typeLabels={typeLabels}
           />
         )
       ) : tab === "bs" ? (
@@ -310,6 +388,7 @@ export default function ReportsPage() {
           liabilityTotal={liabilityTotal}
           equityTotal={equityTotal}
           netIncome={netIncome}
+          typeLabels={typeLabels}
         />
       ) : (
         <TAccountProfitLoss
@@ -318,6 +397,7 @@ export default function ReportsPage() {
           revenueTotal={revenueTotal}
           expenseTotal={expenseTotal}
           netIncome={netIncome}
+          typeLabels={typeLabels}
         />
       )}
     </div>
@@ -389,6 +469,14 @@ function TreeSection({
   );
 }
 
+interface TypeLabels {
+  asset: string;
+  liability: string;
+  equity: string;
+  revenue: string;
+  expense: string;
+}
+
 function TreeBalanceSheet({
   assetTree,
   liabilityTree,
@@ -397,6 +485,7 @@ function TreeBalanceSheet({
   liabilityTotal,
   equityTotal,
   netIncome,
+  typeLabels,
 }: {
   assetTree: TreeNode[];
   liabilityTree: TreeNode[];
@@ -405,16 +494,17 @@ function TreeBalanceSheet({
   liabilityTotal: number;
   equityTotal: number;
   netIncome: number;
+  typeLabels: TypeLabels;
 }) {
   return (
     <div>
-      <TreeSection title="資産の部" roots={assetTree} total={assetTotal} />
+      <TreeSection title={typeLabels.asset} roots={assetTree} total={assetTotal} />
       <TreeSection
-        title="負債の部"
+        title={typeLabels.liability}
         roots={liabilityTree}
         total={liabilityTotal}
       />
-      <TreeSection title="純資産の部" roots={equityTree} total={equityTotal} />
+      <TreeSection title={typeLabels.equity} roots={equityTree} total={equityTotal} />
 
       {/* Net income as equity addition */}
       <div className="border border-border rounded-md overflow-hidden mb-6">
@@ -435,11 +525,11 @@ function TreeBalanceSheet({
       {/* Grand totals */}
       <div className="border-t-2 border-border pt-4 space-y-2">
         <div className="flex justify-between text-sm font-bold px-3">
-          <span>資産合計</span>
+          <span>{typeLabels.asset}合計</span>
           <span className="font-mono">{formatAmount(assetTotal)}</span>
         </div>
         <div className="flex justify-between text-sm font-bold px-3">
-          <span>負債・純資産合計</span>
+          <span>{typeLabels.liability}・{typeLabels.equity}合計</span>
           <span className="font-mono">
             {formatAmount(liabilityTotal + equityTotal + netIncome)}
           </span>
@@ -463,17 +553,19 @@ function TreeProfitLoss({
   revenueTotal,
   expenseTotal,
   netIncome,
+  typeLabels,
 }: {
   revenueTree: TreeNode[];
   expenseTree: TreeNode[];
   revenueTotal: number;
   expenseTotal: number;
   netIncome: number;
+  typeLabels: TypeLabels;
 }) {
   return (
     <div>
-      <TreeSection title="収益の部" roots={revenueTree} total={revenueTotal} />
-      <TreeSection title="費用の部" roots={expenseTree} total={expenseTotal} />
+      <TreeSection title={typeLabels.revenue} roots={revenueTree} total={revenueTotal} />
+      <TreeSection title={typeLabels.expense} roots={expenseTree} total={expenseTotal} />
 
       <div className="border-t-2 border-border pt-4">
         <div className="flex justify-between text-sm font-bold px-3">
@@ -549,6 +641,7 @@ function TAccountBalanceSheet({
   liabilityTotal,
   equityTotal,
   netIncome,
+  typeLabels,
 }: {
   assetTree: TreeNode[];
   liabilityTree: TreeNode[];
@@ -557,13 +650,14 @@ function TAccountBalanceSheet({
   liabilityTotal: number;
   equityTotal: number;
   netIncome: number;
+  typeLabels: TypeLabels;
 }) {
   return (
     <div>
       <div className="flex gap-4">
         {/* Debit side = Assets */}
         <TAccountSide
-          title="借方（資産）"
+          title={`借方（${typeLabels.asset}）`}
           roots={assetTree}
           total={assetTotal}
         />
@@ -574,12 +668,12 @@ function TAccountBalanceSheet({
         {/* Credit side = Liabilities + Equity */}
         <div className="flex-1 min-w-0 space-y-3">
           <TAccountSide
-            title="貸方（負債）"
+            title={`貸方（${typeLabels.liability}）`}
             roots={liabilityTree}
             total={liabilityTotal}
           />
           <TAccountSide
-            title="貸方（純資産）"
+            title={`貸方（${typeLabels.equity}）`}
             roots={equityTree}
             total={equityTotal}
           />
@@ -622,12 +716,14 @@ function TAccountProfitLoss({
   revenueTotal,
   expenseTotal,
   netIncome,
+  typeLabels,
 }: {
   revenueTree: TreeNode[];
   expenseTree: TreeNode[];
   revenueTotal: number;
   expenseTotal: number;
   netIncome: number;
+  typeLabels: TypeLabels;
 }) {
   return (
     <div>
@@ -635,7 +731,7 @@ function TAccountProfitLoss({
         {/* Debit side = Expenses */}
         <div className="flex-1 min-w-0 space-y-3">
           <TAccountSide
-            title="借方（費用）"
+            title={`借方（${typeLabels.expense}）`}
             roots={expenseTree}
             total={expenseTotal}
           />
@@ -662,7 +758,7 @@ function TAccountProfitLoss({
         {/* Credit side = Revenue */}
         <div className="flex-1 min-w-0 space-y-3">
           <TAccountSide
-            title="貸方（収益）"
+            title={`貸方（${typeLabels.revenue}）`}
             roots={revenueTree}
             total={revenueTotal}
           />

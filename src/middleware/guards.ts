@@ -1,5 +1,6 @@
 import { createMiddleware } from "hono/factory";
 import { HTTPException } from "hono/http-exception";
+import { prisma } from "@/lib/prisma";
 import type { AppVariables, UserRole } from "./context";
 
 export const requireTenant = () =>
@@ -26,6 +27,35 @@ export const requireRole = (...roles: UserRole[]) =>
         message: `Required role: ${roles.join(" | ")}`,
       });
     }
+    await next();
+  });
+
+/**
+ * Resolve bookCode path param → verify tenant ownership + active status.
+ * Sets c.get("bookCode") for downstream handlers.
+ */
+export const requireBook = () =>
+  createMiddleware<{ Variables: AppVariables }>(async (c, next) => {
+    const bookCode = c.req.param("bookCode");
+    if (!bookCode) {
+      throw new HTTPException(400, { message: "bookCode is required" });
+    }
+    const tenantId = c.get("tenantId");
+    const rows = await prisma.$queryRawUnsafe<
+      { code: string; is_active: boolean }[]
+    >(
+      `SELECT code, is_active FROM "data_stockflow"."current_book"
+       WHERE tenant_id = $1 AND code = $2 LIMIT 1`,
+      tenantId,
+      bookCode
+    );
+    if (rows.length === 0) {
+      throw new HTTPException(404, { message: "Book not found" });
+    }
+    if (!rows[0].is_active) {
+      throw new HTTPException(410, { message: "Book is deactivated" });
+    }
+    c.set("bookCode", bookCode);
     await next();
   });
 

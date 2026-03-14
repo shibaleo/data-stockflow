@@ -53,10 +53,24 @@ export const idParamSchema = z.object({
 });
 
 // ============================================================
-// Account
+// Book
 // ============================================================
 
-export const accountResponseSchema = z.object({
+export const bookCodeParamSchema = z.object({
+  bookCode: z.string().openapi({ example: "default" }),
+});
+
+export const typeLabelsSchema = z.record(
+  z.enum(["asset", "liability", "equity", "revenue", "expense"]),
+  z.string().max(50)
+).openapi({ example: { asset: "在庫", revenue: "入荷" } });
+
+/** Permissive type_labels for response (Prisma returns JsonValue) */
+const typeLabelsResponseSchema = z.record(z.string(), z.string()).openapi({
+  example: { asset: "在庫", revenue: "入荷" },
+});
+
+export const bookResponseSchema = z.object({
   id: z.string(),
   tenant_id: z.string(),
   code: z.string(),
@@ -68,7 +82,41 @@ export const accountResponseSchema = z.object({
   created_at: z.string(),
   name: z.string(),
   unit: z.string(),
+  type_labels: typeLabelsResponseSchema,
   is_active: z.boolean(),
+});
+
+export const createBookSchema = z.object({
+  display_code: zSanitized(z.string().min(1).max(50)).optional(),
+  name: zSanitized(z.string().min(1).max(200)),
+  unit: zSanitized(z.string().min(1).max(50)),
+  type_labels: typeLabelsSchema.optional(),
+});
+
+export const updateBookSchema = z.object({
+  display_code: zSanitized(z.string().min(1).max(50)).optional(),
+  name: zSanitized(z.string().min(1).max(200)).optional(),
+  unit: zSanitized(z.string().min(1).max(50)).optional(),
+  type_labels: typeLabelsSchema.optional(),
+});
+
+// ============================================================
+// Account
+// ============================================================
+
+export const accountResponseSchema = z.object({
+  id: z.string(),
+  book_code: z.string(),
+  code: z.string(),
+  display_code: z.string(),
+  revision: z.number(),
+  valid_from: z.string(),
+  valid_to: z.string().nullable(),
+  created_by: z.string(),
+  created_at: z.string(),
+  name: z.string(),
+  is_active: z.boolean(),
+  is_leaf: z.boolean(),
   account_type: z.string(),
   sign: z.number(),
   parent_account_code: z.string().nullable(),
@@ -77,7 +125,6 @@ export const accountResponseSchema = z.object({
 export const createAccountSchema = z.object({
   display_code: zSanitized(z.string().min(1).max(50)),
   name: zSanitized(z.string().min(1).max(200)),
-  unit: z.string().default("JPY"),
   account_type: z.enum([
     "asset",
     "liability",
@@ -85,10 +132,6 @@ export const createAccountSchema = z.object({
     "revenue",
     "expense",
   ]),
-  sign: z.union([z.literal(1), z.literal(-1)]).openapi({
-    description: "Normal balance direction: +1 for accounts that normally have a credit balance (liabilities, equity, revenue), -1 for accounts that normally have a debit balance (assets, expenses). This is metadata for reporting and does NOT affect journal entry amounts.",
-    example: -1,
-  }),
   parent_account_code: z.string().optional(),
   valid_from: z.string().datetime().optional(),
 });
@@ -96,13 +139,9 @@ export const createAccountSchema = z.object({
 export const updateAccountSchema = z.object({
   display_code: zSanitized(z.string().min(1).max(50)).optional(),
   name: zSanitized(z.string().min(1).max(200)).optional(),
-  unit: z.string().optional(),
   account_type: z
     .enum(["asset", "liability", "equity", "revenue", "expense"])
     .optional(),
-  sign: z.union([z.literal(1), z.literal(-1)]).openapi({
-    description: "Normal balance direction: +1 for credit-normal accounts, -1 for debit-normal accounts.",
-  }).optional(),
   parent_account_code: z.string().nullable().optional(),
   valid_from: z.string().datetime().optional(),
 });
@@ -182,7 +221,7 @@ export const updateDepartmentSchema = z.object({
 
 export const fiscalPeriodResponseSchema = z.object({
   id: z.string(),
-  tenant_id: z.string(),
+  book_code: z.string(),
   code: z.string(),
   display_code: z.string(),
   revision: z.number(),
@@ -330,7 +369,7 @@ export const updateTenantSettingSchema = z.object({
 
 export const accountMappingResponseSchema = z.object({
   id: z.string(),
-  tenant_id: z.string(),
+  book_code: z.string(),
   source_system: z.string(),
   source_field: z.string(),
   source_value: z.string(),
@@ -364,7 +403,7 @@ export const updateAccountMappingSchema = z.object({
 
 export const paymentMappingResponseSchema = z.object({
   id: z.string(),
-  tenant_id: z.string(),
+  book_code: z.string(),
   source_system: z.string(),
   payment_method: z.string(),
   revision: z.number(),

@@ -7,6 +7,7 @@ export type AppVariables = {
   tenantId: string;
   userId: string;
   userRole: UserRole;
+  bookCode: string;
 };
 
 export const contextMiddleware = createMiddleware<{

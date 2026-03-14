@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Plus, Pencil, RefreshCw, ArrowUpDown, ArrowUp, ArrowDown, CalendarPlus } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -23,6 +23,13 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { api, ApiError } from "@/lib/api-client";
+
+interface BookRow {
+  code: string;
+  name: string;
+  unit: string;
+  is_active: boolean;
+}
 
 interface FiscalPeriodRow {
   code: string;
@@ -54,6 +61,15 @@ export default function FiscalPeriodsPage() {
   const [editCode, setEditCode] = useState<string | null>(null);
   const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
 
+  // Book state
+  const [books, setBooks] = useState<BookRow[]>([]);
+  const [selectedBookCode, setSelectedBookCode] = useState<string>("");
+
+  const selectedBook = useMemo(
+    () => books.find((b) => b.code === selectedBookCode) ?? null,
+    [books, selectedBookCode],
+  );
+
   type SortKey = "display_code" | "fiscal_year" | "period_no" | "start_date" | "status" | "revision";
   type SortDir = "asc" | "desc";
   const [sortKey, setSortKey] = useState<SortKey>("start_date");
@@ -84,10 +100,28 @@ export default function FiscalPeriodsPage() {
       : <ArrowDown className="h-3 w-3 ml-1" />;
   };
 
+  // Fetch books on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await api.get<{ data: BookRow[] }>("/books");
+        const active = res.data.filter((b) => b.is_active);
+        setBooks(active);
+        if (active.length > 0) {
+          setSelectedBookCode(active[0].code);
+        }
+      } catch (e) {
+        const msg = e instanceof ApiError ? e.body.error : "帳簿の取得に失敗しました";
+        toast.error(msg);
+      }
+    })();
+  }, []);
+
   const fetchPeriods = useCallback(async () => {
+    if (!selectedBookCode) return;
     setLoading(true);
     try {
-      const res = await api.get<{ data: FiscalPeriodRow[] }>("/fiscal-periods?limit=200");
+      const res = await api.get<{ data: FiscalPeriodRow[] }>(`/books/${selectedBookCode}/fiscal-periods?limit=200`);
       setPeriods(res.data);
     } catch (e) {
       const msg = e instanceof ApiError ? e.body.error : "会計期間の取得に失敗しました";
@@ -95,7 +129,7 @@ export default function FiscalPeriodsPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [selectedBookCode]);
 
   useEffect(() => {
     fetchPeriods();
@@ -127,7 +161,29 @@ export default function FiscalPeriodsPage() {
   return (
     <div className="p-4 md:p-6">
       <div className="flex items-center justify-between mb-6">
-        <h2 className="text-xl font-semibold">会計期間</h2>
+        <div className="flex items-center gap-4">
+          <h2 className="text-xl font-semibold">会計期間</h2>
+          {books.length > 1 && (
+            <Select value={selectedBookCode} onValueChange={setSelectedBookCode}>
+              <SelectTrigger className="w-48 h-8">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {books.map((b) => (
+                  <SelectItem key={b.code} value={b.code}>
+                    {b.name}
+                    <span className="text-muted-foreground ml-1 text-xs">({b.unit})</span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          {books.length === 1 && selectedBook && (
+            <Badge variant="outline" className="text-xs">
+              {selectedBook.name} ({selectedBook.unit})
+            </Badge>
+          )}
+        </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={fetchPeriods}>
             <RefreshCw className="h-4 w-4" />
@@ -228,12 +284,14 @@ export default function FiscalPeriodsPage() {
         onOpenChange={setDialogOpen}
         editCode={editCode}
         periods={periods}
+        bookCode={selectedBookCode}
         onSuccess={handleSuccess}
       />
 
       <BulkCreateDialog
         open={bulkDialogOpen}
         onOpenChange={setBulkDialogOpen}
+        bookCode={selectedBookCode}
         onSuccess={handleBulkSuccess}
       />
     </div>
@@ -247,6 +305,7 @@ interface DialogProps {
   onOpenChange: (open: boolean) => void;
   editCode: string | null;
   periods: FiscalPeriodRow[];
+  bookCode: string;
   onSuccess: () => void;
 }
 
@@ -255,6 +314,7 @@ function FiscalPeriodDialog({
   onOpenChange,
   editCode,
   periods,
+  bookCode,
   onSuccess,
 }: DialogProps) {
   const [loading, setLoading] = useState(false);
@@ -327,9 +387,9 @@ function FiscalPeriodDialog({
       };
 
       if (editCode) {
-        await api.put(`/fiscal-periods/${editCode}`, payload);
+        await api.put(`/books/${bookCode}/fiscal-periods/${editCode}`, payload);
       } else {
-        await api.post("/fiscal-periods", payload);
+        await api.post(`/books/${bookCode}/fiscal-periods`, payload);
       }
       onSuccess();
     } catch (e) {
@@ -444,10 +504,12 @@ function FiscalPeriodDialog({
 function BulkCreateDialog({
   open,
   onOpenChange,
+  bookCode,
   onSuccess,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  bookCode: string;
   onSuccess: () => void;
 }) {
   const [loading, setLoading] = useState(false);
@@ -491,7 +553,7 @@ function BulkCreateDialog({
     try {
       for (const p of preview) {
         setProgress(`${created + 1}/12 作成中...`);
-        await api.post("/fiscal-periods", {
+        await api.post(`/books/${bookCode}/fiscal-periods`, {
           display_code: p.code,
           fiscal_year: year,
           period_no: p.periodNo,

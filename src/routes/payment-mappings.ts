@@ -19,13 +19,13 @@ import {
   paymentMappingResponseSchema,
 } from "@/lib/validators";
 import type { AppVariables } from "@/middleware/context";
-import { requireTenant, requireAuth, requireRole } from "@/middleware/guards";
+import { requireTenant, requireAuth, requireRole, requireBook } from "@/middleware/guards";
 import type { CurrentPaymentMapping, CurrentAccount } from "@/lib/types";
 import { recordAudit } from "@/lib/audit";
 
 const app = new OpenAPIHono<{ Variables: AppVariables }>();
 
-app.use("*", requireTenant(), requireAuth());
+app.use("*", requireTenant(), requireAuth(), requireBook());
 
 const list = createRoute({
   method: "get",
@@ -106,13 +106,13 @@ const restore = createRoute({
 // ---- Handlers ----
 
 app.openapi(list, async (c) => {
-  const tenantId = c.get("tenantId");
+  const bookCode = c.get("bookCode");
   const { limit: limitStr, cursor: cursorParam } = c.req.valid("query");
   const limit = Math.min(Number(limitStr || 50), 200);
 
   const rows = await listCurrent<CurrentPaymentMapping>(
     "current_payment_mapping",
-    { tenant_id: tenantId },
+    { book_code: bookCode },
     { limit, cursor: cursorParam ? decodeCursor(cursorParam) : undefined }
   );
 
@@ -124,12 +124,12 @@ app.openapi(list, async (c) => {
 });
 
 app.openapi(get, async (c) => {
-  const tenantId = c.get("tenantId");
+  const bookCode = c.get("bookCode");
   const { id } = c.req.valid("param");
 
   const row = await getCurrent<CurrentPaymentMapping>(
     "current_payment_mapping",
-    { tenant_id: tenantId, id }
+    { book_code: bookCode, id }
   );
   if (!row) return c.json({ error: "Not found" }, 404);
   return c.json({ data: row }, 200);
@@ -137,14 +137,14 @@ app.openapi(get, async (c) => {
 
 app.use(create.getRoutingPath(), requireRole("admin"));
 app.openapi(create, async (c) => {
-  const tenantId = c.get("tenantId");
+  const bookCode = c.get("bookCode");
   const userId = c.get("userId");
   const body = c.req.valid("json");
 
   const existing = await getCurrent<CurrentPaymentMapping>(
     "current_payment_mapping",
     {
-      tenant_id: tenantId,
+      book_code: bookCode,
       source_system: body.source_system,
       payment_method: body.payment_method,
     }
@@ -152,14 +152,14 @@ app.openapi(create, async (c) => {
   if (existing) return c.json({ error: "Mapping already exists" }, 409);
 
   const account = await getCurrent<CurrentAccount>("current_account", {
-    tenant_id: tenantId,
+    book_code: bookCode,
     code: body.account_code,
   });
   if (!account) return c.json({ error: "account_code not found" }, 422);
 
   const created = await prisma.paymentMapping.create({
     data: {
-      tenant_id: tenantId,
+      book_code: bookCode,
       source_system: body.source_system,
       payment_method: body.payment_method,
       revision: 1,
@@ -175,14 +175,14 @@ app.openapi(create, async (c) => {
 
 app.use(update.getRoutingPath(), requireRole("admin"));
 app.openapi(update, async (c) => {
-  const tenantId = c.get("tenantId");
+  const bookCode = c.get("bookCode");
   const userId = c.get("userId");
   const { id } = c.req.valid("param");
   const body = c.req.valid("json");
 
   const current = await getCurrent<CurrentPaymentMapping>(
     "current_payment_mapping",
-    { tenant_id: tenantId, id }
+    { book_code: bookCode, id }
   );
   if (!current) return c.json({ error: "Not found" }, 404);
   if (!current.is_active)
@@ -190,21 +190,21 @@ app.openapi(update, async (c) => {
 
   if (body.account_code) {
     const account = await getCurrent<CurrentAccount>("current_account", {
-      tenant_id: tenantId,
+      book_code: bookCode,
       code: body.account_code,
     });
     if (!account) return c.json({ error: "account_code not found" }, 422);
   }
 
   const maxRev = await getMaxRevision("payment_mapping", {
-    tenant_id: tenantId,
+    book_code: bookCode,
     source_system: current.source_system,
     payment_method: current.payment_method,
   });
 
   const updated = await prisma.paymentMapping.create({
     data: {
-      tenant_id: tenantId,
+      book_code: bookCode,
       source_system: current.source_system,
       payment_method: current.payment_method,
       revision: maxRev + 1,
@@ -220,26 +220,26 @@ app.openapi(update, async (c) => {
 
 app.use(del.getRoutingPath(), requireRole("admin"));
 app.openapi(del, async (c) => {
-  const tenantId = c.get("tenantId");
+  const bookCode = c.get("bookCode");
   const userId = c.get("userId");
   const { id } = c.req.valid("param");
 
   const current = await getCurrent<CurrentPaymentMapping>(
     "current_payment_mapping",
-    { tenant_id: tenantId, id }
+    { book_code: bookCode, id }
   );
   if (!current) return c.json({ error: "Not found" }, 404);
   if (!current.is_active) return c.json({ error: "Already inactive" }, 409);
 
   const maxRev = await getMaxRevision("payment_mapping", {
-    tenant_id: tenantId,
+    book_code: bookCode,
     source_system: current.source_system,
     payment_method: current.payment_method,
   });
 
   await prisma.paymentMapping.create({
     data: {
-      tenant_id: tenantId,
+      book_code: bookCode,
       source_system: current.source_system,
       payment_method: current.payment_method,
       revision: maxRev + 1,
@@ -255,26 +255,26 @@ app.openapi(del, async (c) => {
 
 app.use(restore.getRoutingPath(), requireRole("admin"));
 app.openapi(restore, async (c) => {
-  const tenantId = c.get("tenantId");
+  const bookCode = c.get("bookCode");
   const userId = c.get("userId");
   const { id } = c.req.valid("param");
 
   const current = await getCurrent<CurrentPaymentMapping>(
     "current_payment_mapping",
-    { tenant_id: tenantId, id }
+    { book_code: bookCode, id }
   );
   if (!current) return c.json({ error: "Not found" }, 404);
   if (current.is_active) return c.json({ error: "Already active" }, 409);
 
   const maxRev = await getMaxRevision("payment_mapping", {
-    tenant_id: tenantId,
+    book_code: bookCode,
     source_system: current.source_system,
     payment_method: current.payment_method,
   });
 
   await prisma.paymentMapping.create({
     data: {
-      tenant_id: tenantId,
+      book_code: bookCode,
       source_system: current.source_system,
       payment_method: current.payment_method,
       revision: maxRev + 1,

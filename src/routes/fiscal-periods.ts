@@ -18,12 +18,12 @@ import {
   fiscalPeriodResponseSchema,
 } from "@/lib/validators";
 import type { AppVariables } from "@/middleware/context";
-import { requireTenant, requireAuth, requireRole } from "@/middleware/guards";
+import { requireTenant, requireAuth, requireRole, requireBook } from "@/middleware/guards";
 import type { CurrentFiscalPeriod } from "@/lib/types";
 import { recordAudit } from "@/lib/audit";
 
 const app = new OpenAPIHono<{ Variables: AppVariables }>();
-app.use("*", requireTenant(), requireAuth());
+app.use("*", requireTenant(), requireAuth(), requireBook());
 
 const list = createRoute({
   method: "get",
@@ -78,11 +78,11 @@ const update = createRoute({
 // ---- Handlers ----
 
 app.openapi(list, async (c) => {
-  const tenantId = c.get("tenantId");
+  const bookCode = c.get("bookCode");
   const { limit: limitStr, cursor: cursorParam } = c.req.valid("query");
   const limit = Math.min(Number(limitStr || 50), 200);
 
-  const rows = await listCurrent<CurrentFiscalPeriod>("current_fiscal_period", { tenant_id: tenantId }, {
+  const rows = await listCurrent<CurrentFiscalPeriod>("current_fiscal_period", { book_code: bookCode }, {
     limit, cursor: cursorParam ? decodeCursor(cursorParam) : undefined,
   });
 
@@ -90,22 +90,22 @@ app.openapi(list, async (c) => {
 });
 
 app.openapi(get, async (c) => {
-  const tenantId = c.get("tenantId");
+  const bookCode = c.get("bookCode");
   const { code } = c.req.valid("param");
-  const row = await getCurrent<CurrentFiscalPeriod>("current_fiscal_period", { tenant_id: tenantId, code });
+  const row = await getCurrent<CurrentFiscalPeriod>("current_fiscal_period", { book_code: bookCode, code });
   if (!row) return c.json({ error: "Not found" }, 404);
   return c.json({ data: row }, 200);
 });
 
 app.use(create.getRoutingPath(), requireRole("admin"));
 app.openapi(create, async (c) => {
-  const tenantId = c.get("tenantId");
+  const bookCode = c.get("bookCode");
   const userId = c.get("userId");
   const body = c.req.valid("json");
 
   const created = await prisma.fiscalPeriod.create({
     data: {
-      tenant_id: tenantId, display_code: body.display_code, revision: 1,
+      book_code: bookCode, display_code: body.display_code, revision: 1,
       valid_from: body.valid_from ? new Date(body.valid_from) : undefined,
       created_by: userId, fiscal_year: body.fiscal_year, period_no: body.period_no,
       start_date: new Date(body.start_date), end_date: new Date(body.end_date),
@@ -118,19 +118,19 @@ app.openapi(create, async (c) => {
 
 app.use(update.getRoutingPath(), requireRole("admin"));
 app.openapi(update, async (c) => {
-  const tenantId = c.get("tenantId");
+  const bookCode = c.get("bookCode");
   const userId = c.get("userId");
   const { code } = c.req.valid("param");
   const body = c.req.valid("json");
 
-  const current = await getCurrent<CurrentFiscalPeriod>("current_fiscal_period", { tenant_id: tenantId, code });
+  const current = await getCurrent<CurrentFiscalPeriod>("current_fiscal_period", { book_code: bookCode, code });
   if (!current) return c.json({ error: "Not found" }, 404);
 
-  const maxRev = await getMaxRevision("fiscal_period", { tenant_id: tenantId, code });
+  const maxRev = await getMaxRevision("fiscal_period", { book_code: bookCode, code });
 
   const updated = await prisma.fiscalPeriod.create({
     data: {
-      tenant_id: tenantId, code,
+      book_code: bookCode, code,
       display_code: body.display_code !== undefined ? body.display_code : current.display_code,
       revision: maxRev + 1, valid_from: body.valid_from ? new Date(body.valid_from) : undefined,
       created_by: userId,

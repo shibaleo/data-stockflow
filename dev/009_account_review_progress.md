@@ -1,6 +1,6 @@
 # 勘定科目見直し — 進捗メモ
 
-## 方針（更新: 2026-03-13）
+## 方針（更新: 2026-03-14）
 
 Zaim アカウントを作り直し、**デフォルトカテゴリ/ジャンルのみ**で記帳する。
 stockflow 側の account-mapping でデフォルトカテゴリ → 勘定科目に変換する。
@@ -80,6 +80,52 @@ stockflow 側の account-mapping でデフォルトカテゴリ → 勘定科目
 
 ---
 
+## 勘定科目の粒度設計（確定: 2026-03-14）
+
+### 原則
+
+- **勘定科目（仕訳行）が金額追跡の最小単位**
+  - 例: 給与明細 → 所得税・住民税・健康保険料はそれぞれ別の仕訳行・別の勘定科目
+- **タグは直交する多次元分析用**
+  - 金額の集計単位ではなく、仕訳行に横断的に付与するラベル
+  - Zaim のタグ機能とも対応可能
+
+### is_leaf（末端科目フラグ）
+
+account テーブルに `is_leaf: boolean` を追加。
+
+| is_leaf | 意味 | 記帳 |
+|---------|------|------|
+| true | 末端科目 | 可（仕訳行で指定可能） |
+| false | 集約科目（子を持つ） | 不可（仕訳バリデーションで拒否） |
+
+### フィラー自動生成
+
+末端科目に初めて子を作成した場合、以下をトランザクション内で自動実行:
+
+1. 親の新リビジョンを INSERT（`is_leaf = false`）
+2. フィラー子「{親の名前}（その他）」を INSERT（`is_leaf = true`）
+3. 既存仕訳行の `account_code` を親 → フィラーに付け替え
+
+これにより、既存データの整合性を維持しつつ親を集約専用に切り替える。
+
+### レイヤー
+
+- `is_leaf` は **Atomic API 内部のドメインロジック** として管理
+- API からの直接操作は不可（create/update スキーマに `is_leaf` フィールドなし）
+- 勘定科目作成時に親子関係に基づき自動で計算・遷移
+
+### 実装済みファイル
+
+- `prisma/schema.prisma` — `is_leaf` カラム追加
+- `prisma/migrations/20260314000000_add_account_is_leaf/` — マイグレーション（既存データ計算含む）
+- `src/lib/types.ts` — `CurrentAccount` に `is_leaf` 追加
+- `src/lib/validators.ts` — `accountResponseSchema` に `is_leaf` 追加（レスポンスのみ）
+- `src/routes/accounts.ts` — フィラー自動生成ロジック、update/deactivate/restore で `is_leaf` 保持
+- `src/routes/journals.ts` — 仕訳作成・更新時に `is_leaf = true` バリデーション
+
+---
+
 ## 費用科目構造 — 未着手
 
 デフォルト payment カテゴリ/ジャンル → 勘定科目のマッピング表を設計する。
@@ -96,8 +142,11 @@ stockflow 側の account-mapping でデフォルトカテゴリ → 勘定科目
 - [ ] デフォルトカテゴリで全取引を再入力
 - [ ] stockflow に account-mapping をシード投入
 
-### API / 機能
-- [ ] Zaim → journal 変換パイプライン実装
-- [ ] レポート API 充実（試算表・総勘定元帳・仕訳帳）
-- [ ] 一括仕訳 API（POST /api/ops/v1/journals/batch）
+### Atomic API / ドメインロジック
+- [x] is_leaf 設計・実装（マイグレーション、フィラー自動生成、仕訳バリデーション）
 - [ ] 閉鎖済期間の記帳拒否（journals POST/PUT で status=closed 拒否）
+- [ ] Zaim → journal 変換パイプライン実装
+
+### Operations API（開発中止 — Atomic とドメインロジック優先）
+- [ ] レポート API（試算表・総勘定元帳・仕訳帳）
+- [ ] 一括仕訳 API（POST /api/ops/v1/journals/batch）

@@ -3,10 +3,10 @@ import { z } from "@hono/zod-openapi";
 import { prisma } from "@/lib/prisma";
 import { errorSchema } from "@/lib/validators";
 import type { AppVariables } from "@/middleware/context";
-import { requireTenant, requireAuth } from "@/middleware/guards";
+import { requireTenant, requireAuth, requireBook } from "@/middleware/guards";
 
 const app = new OpenAPIHono<{ Variables: AppVariables }>();
-app.use("*", requireTenant(), requireAuth());
+app.use("*", requireTenant(), requireAuth(), requireBook());
 
 // ── Response schema ──
 
@@ -72,16 +72,22 @@ interface PeriodRow {
 }
 
 app.openapi(balances, async (c) => {
-  const tenantId = c.get("tenantId")!;
+  const bookCode = c.get("bookCode");
+  const tenantId = c.get("tenantId");
   const { period_from, period_to } = c.req.valid("query");
 
   // Build fiscal period code filters by resolving display_code → code
   const conditions: string[] = [
-    "a.tenant_id = $1",
+    "a.book_code = $1",
     "a.is_active = true",
   ];
-  const params: (string | null)[] = [tenantId];
+  const params: (string | null)[] = [bookCode];
   let paramIdx = 2;
+
+  // We need tenantId for journal_line filtering
+  params.push(tenantId);
+  const tenantParamIdx = paramIdx;
+  paramIdx++;
 
   // Filter journal lines by period range via journal_header
   let periodJoin = "";
@@ -100,10 +106,10 @@ app.openapi(balances, async (c) => {
 
   if (periodConditions.length > 0) {
     periodJoin = `
-      JOIN data_accounting.journal_header jh
+      JOIN data_stockflow.journal_header jh
         ON jh.idempotency_code = j.idempotency_code AND jh.tenant_id = j.tenant_id
-      JOIN data_accounting.current_fiscal_period fp_filter
-        ON fp_filter.code = jh.fiscal_period_code AND fp_filter.tenant_id = jh.tenant_id
+      JOIN data_stockflow.current_fiscal_period fp_filter
+        ON fp_filter.code = jh.fiscal_period_code AND fp_filter.book_code = $1
         AND ${periodConditions.join(" AND ")}`;
   }
 
@@ -117,17 +123,17 @@ app.openapi(balances, async (c) => {
       a.parent_account_code,
       pa.display_code AS parent_display_code,
       COALESCE(bal.balance, 0)::text AS balance
-    FROM data_accounting.current_account a
-    LEFT JOIN data_accounting.current_account pa
-      ON pa.code = a.parent_account_code AND pa.tenant_id = a.tenant_id
+    FROM data_stockflow.current_account a
+    LEFT JOIN data_stockflow.current_account pa
+      ON pa.code = a.parent_account_code AND pa.book_code = a.book_code
     LEFT JOIN LATERAL (
       SELECT SUM(jl.amount) AS balance
-      FROM data_accounting.journal_line jl
-      JOIN data_accounting.journal j
+      FROM data_stockflow.journal_line jl
+      JOIN data_stockflow.journal j
         ON j.id = jl.journal_id AND j.tenant_id = jl.tenant_id
         AND j.is_active = true
       ${periodJoin}
-      WHERE jl.tenant_id = $1
+      WHERE jl.tenant_id = $${tenantParamIdx}
         AND jl.account_code = a.code
     ) bal ON true
     WHERE ${conditions.join(" AND ")}
@@ -138,9 +144,9 @@ app.openapi(balances, async (c) => {
 
   // Also fetch available periods for the frontend selector
   const periods = await prisma.$queryRawUnsafe<PeriodRow[]>(
-    `SELECT display_code FROM data_accounting.current_fiscal_period
-     WHERE tenant_id = $1 ORDER BY display_code`,
-    tenantId
+    `SELECT display_code FROM data_stockflow.current_fiscal_period
+     WHERE book_code = $1 ORDER BY display_code`,
+    bookCode
   );
 
   return c.json(

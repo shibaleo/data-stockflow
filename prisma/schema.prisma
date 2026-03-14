@@ -5,17 +5,38 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  schemas  = ["data_accounting"]
+  schemas  = ["data_stockflow"]
 }
 
 // ============================================================
 // マスタ系
 // ============================================================
 
+/// 帳簿（単位系ごとの独立した帳簿）
+model Book {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenant_id    String    @db.Uuid
+  code         String    @default(dbgenerated("gen_random_uuid()::text")) /// [identity] システム自動生成・不変
+  display_code String    /// [display] ユーザー向けコード（編集可）
+  revision     Int       @default(1)
+  valid_from   DateTime  @default(now()) @db.Timestamptz()
+  valid_to     DateTime? @db.Timestamptz()
+  created_by   String    @db.Uuid
+  created_at   DateTime  @default(now()) @db.Timestamptz()
+  name         String
+  unit         String    /// "JPY", "USD", "candy_pcs", ...
+  type_labels  Json      @default("{}") /// {"asset":"在庫","revenue":"入荷",...}
+  is_active    Boolean   @default(true)
+
+  @@unique([tenant_id, code, revision])
+  @@map("book")
+  @@schema("data_stockflow")
+}
+
 /// 勘定科目
 model Account {
   id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  tenant_id          String    @db.Uuid
+  book_code          String    /// → book.code [identity]
   code               String    @default(dbgenerated("gen_random_uuid()::text")) /// [identity] システム自動生成・不変
   display_code       String    /// [display] ユーザー向け科目コード（編集可）
   revision           Int       @default(1)
@@ -24,15 +45,14 @@ model Account {
   created_by         String    @db.Uuid
   created_at         DateTime  @default(now()) @db.Timestamptz()
   name               String
-  unit               String    @default("JPY")
   is_active          Boolean   @default(true)
+  is_leaf            Boolean   @default(true) /// true=記帳可能（末端）, false=集約専用（子を持つ）
   account_type       String    /// asset, liability, equity, revenue, expense
-  sign               Int       /// +1=貸方正, -1=借方正
   parent_account_code String?  /// → account.code [identity]
 
-  @@unique([tenant_id, code, revision])
+  @@unique([book_code, code, revision])
   @@map("account")
-  @@schema("data_accounting")
+  @@schema("data_stockflow")
 }
 
 /// タグ（汎用分類）
@@ -52,13 +72,13 @@ model Tag {
 
   @@unique([tenant_id, code, revision])
   @@map("tag")
-  @@schema("data_accounting")
+  @@schema("data_stockflow")
 }
 
 /// 会計期間
 model FiscalPeriod {
   id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  tenant_id    String    @db.Uuid
+  book_code    String    /// → book.code [identity]
   code         String    @default(dbgenerated("gen_random_uuid()::text")) /// [identity] システム自動生成・不変
   display_code String    /// [display] 編集可
   revision     Int       @default(1)
@@ -72,9 +92,9 @@ model FiscalPeriod {
   end_date     DateTime  @db.Timestamptz()
   status       String    @default("open") /// open, closed, finalized
 
-  @@unique([tenant_id, code, revision])
+  @@unique([book_code, code, revision])
   @@map("fiscal_period")
-  @@schema("data_accounting")
+  @@schema("data_stockflow")
 }
 
 /// 部門
@@ -95,7 +115,7 @@ model Department {
 
   @@unique([tenant_id, code, revision])
   @@map("department")
-  @@schema("data_accounting")
+  @@schema("data_stockflow")
 }
 
 /// 消費税区分（グローバル、tenant_id なし）
@@ -117,7 +137,7 @@ model TaxClass {
 
   @@unique([code, revision])
   @@map("tax_class")
-  @@schema("data_accounting")
+  @@schema("data_stockflow")
 }
 
 /// 取引先
@@ -138,7 +158,7 @@ model Counterparty {
 
   @@unique([tenant_id, code, revision])
   @@map("counterparty")
-  @@schema("data_accounting")
+  @@schema("data_stockflow")
 }
 
 /// テナント設定
@@ -154,13 +174,13 @@ model TenantSetting {
 
   @@unique([tenant_id, revision])
   @@map("tenant_setting")
-  @@schema("data_accounting")
+  @@schema("data_stockflow")
 }
 
 /// カテゴリ→科目マッピング
 model AccountMapping {
   id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  tenant_id     String    @db.Uuid
+  book_code     String    /// → book.code [identity]
   source_system String
   source_field  String
   source_value  String
@@ -173,15 +193,15 @@ model AccountMapping {
   is_active     Boolean   @default(true)
   account_code  String    /// → account.code [identity]
 
-  @@unique([tenant_id, source_system, source_field, source_value, side, revision])
+  @@unique([book_code, source_system, source_field, source_value, side, revision])
   @@map("account_mapping")
-  @@schema("data_accounting")
+  @@schema("data_stockflow")
 }
 
 /// 決済手段→科目マッピング
 model PaymentMapping {
   id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  tenant_id      String    @db.Uuid
+  book_code      String    /// → book.code [identity]
   source_system  String
   payment_method String
   revision       Int       @default(1)
@@ -192,9 +212,9 @@ model PaymentMapping {
   is_active      Boolean   @default(true)
   account_code   String    /// → account.code [identity]
 
-  @@unique([tenant_id, source_system, payment_method, revision])
+  @@unique([book_code, source_system, payment_method, revision])
   @@map("payment_mapping")
-  @@schema("data_accounting")
+  @@schema("data_stockflow")
 }
 
 // ============================================================
@@ -211,7 +231,7 @@ model TenantUser {
   created_at  DateTime @default(now()) @db.Timestamptz()
 
   @@map("tenant_user")
-  @@schema("data_accounting")
+  @@schema("data_stockflow")
 }
 
 // ============================================================
@@ -235,7 +255,7 @@ model AuditLog {
   @@index([tenant_id, created_at])
   @@index([entity_type, entity_code])
   @@map("audit_log")
-  @@schema("data_accounting")
+  @@schema("data_stockflow")
 }
 
 // ============================================================
@@ -256,7 +276,7 @@ model JournalHeader {
 
   @@unique([tenant_id, fiscal_period_code, voucher_code])
   @@map("journal_header")
-  @@schema("data_accounting")
+  @@schema("data_stockflow")
 }
 
 /// 仕訳 revision
@@ -281,7 +301,7 @@ model Journal {
 
   @@unique([idempotency_code, revision])
   @@map("journal")
-  @@schema("data_accounting")
+  @@schema("data_stockflow")
 }
 
 /// 仕訳行
@@ -303,7 +323,7 @@ model JournalLine {
   journal Journal @relation(fields: [journal_id], references: [id])
 
   @@map("journal_line")
-  @@schema("data_accounting")
+  @@schema("data_stockflow")
 }
 
 /// 仕訳タグ（N:N）
@@ -318,7 +338,7 @@ model JournalTag {
   journal Journal @relation(fields: [journal_id], references: [id])
 
   @@map("journal_tag")
-  @@schema("data_accounting")
+  @@schema("data_stockflow")
 }
 
 /// 証憑（削除不可）
@@ -335,5 +355,5 @@ model JournalAttachment {
   header JournalHeader @relation(fields: [idempotency_code], references: [idempotency_code])
 
   @@map("journal_attachment")
-  @@schema("data_accounting")
+  @@schema("data_stockflow")
 }

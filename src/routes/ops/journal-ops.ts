@@ -19,7 +19,7 @@ import type {
 } from "@/lib/types";
 import { recordAudit } from "@/lib/audit";
 
-const S = "data_accounting";
+const S = "data_stockflow";
 
 const app = new OpenAPIHono<{ Variables: AppVariables }>();
 
@@ -117,11 +117,15 @@ app.openapi(reverse, async (c) => {
     );
   }
 
-  // 5. Fiscal period must be open
-  const fp = await getCurrent<CurrentFiscalPeriod>(
-    "current_fiscal_period",
-    { tenant_id: tenantId, code: current.fiscal_period_code }
+  // 5. Fiscal period must be open (in any book under this tenant)
+  const fpRows = await prisma.$queryRawUnsafe<CurrentFiscalPeriod[]>(
+    `SELECT fp.* FROM "data_stockflow"."current_fiscal_period" fp
+     JOIN "data_stockflow"."current_book" cb ON cb.code = fp.book_code
+     WHERE cb.tenant_id = $1 AND fp.code = $2 AND cb.is_active = true LIMIT 1`,
+    tenantId,
+    current.fiscal_period_code
   );
+  const fp = fpRows[0] ?? null;
   if (!fp) return c.json({ error: "Fiscal period not found" }, 422);
   if (fp.status !== "open")
     return c.json({ error: "Fiscal period is not open" }, 422);
