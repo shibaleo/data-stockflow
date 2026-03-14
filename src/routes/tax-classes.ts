@@ -1,4 +1,5 @@
-import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
+import { createApp } from "@/lib/create-app";
+import { createRoute } from "@hono/zod-openapi";
 import { prisma } from "@/lib/prisma";
 import {
   listCurrent,
@@ -18,12 +19,11 @@ import {
   updateTaxClassSchema,
   taxClassResponseSchema,
 } from "@/lib/validators";
-import type { AppVariables } from "@/middleware/context";
 import { requireAuth, requireRole } from "@/middleware/guards";
 import type { CurrentTaxClass } from "@/lib/types";
 import { recordAudit } from "@/lib/audit";
 
-const app = new OpenAPIHono<{ Variables: AppVariables }>();
+const app = createApp();
 
 // TaxClass is global (no tenant_id). Read = any auth, Write = platform only.
 app.use("*", requireAuth());

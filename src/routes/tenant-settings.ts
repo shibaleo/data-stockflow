@@ -1,4 +1,5 @@
-import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
+import { createApp } from "@/lib/create-app";
+import { createRoute } from "@hono/zod-openapi";
 import { prisma } from "@/lib/prisma";
 import { getCurrent, getMaxRevision } from "@/lib/append-only";
 import {
@@ -8,12 +9,11 @@ import {
   updateTenantSettingSchema,
   tenantSettingResponseSchema,
 } from "@/lib/validators";
-import type { AppVariables } from "@/middleware/context";
 import { requireTenant, requireAuth, requireRole } from "@/middleware/guards";
 import type { CurrentTenantSetting } from "@/lib/types";
 import { recordAudit } from "@/lib/audit";
 
-const app = new OpenAPIHono<{ Variables: AppVariables }>();
+const app = createApp();
 
 // TenantSetting: single resource per tenant. Write = tenant role only.
 app.use("*", requireTenant(), requireAuth());

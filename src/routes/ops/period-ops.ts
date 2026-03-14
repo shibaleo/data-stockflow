@@ -1,4 +1,5 @@
-import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
+import { createApp } from "@/lib/create-app";
+import { createRoute } from "@hono/zod-openapi";
 import { prisma } from "@/lib/prisma";
 import { getCurrent, getMaxRevision } from "@/lib/append-only";
 import {
@@ -7,12 +8,11 @@ import {
   dataSchema,
   fiscalPeriodResponseSchema,
 } from "@/lib/validators";
-import type { AppVariables } from "@/middleware/context";
 import { requireTenant, requireAuth, requireRole, requireBook } from "@/middleware/guards";
 import type { CurrentFiscalPeriod } from "@/lib/types";
 import { recordAudit } from "@/lib/audit";
 
-const app = new OpenAPIHono<{ Variables: AppVariables }>();
+const app = createApp();
 
 app.use("*", requireTenant(), requireAuth(), requireBook());
 

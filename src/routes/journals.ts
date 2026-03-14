@@ -1,4 +1,5 @@
-import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
+import { createApp } from "@/lib/create-app";
+import { createRoute, z } from "@hono/zod-openapi";
 import { prisma } from "@/lib/prisma";
 import {
   listCurrent,
@@ -20,7 +21,6 @@ import {
   journalDetailResponseSchema,
   journalCreateResponseSchema,
 } from "@/lib/validators";
-import type { AppVariables } from "@/middleware/context";
 import { requireTenant, requireAuth, requireRole } from "@/middleware/guards";
 import type {
   CurrentJournal,
@@ -39,7 +39,7 @@ import { recordAudit } from "@/lib/audit";
 
 const S = "data_stockflow";
 
-const app = new OpenAPIHono<{ Variables: AppVariables }>();
+const app = createApp();
 
 app.use("*", requireTenant(), requireAuth());
 

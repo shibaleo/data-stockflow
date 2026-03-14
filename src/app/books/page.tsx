@@ -45,6 +45,7 @@ export default function BooksPage() {
   const [editCode, setEditCode] = useState<string | null>(null);
 
   // Form state
+  const [displayCode, setDisplayCode] = useState("");
   const [name, setName] = useState("");
   const [unit, setUnit] = useState("");
   const [typeLabels, setTypeLabels] = useState<Record<string, string>>({});
@@ -68,6 +69,7 @@ export default function BooksPage() {
 
   const handleCreate = () => {
     setEditCode(null);
+    setDisplayCode("");
     setName("");
     setUnit("");
     setTypeLabels({});
@@ -76,6 +78,7 @@ export default function BooksPage() {
 
   const handleEdit = (book: BookRow) => {
     setEditCode(book.code);
+    setDisplayCode(book.display_code);
     setName(book.name);
     setUnit(book.unit);
     setTypeLabels(book.type_labels ?? {});
@@ -113,25 +116,23 @@ export default function BooksPage() {
         if (v.trim()) labels[k] = v.trim();
       }
 
+      const payload: Record<string, unknown> = { name, unit };
+      if (displayCode) payload.display_code = displayCode;
+      if (Object.keys(labels).length > 0) payload.type_labels = labels;
+
       if (editCode) {
-        await api.put(`/books/${editCode}`, {
-          name,
-          unit,
-          type_labels: labels,
-        });
+        await api.put(`/books/${editCode}`, payload);
         toast.success("帳簿を更新しました");
       } else {
-        await api.post("/books", {
-          name,
-          unit,
-          type_labels: labels,
-        });
+        await api.post("/books", payload);
         toast.success("帳簿を作成しました");
       }
       setDialogOpen(false);
       fetchBooks();
     } catch (e) {
-      const msg = e instanceof ApiError ? e.body.error : "保存に失敗しました";
+      const msg = e instanceof ApiError
+        ? (typeof e.body.error === "string" ? e.body.error : "バリデーションエラー")
+        : "保存に失敗しました";
       toast.error(msg);
     }
   };
@@ -272,6 +273,15 @@ export default function BooksPage() {
           </DialogHeader>
 
           <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>コード</Label>
+              <Input
+                value={displayCode}
+                onChange={(e) => setDisplayCode(e.target.value)}
+                placeholder="例: jpy-ledger（省略時は名前が使用されます）"
+              />
+            </div>
+
             <div className="space-y-2">
               <Label>名前</Label>
               <Input

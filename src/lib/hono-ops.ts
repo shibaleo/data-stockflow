@@ -14,7 +14,17 @@ import reports from "@/routes/reports";
 // Business operations & reports
 // ────────────────────────────────────────────
 
-const opsApp = new OpenAPIHono().basePath("/api/ops/v1");
+const opsApp = new OpenAPIHono({
+  defaultHook: (result, c) => {
+    if (!result.success) {
+      const firstIssue = result.error.issues[0];
+      const msg = firstIssue
+        ? `${firstIssue.path.join(".")}: ${firstIssue.message}`
+        : "Validation error";
+      return c.json({ error: msg }, 400);
+    }
+  },
+}).basePath("/api/ops/v1");
 
 opsApp.use("*", logger());
 opsApp.onError(errorHandler);

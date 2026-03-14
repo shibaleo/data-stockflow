@@ -1,4 +1,5 @@
-import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
+import { createApp } from "@/lib/create-app";
+import { createRoute } from "@hono/zod-openapi";
 import { prisma } from "@/lib/prisma";
 import {
   listCurrent,
@@ -17,12 +18,11 @@ import {
   updateFiscalPeriodSchema,
   fiscalPeriodResponseSchema,
 } from "@/lib/validators";
-import type { AppVariables } from "@/middleware/context";
 import { requireTenant, requireAuth, requireRole, requireBook } from "@/middleware/guards";
 import type { CurrentFiscalPeriod } from "@/lib/types";
 import { recordAudit } from "@/lib/audit";
 
-const app = new OpenAPIHono<{ Variables: AppVariables }>();
+const app = createApp();
 app.use("*", requireTenant(), requireAuth(), requireBook());
 
 const list = createRoute({

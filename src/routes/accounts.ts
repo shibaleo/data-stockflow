@@ -1,4 +1,5 @@
-import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
+import { createApp } from "@/lib/create-app";
+import { createRoute } from "@hono/zod-openapi";
 import { prisma } from "@/lib/prisma";
 import {
   listCurrent,
@@ -18,7 +19,6 @@ import {
   updateAccountSchema,
   accountResponseSchema,
 } from "@/lib/validators";
-import type { AppVariables } from "@/middleware/context";
 import { requireTenant, requireAuth, requireRole, requireBook } from "@/middleware/guards";
 import type { CurrentAccount } from "@/lib/types";
 import { recordAudit } from "@/lib/audit";
@@ -28,7 +28,7 @@ function deriveSign(accountType: string): number {
   return accountType === "asset" || accountType === "expense" ? -1 : 1;
 }
 
-const app = new OpenAPIHono<{ Variables: AppVariables }>();
+const app = createApp();
 app.use("*", requireTenant(), requireAuth(), requireBook());
 
 const list = createRoute({

@@ -1,11 +1,11 @@
-import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
+import { createApp } from "@/lib/create-app";
+import { createRoute } from "@hono/zod-openapi";
 import { z } from "@hono/zod-openapi";
 import { prisma } from "@/lib/prisma";
 import { errorSchema } from "@/lib/validators";
-import type { AppVariables } from "@/middleware/context";
 import { requireTenant, requireAuth, requireBook } from "@/middleware/guards";
 
-const app = new OpenAPIHono<{ Variables: AppVariables }>();
+const app = createApp();
 app.use("*", requireTenant(), requireAuth(), requireBook());
 
 // ── Response schema ──

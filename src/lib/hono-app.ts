@@ -23,7 +23,17 @@ import journals from "@/routes/journals";
 // Minimal-unit CRUD operations
 // ────────────────────────────────────────────
 
-const atomApp = new OpenAPIHono().basePath("/api/atom/v1");
+const atomApp = new OpenAPIHono({
+  defaultHook: (result, c) => {
+    if (!result.success) {
+      const firstIssue = result.error.issues[0];
+      const msg = firstIssue
+        ? `${firstIssue.path.join(".")}: ${firstIssue.message}`
+        : "Validation error";
+      return c.json({ error: msg }, 400);
+    }
+  },
+}).basePath("/api/atom/v1");
 
 atomApp.use("*", logger());
 atomApp.onError(errorHandler);
