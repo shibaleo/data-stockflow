@@ -174,6 +174,10 @@ export interface CurrentJournal {
   source_system: string | null;
   created_by: string;
   created_at: Date;
+  // Hash chain
+  lines_hash: string;
+  prev_revision_hash: string;
+  revision_hash: string;
 }
 
 export interface JournalLineRow {

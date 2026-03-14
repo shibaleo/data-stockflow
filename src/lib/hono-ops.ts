@@ -7,6 +7,7 @@ import { errorHandler } from "@/middleware/error-handler";
 import journalOps from "@/routes/ops/journal-ops";
 import periodOps from "@/routes/ops/period-ops";
 import auditLogs from "@/routes/ops/audit-logs";
+import integrity from "@/routes/ops/integrity";
 import reports from "@/routes/reports";
 
 // ────────────────────────────────────────────
@@ -44,6 +45,9 @@ opsApp.route("/books/:bookCode/reports", reports);
 
 // Audit log routes (tenant-scoped)
 opsApp.route("/audit-logs", auditLogs);
+
+// Integrity verification routes (tenant-scoped)
+opsApp.route("/integrity", integrity);
 
 // OpenAPI spec
 opsApp.doc("/doc", {

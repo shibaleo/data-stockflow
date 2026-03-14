@@ -20,6 +20,14 @@ import type {
   JournalTagRow,
 } from "@/lib/types";
 import { recordAudit } from "@/lib/audit";
+import {
+  acquireNextHeaderSequence,
+  computeHeaderHash,
+  computeRevisionHash,
+  computeLinesHash,
+  GENESIS_PREV_HASH,
+  type LineHashInput,
+} from "@/lib/hash-chain";
 
 const S = "data_stockflow";
 
@@ -151,7 +159,7 @@ app.openapi(reverse, async (c) => {
 
   // 9. Transaction
   const result = await db.transaction(async (tx: typeof db) => {
-    // Voucher code auto-generation
+    // 9a. Voucher code auto-generation
     const { rows: voucherRows } = await tx.execute(
       sql`SELECT COALESCE(MAX(voucher_code::int), 0) + 1 as next_code
        FROM "${sql.raw(S)}"."journal_header"
@@ -159,16 +167,58 @@ app.openapi(reverse, async (c) => {
     );
     const voucherCode = String((voucherRows as { next_code: bigint }[])[0].next_code);
 
-    // Insert journal_header (idempotency prevents duplicates — will throw unique constraint error if already reversed)
+    // 9b. Header chain
+    const { nextSequenceNo, prevHeaderHash } = await acquireNextHeaderSequence(tx, tenantId);
+    const headerCreatedAt = new Date().toISOString();
+    const headerHash = computeHeaderHash({
+      prev_header_hash: prevHeaderHash,
+      tenant_id: tenantId,
+      sequence_no: nextSequenceNo,
+      idempotency_code: reversalCode,
+      created_at: headerCreatedAt,
+    });
+
+    // 9c. Insert journal_header
     const [header] = await tx.insert(journalHeader).values({
       idempotency_code: reversalCode,
       tenant_id: tenantId,
       voucher_code: voucherCode,
       fiscal_period_code: current.fiscal_period_code,
       created_by: userId,
+      created_at: new Date(headerCreatedAt),
+      sequence_no: nextSequenceNo,
+      prev_header_hash: prevHeaderHash,
+      header_hash: headerHash,
     }).returning();
 
-    // Insert journal (revision=1)
+    // 9d. Revision chain: compute lines_hash for reversed lines
+    const reversedLineInputs: LineHashInput[] = lines.map((l) => ({
+      line_group: l.line_group,
+      side: l.side === "debit" ? "credit" : "debit",
+      account_code: l.account_code,
+      department_code: l.department_code,
+      counterparty_code: l.counterparty_code,
+      tax_class_code: l.tax_class_code,
+      tax_rate: l.tax_rate ?? null,
+      is_reduced: l.is_reduced,
+      amount: String(-parseFloat(String(l.amount))),
+      description: l.description,
+    }));
+    const linesHash = computeLinesHash(reversedLineInputs);
+    const revisionHash = computeRevisionHash({
+      prev_revision_hash: GENESIS_PREV_HASH,
+      idempotency_code: reversalCode,
+      revision: 1,
+      posted_date: postedDate.toISOString(),
+      journal_type: current.journal_type,
+      slip_category: current.slip_category,
+      adjustment_flag: current.adjustment_flag,
+      description: description ?? null,
+      source_system: current.source_system ?? null,
+      lines_hash: linesHash,
+    });
+
+    // 9e. Insert journal (revision=1)
     const [j] = await tx.insert(journal).values({
       tenant_id: tenantId,
       idempotency_code: reversalCode,
@@ -180,9 +230,12 @@ app.openapi(reverse, async (c) => {
       description,
       source_system: current.source_system,
       created_by: userId,
+      lines_hash: linesHash,
+      prev_revision_hash: GENESIS_PREV_HASH,
+      revision_hash: revisionHash,
     }).returning();
 
-    // Insert reversed lines (flip side: debit->credit, credit->debit; negate amount)
+    // 9f. Insert reversed lines
     await tx.insert(journalLine).values(
       lines.map((l) => ({
         tenant_id: tenantId,
@@ -195,12 +248,12 @@ app.openapi(reverse, async (c) => {
         tax_class_code: l.tax_class_code,
         tax_rate: l.tax_rate ?? null,
         is_reduced: l.is_reduced,
-        amount: String(-parseFloat(String(l.amount))), // negate: original debit(-) -> credit(+), original credit(+) -> debit(-)
+        amount: String(-parseFloat(String(l.amount))),
         description: l.description,
       })),
     );
 
-    // Copy tags
+    // 9g. Copy tags
     if (tags.length > 0) {
       await tx.insert(journalTag).values(
         tags.map((t) => ({

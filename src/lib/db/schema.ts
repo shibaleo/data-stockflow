@@ -392,12 +392,20 @@ export const journalHeader = s.table(
     created_at: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
+    // Hash chain
+    sequence_no: integer("sequence_no").notNull(),
+    prev_header_hash: text("prev_header_hash").notNull(),
+    header_hash: text("header_hash").notNull(),
   },
   (t) => [
     uniqueIndex("journal_header_tenant_id_fiscal_period_code_voucher_code_key").on(
       t.tenant_id,
       t.fiscal_period_code,
       t.voucher_code
+    ),
+    uniqueIndex("journal_header_tenant_id_sequence_no_key").on(
+      t.tenant_id,
+      t.sequence_no
     ),
   ]
 );
@@ -422,6 +430,10 @@ export const journal = s.table(
     created_at: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
+    // Hash chain
+    lines_hash: text("lines_hash").notNull(),
+    prev_revision_hash: text("prev_revision_hash").notNull(),
+    revision_hash: text("revision_hash").notNull(),
   },
   (t) => [
     uniqueIndex("journal_idempotency_code_revision_key").on(

@@ -38,6 +38,15 @@ import type {
   JournalAttachmentRow,
 } from "@/lib/types";
 import { recordAudit } from "@/lib/audit";
+import {
+  acquireNextHeaderSequence,
+  computeHeaderHash,
+  computeRevisionHash,
+  computeLinesHash,
+  getPrevRevisionHash,
+  GENESIS_PREV_HASH,
+  type LineHashInput,
+} from "@/lib/hash-chain";
 
 const S = "data_stockflow";
 
@@ -359,16 +368,58 @@ app.openapi(create, async (c) => {
     );
     const voucherCode = String((voucherRows as { next_code: bigint }[])[0].next_code);
 
-    // 6b. Insert journal_header
+    // 6b. Header chain: acquire sequence + compute hash
+    const { nextSequenceNo, prevHeaderHash } = await acquireNextHeaderSequence(tx, tenantId);
+    const headerCreatedAt = new Date().toISOString();
+    const headerHash = computeHeaderHash({
+      prev_header_hash: prevHeaderHash,
+      tenant_id: tenantId,
+      sequence_no: nextSequenceNo,
+      idempotency_code: body.idempotency_code,
+      created_at: headerCreatedAt,
+    });
+
+    // 6c. Insert journal_header
     const [header] = await tx.insert(journalHeader).values({
       idempotency_code: body.idempotency_code,
       tenant_id: tenantId,
       voucher_code: voucherCode,
       fiscal_period_code: body.fiscal_period_code,
       created_by: userId,
+      created_at: new Date(headerCreatedAt),
+      sequence_no: nextSequenceNo,
+      prev_header_hash: prevHeaderHash,
+      header_hash: headerHash,
     }).returning();
 
-    // 6c. Insert journal (revision=1)
+    // 6d. Revision chain: compute lines_hash + revision_hash
+    const linesHashInputs: LineHashInput[] = signedLines.map((l) => ({
+      line_group: l.line_group,
+      side: l.side,
+      account_code: l.account_code,
+      department_code: l.department_code,
+      counterparty_code: l.counterparty_code,
+      tax_class_code: l.tax_class_code,
+      tax_rate: l.tax_rate != null ? String(l.tax_rate) : null,
+      is_reduced: l.is_reduced,
+      amount: l.amount,
+      description: l.description,
+    }));
+    const linesHash = computeLinesHash(linesHashInputs);
+    const revisionHash = computeRevisionHash({
+      prev_revision_hash: GENESIS_PREV_HASH,
+      idempotency_code: body.idempotency_code,
+      revision: 1,
+      posted_date: new Date(body.posted_date).toISOString(),
+      journal_type: body.journal_type,
+      slip_category: body.slip_category,
+      adjustment_flag: body.adjustment_flag ?? "none",
+      description: body.description ?? null,
+      source_system: body.source_system ?? null,
+      lines_hash: linesHash,
+    });
+
+    // 6e. Insert journal (revision=1)
     const [j] = await tx.insert(journal).values({
       tenant_id: tenantId,
       idempotency_code: body.idempotency_code,
@@ -380,9 +431,12 @@ app.openapi(create, async (c) => {
       description: body.description,
       source_system: body.source_system,
       created_by: userId,
+      lines_hash: linesHash,
+      prev_revision_hash: GENESIS_PREV_HASH,
+      revision_hash: revisionHash,
     }).returning();
 
-    // 6d. Insert journal_lines (using signed amounts)
+    // 6f. Insert journal_lines (using signed amounts)
     await tx.insert(journalLine).values(
       signedLines.map((l) => ({
         tenant_id: tenantId,
@@ -400,7 +454,7 @@ app.openapi(create, async (c) => {
       })),
     );
 
-    // 6e. Insert journal_tags
+    // 6g. Insert journal_tags
     if (body.tags?.length) {
       await tx.insert(journalTag).values(
         body.tags.map((tagCode) => ({
@@ -513,22 +567,56 @@ app.openapi(update, async (c) => {
 
   // 7. Transaction
   const result = await db.transaction(async (tx: typeof db) => {
+    // 7a. Revision chain
+    const prevRevisionHash = await getPrevRevisionHash(tx, code, maxRev + 1);
+    const resolvedSlipCategory = body.slip_category ?? current.slip_category;
+    const resolvedAdjustmentFlag = body.adjustment_flag ?? current.adjustment_flag;
+    const resolvedDescription = body.description !== undefined ? body.description : current.description;
+
+    const linesHashInputs: LineHashInput[] = signedLines.map((l) => ({
+      line_group: l.line_group,
+      side: l.side,
+      account_code: l.account_code,
+      department_code: l.department_code,
+      counterparty_code: l.counterparty_code,
+      tax_class_code: l.tax_class_code,
+      tax_rate: l.tax_rate != null ? String(l.tax_rate) : null,
+      is_reduced: l.is_reduced,
+      amount: l.amount,
+      description: l.description,
+    }));
+    const linesHash = computeLinesHash(linesHashInputs);
+    const revisionHash = computeRevisionHash({
+      prev_revision_hash: prevRevisionHash,
+      idempotency_code: code,
+      revision: maxRev + 1,
+      posted_date: postedDate.toISOString(),
+      journal_type: jType,
+      slip_category: resolvedSlipCategory,
+      adjustment_flag: resolvedAdjustmentFlag,
+      description: resolvedDescription ?? null,
+      source_system: current.source_system ?? null,
+      lines_hash: linesHash,
+    });
+
+    // 7b. Insert journal
     const [j] = await tx.insert(journal).values({
       tenant_id: tenantId,
       idempotency_code: code,
       revision: maxRev + 1,
       posted_date: postedDate,
       journal_type: jType,
-      slip_category: body.slip_category ?? current.slip_category,
-      adjustment_flag: body.adjustment_flag ?? current.adjustment_flag,
-      description:
-        body.description !== undefined
-          ? body.description
-          : current.description,
+      slip_category: resolvedSlipCategory,
+      adjustment_flag: resolvedAdjustmentFlag,
+      description: resolvedDescription,
       source_system: current.source_system,
       created_by: userId,
+      lines_hash: linesHash,
+      prev_revision_hash: prevRevisionHash,
+      revision_hash: revisionHash,
     }).returning();
 
+    // 7c. Insert journal_lines
     await tx.insert(journalLine).values(
       signedLines.map((l) => ({
         tenant_id: tenantId,
@@ -546,6 +634,7 @@ app.openapi(update, async (c) => {
       })),
     );
 
+    // 7d. Insert journal_tags
     if (body.tags?.length) {
       await tx.insert(journalTag).values(
         body.tags.map((tagCode) => ({
@@ -606,19 +695,42 @@ app.openapi(del, async (c) => {
     idempotency_code: code,
   });
 
-  // Insert deactivation revision (no lines needed)
-  await db.insert(journal).values({
-    tenant_id: tenantId,
-    idempotency_code: code,
-    revision: maxRev + 1,
-    is_active: false,
-    posted_date: current.posted_date,
-    journal_type: current.journal_type,
-    slip_category: current.slip_category,
-    adjustment_flag: current.adjustment_flag,
-    description: current.description,
-    source_system: current.source_system,
-    created_by: userId,
+  // Insert deactivation revision with hash chain
+  await db.transaction(async (tx: typeof db) => {
+    const prevRevisionHash = await getPrevRevisionHash(tx, code, maxRev + 1);
+    const linesHash = computeLinesHash([]);
+    const postedDateIso = current.posted_date instanceof Date
+      ? current.posted_date.toISOString()
+      : String(current.posted_date);
+    const revisionHash = computeRevisionHash({
+      prev_revision_hash: prevRevisionHash,
+      idempotency_code: code,
+      revision: maxRev + 1,
+      posted_date: postedDateIso,
+      journal_type: current.journal_type,
+      slip_category: current.slip_category,
+      adjustment_flag: current.adjustment_flag,
+      description: current.description ?? null,
+      source_system: current.source_system ?? null,
+      lines_hash: linesHash,
+    });
+
+    await tx.insert(journal).values({
+      tenant_id: tenantId,
+      idempotency_code: code,
+      revision: maxRev + 1,
+      is_active: false,
+      posted_date: current.posted_date,
+      journal_type: current.journal_type,
+      slip_category: current.slip_category,
+      adjustment_flag: current.adjustment_flag,
+      description: current.description,
+      source_system: current.source_system,
+      created_by: userId,
+      lines_hash: linesHash,
+      prev_revision_hash: prevRevisionHash,
+      revision_hash: revisionHash,
+    });
   });
 
   recordAudit(c, { action: "deactivate", entityType: "journal", entityCode: code, revision: maxRev + 1 });
