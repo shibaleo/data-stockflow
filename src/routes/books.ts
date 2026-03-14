@@ -1,6 +1,7 @@
 import { createApp } from "@/lib/create-app";
 import { createRoute } from "@hono/zod-openapi";
-import { prisma } from "@/lib/prisma";
+import { db } from "@/lib/db";
+import { book } from "@/lib/db/schema";
 import {
   listCurrent,
   getCurrent,
@@ -206,26 +207,26 @@ app.openapi(create, async (c) => {
   const userId = c.get("userId");
   const body = c.req.valid("json");
 
-  const book = await prisma.book.create({
-    data: {
-      tenant_id: tenantId,
-      display_code: body.display_code ?? body.name,
-      name: body.name,
-      unit: body.unit,
-      type_labels: body.type_labels ?? {},
-      created_by: userId,
-    },
-  });
+  const [created] = await db.insert(book).values({
+    tenant_id: tenantId,
+    display_code: body.display_code ?? body.name,
+    name: body.name,
+    unit: body.unit,
+    unit_symbol: body.unit_symbol ?? "",
+    unit_position: body.unit_position ?? "left",
+    type_labels: body.type_labels ?? {},
+    created_by: userId,
+  }).returning();
 
   recordAudit(c, {
     action: "create",
     entityType: "book",
-    entityCode: book.code,
+    entityCode: created.code,
   });
   return c.json({
     data: {
-      ...book,
-      type_labels: book.type_labels as Record<string, string>,
+      ...created,
+      type_labels: created.type_labels as Record<string, string>,
     },
   }, 201);
 });
@@ -249,18 +250,18 @@ app.openapi(update, async (c) => {
     code: bookCode,
   });
 
-  const book = await prisma.book.create({
-    data: {
-      tenant_id: tenantId,
-      code: bookCode,
-      display_code: body.display_code ?? current.display_code,
-      revision: maxRev + 1,
-      name: body.name ?? current.name,
-      unit: body.unit ?? current.unit,
-      type_labels: body.type_labels ?? (current.type_labels as object),
-      created_by: userId,
-    },
-  });
+  const [updated] = await db.insert(book).values({
+    tenant_id: tenantId,
+    code: bookCode,
+    display_code: body.display_code ?? current.display_code,
+    revision: maxRev + 1,
+    name: body.name ?? current.name,
+    unit: body.unit ?? current.unit,
+    unit_symbol: body.unit_symbol ?? current.unit_symbol,
+    unit_position: body.unit_position ?? current.unit_position,
+    type_labels: body.type_labels ?? (current.type_labels as object),
+    created_by: userId,
+  }).returning();
 
   recordAudit(c, {
     action: "update",
@@ -270,8 +271,8 @@ app.openapi(update, async (c) => {
   });
   return c.json({
     data: {
-      ...book,
-      type_labels: book.type_labels as Record<string, string>,
+      ...updated,
+      type_labels: updated.type_labels as Record<string, string>,
     },
   }, 200);
 });
@@ -294,18 +295,18 @@ app.openapi(deactivate, async (c) => {
     code: bookCode,
   });
 
-  await prisma.book.create({
-    data: {
-      tenant_id: tenantId,
-      code: bookCode,
-      display_code: current.display_code,
-      revision: maxRev + 1,
-      name: current.name,
-      unit: current.unit,
-      type_labels: current.type_labels as object,
-      is_active: false,
-      created_by: userId,
-    },
+  await db.insert(book).values({
+    tenant_id: tenantId,
+    code: bookCode,
+    display_code: current.display_code,
+    revision: maxRev + 1,
+    name: current.name,
+    unit: current.unit,
+    unit_symbol: current.unit_symbol,
+    unit_position: current.unit_position,
+    type_labels: current.type_labels as object,
+    is_active: false,
+    created_by: userId,
   });
 
   recordAudit(c, {
@@ -335,18 +336,18 @@ app.openapi(restore, async (c) => {
     code: bookCode,
   });
 
-  await prisma.book.create({
-    data: {
-      tenant_id: tenantId,
-      code: bookCode,
-      display_code: current.display_code,
-      revision: maxRev + 1,
-      name: current.name,
-      unit: current.unit,
-      type_labels: current.type_labels as object,
-      is_active: true,
-      created_by: userId,
-    },
+  await db.insert(book).values({
+    tenant_id: tenantId,
+    code: bookCode,
+    display_code: current.display_code,
+    revision: maxRev + 1,
+    name: current.name,
+    unit: current.unit,
+    unit_symbol: current.unit_symbol,
+    unit_position: current.unit_position,
+    type_labels: current.type_labels as object,
+    is_active: true,
+    created_by: userId,
   });
 
   recordAudit(c, {

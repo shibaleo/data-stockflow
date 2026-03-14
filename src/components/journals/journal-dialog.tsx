@@ -23,6 +23,15 @@ import {
 import { JournalLineRow, type LineData } from "./journal-line-row";
 import { api } from "@/lib/api-client";
 
+interface BookRow {
+  code: string;
+  name: string;
+  unit: string;
+  unit_symbol: string;
+  unit_position: string;
+  is_active: boolean;
+}
+
 interface Account {
   code: string;
   name: string;
@@ -85,22 +94,42 @@ export function JournalDialog({
     { ...EMPTY_LINE, side: "credit" },
   ]);
 
-  // Load master data
+  // Load master data (accounts & fiscal periods from all active books)
   useEffect(() => {
     if (!open) return;
-    Promise.all([
-      api.get<{ data: Account[] }>("/accounts?limit=200"),
-      api.get<{ data: FiscalPeriod[] }>("/fiscal-periods?limit=50"),
-    ]).then(([accountRes, fpRes]) => {
-      setAccounts(accountRes.data);
-      const openPeriods = fpRes.data.filter((fp) => fp.status === "open");
-      setFiscalPeriods(openPeriods);
-      if (openPeriods.length > 0 && !fiscalPeriodCode) {
-        setFiscalPeriodCode(openPeriods[0].code);
+    (async () => {
+      try {
+        const booksRes = await api.get<{ data: BookRow[] }>("/books");
+        const activeBooks = booksRes.data.filter((b) => b.is_active);
+
+        const [accountResults, fpResults] = await Promise.all([
+          Promise.all(
+            activeBooks.map((b) =>
+              api.get<{ data: Account[] }>(`/books/${b.code}/accounts?limit=200`)
+            )
+          ),
+          Promise.all(
+            activeBooks.map((b) =>
+              api.get<{ data: FiscalPeriod[] }>(`/books/${b.code}/fiscal-periods?limit=50`)
+            )
+          ),
+        ]);
+
+        const allAccounts = accountResults.flatMap((r) => r.data);
+        setAccounts(Array.from(new Map(allAccounts.map((a) => [a.code, a])).values()));
+
+        const allFps = fpResults.flatMap((r) => r.data);
+        const uniqueFps = Array.from(
+          new Map(allFps.map((fp) => [fp.code, fp])).values()
+        ).filter((fp) => fp.status === "open");
+        setFiscalPeriods(uniqueFps);
+        if (uniqueFps.length > 0 && !fiscalPeriodCode) {
+          setFiscalPeriodCode(uniqueFps[0].code);
+        }
+      } catch {
+        setError("マスタデータの読み込みに失敗しました");
       }
-    }).catch(() => {
-      setError("マスタデータの読み込みに失敗しました");
-    });
+    })();
   }, [open]);
 
   // Load existing journal for edit mode

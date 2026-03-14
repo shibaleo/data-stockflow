@@ -1,18 +1,14 @@
 import type { ErrorHandler } from "hono";
 import { HTTPException } from "hono/http-exception";
+import { isUniqueViolation } from "@/lib/db/helpers";
 
 export const errorHandler: ErrorHandler = (err, c) => {
   if (err instanceof HTTPException) {
     return c.json({ error: err.message }, err.status);
   }
 
-  // Prisma unique constraint violation
-  if (
-    typeof err === "object" &&
-    err !== null &&
-    "code" in err &&
-    (err as { code: string }).code === "P2002"
-  ) {
+  // PostgreSQL unique constraint violation (23505)
+  if (isUniqueViolation(err)) {
     return c.json({ error: "Unique constraint violation" }, 409);
   }
 

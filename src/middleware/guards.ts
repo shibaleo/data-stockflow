@@ -1,6 +1,7 @@
 import { createMiddleware } from "hono/factory";
 import { HTTPException } from "hono/http-exception";
-import { prisma } from "@/lib/prisma";
+import { db } from "@/lib/db";
+import { sql } from "drizzle-orm";
 import type { AppVariables, UserRole } from "./context";
 
 export const requireTenant = () =>
@@ -41,14 +42,11 @@ export const requireBook = () =>
       throw new HTTPException(400, { message: "bookCode is required" });
     }
     const tenantId = c.get("tenantId");
-    const rows = await prisma.$queryRawUnsafe<
-      { code: string; is_active: boolean }[]
-    >(
-      `SELECT code, is_active FROM "data_stockflow"."current_book"
-       WHERE tenant_id = $1 AND code = $2 LIMIT 1`,
-      tenantId,
-      bookCode
-    );
+    const { rows } = await db.execute(sql`
+      SELECT code, is_active FROM "data_stockflow"."current_book"
+      WHERE tenant_id = ${tenantId} AND code = ${bookCode}
+      LIMIT 1
+    `);
     if (rows.length === 0) {
       throw new HTTPException(404, { message: "Book not found" });
     }

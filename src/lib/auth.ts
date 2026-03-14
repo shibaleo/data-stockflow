@@ -1,5 +1,7 @@
 import * as jose from "jose";
-import { prisma } from "@/lib/prisma";
+import { db } from "@/lib/db";
+import { tenantUser } from "@/lib/db/schema";
+import { eq } from "drizzle-orm";
 import type { UserRole } from "@/middleware/context";
 
 export interface AuthResult {
@@ -60,9 +62,11 @@ async function findOrCreateTenantUser(
   externalId: string
 ): Promise<AuthResult | null> {
   // Try to find existing mapping
-  const existing = await prisma.tenantUser.findUnique({
-    where: { external_id: externalId },
-  });
+  const [existing] = await db
+    .select()
+    .from(tenantUser)
+    .where(eq(tenantUser.external_id, externalId))
+    .limit(1);
   if (existing) {
     if (!ROLES.includes(existing.role)) return null;
     return {
@@ -75,13 +79,14 @@ async function findOrCreateTenantUser(
   // Auto-create on first login
   const defaultTenantId =
     process.env.DEFAULT_TENANT_ID || "00000000-0000-0000-0000-000000000001";
-  const created = await prisma.tenantUser.create({
-    data: {
+  const [created] = await db
+    .insert(tenantUser)
+    .values({
       external_id: externalId,
       tenant_id: defaultTenantId,
       role: "user",
-    },
-  });
+    })
+    .returning();
   return {
     userId: created.user_id,
     tenantId: created.tenant_id,

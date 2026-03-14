@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { Plus, Pencil, Trash2, RefreshCw, Undo2, ChevronRight, ChevronDown, X } from "lucide-react";
+import { Plus, Pencil, Trash2, RefreshCw, Undo2, ChevronRight, ChevronDown, X, Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -40,6 +40,8 @@ interface BookRow {
   code: string;
   name: string;
   unit: string;
+  unit_symbol: string;
+  unit_position: string;
   type_labels: Record<string, string>;
   is_active: boolean;
 }
@@ -148,6 +150,7 @@ export default function AccountsPage() {
   const [editCode, setEditCode] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [selectedCode, setSelectedCode] = useState<string | null>(null);
+  const [showInactive, setShowInactive] = useState(false);
 
   // Book state
   const [books, setBooks] = useState<BookRow[]>([]);
@@ -209,8 +212,9 @@ export default function AccountsPage() {
     if (!selectedBookCode) return;
     setLoading(true);
     try {
+      const qs = showInactive ? "&include_inactive=true" : "";
       const res = await api.get<{ data: AccountRow[] }>(
-        `/books/${selectedBookCode}/accounts?limit=200`
+        `/books/${selectedBookCode}/accounts?limit=200${qs}`
       );
       setAccounts(res.data);
     } catch (e) {
@@ -219,7 +223,7 @@ export default function AccountsPage() {
     } finally {
       setLoading(false);
     }
-  }, [selectedBookCode]);
+  }, [selectedBookCode, showInactive]);
 
   useEffect(() => {
     fetchAccounts();
@@ -292,6 +296,14 @@ export default function AccountsPage() {
           )}
         </div>
         <div className="flex gap-2">
+          <Button
+            variant={showInactive ? "secondary" : "outline"}
+            size="sm"
+            onClick={() => setShowInactive((v) => !v)}
+          >
+            {showInactive ? <EyeOff className="h-4 w-4 mr-1" /> : <Eye className="h-4 w-4 mr-1" />}
+            削除済みを表示
+          </Button>
           <Button variant="outline" size="sm" onClick={fetchAccounts}>
             <RefreshCw className="h-4 w-4" />
           </Button>

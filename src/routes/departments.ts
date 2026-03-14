@@ -1,6 +1,7 @@
 import { createApp } from "@/lib/create-app";
 import { createRoute } from "@hono/zod-openapi";
-import { prisma } from "@/lib/prisma";
+import { db } from "@/lib/db";
+import { department } from "@/lib/db/schema";
 import {
   listCurrent,
   getCurrent,
@@ -132,15 +133,13 @@ app.openapi(create, async (c) => {
     if (!parent) return c.json({ error: "parent_department_code not found" }, 422);
   }
 
-  const created = await prisma.department.create({
-    data: {
-      tenant_id: tenantId, display_code: body.display_code, revision: 1,
-      valid_from: body.valid_from ? new Date(body.valid_from) : undefined,
-      created_by: userId, name: body.name,
-      parent_department_code: body.parent_department_code,
-      department_type: body.department_type,
-    },
-  });
+  const [created] = await db.insert(department).values({
+    tenant_id: tenantId, display_code: body.display_code, revision: 1,
+    valid_from: body.valid_from ? new Date(body.valid_from) : undefined,
+    created_by: userId, name: body.name,
+    parent_department_code: body.parent_department_code,
+    department_type: body.department_type,
+  }).returning();
   recordAudit(c, { action: "create", entityType: "department", entityCode: created.code, revision: 1 });
   return c.json({ data: created }, 201);
 });
@@ -163,18 +162,16 @@ app.openapi(update, async (c) => {
 
   const maxRev = await getMaxRevision("department", { tenant_id: tenantId, code });
 
-  const updated = await prisma.department.create({
-    data: {
-      tenant_id: tenantId, code,
-      display_code: body.display_code !== undefined ? body.display_code : current.display_code,
-      revision: maxRev + 1, valid_from: body.valid_from ? new Date(body.valid_from) : undefined,
-      created_by: userId, name: body.name ?? current.name,
-      parent_department_code: body.parent_department_code !== undefined
-        ? body.parent_department_code : current.parent_department_code,
-      department_type: body.department_type !== undefined
-        ? body.department_type : current.department_type,
-    },
-  });
+  const [updated] = await db.insert(department).values({
+    tenant_id: tenantId, code,
+    display_code: body.display_code !== undefined ? body.display_code : current.display_code,
+    revision: maxRev + 1, valid_from: body.valid_from ? new Date(body.valid_from) : undefined,
+    created_by: userId, name: body.name ?? current.name,
+    parent_department_code: body.parent_department_code !== undefined
+      ? body.parent_department_code : current.parent_department_code,
+    department_type: body.department_type !== undefined
+      ? body.department_type : current.department_type,
+  }).returning();
   recordAudit(c, { action: "update", entityType: "department", entityCode: code, revision: maxRev + 1 });
   return c.json({ data: updated }, 200);
 });
@@ -190,13 +187,11 @@ app.openapi(del, async (c) => {
   if (!current.is_active) return c.json({ error: "Already inactive" }, 404);
 
   const maxRev = await getMaxRevision("department", { tenant_id: tenantId, code });
-  await prisma.department.create({
-    data: {
-      tenant_id: tenantId, code, display_code: current.display_code, revision: maxRev + 1,
-      created_by: userId, name: current.name,
-      parent_department_code: current.parent_department_code,
-      department_type: current.department_type, is_active: false,
-    },
+  await db.insert(department).values({
+    tenant_id: tenantId, code, display_code: current.display_code, revision: maxRev + 1,
+    created_by: userId, name: current.name,
+    parent_department_code: current.parent_department_code,
+    department_type: current.department_type, is_active: false,
   });
   recordAudit(c, { action: "deactivate", entityType: "department", entityCode: code, revision: maxRev + 1 });
   return c.json({ message: "Deactivated" }, 200);
@@ -213,13 +208,11 @@ app.openapi(restore, async (c) => {
   if (current.is_active) return c.json({ error: "Already active" }, 404);
 
   const maxRev = await getMaxRevision("department", { tenant_id: tenantId, code });
-  await prisma.department.create({
-    data: {
-      tenant_id: tenantId, code, display_code: current.display_code, revision: maxRev + 1,
-      created_by: userId, name: current.name,
-      parent_department_code: current.parent_department_code,
-      department_type: current.department_type, is_active: true,
-    },
+  await db.insert(department).values({
+    tenant_id: tenantId, code, display_code: current.display_code, revision: maxRev + 1,
+    created_by: userId, name: current.name,
+    parent_department_code: current.parent_department_code,
+    department_type: current.department_type, is_active: true,
   });
   recordAudit(c, { action: "restore", entityType: "department", entityCode: code, revision: maxRev + 1 });
   return c.json({ message: "Restored" }, 200);

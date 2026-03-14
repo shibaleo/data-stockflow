@@ -15,6 +15,13 @@ import {
   DialogFooter,
   DialogDescription,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { api, ApiError } from "@/lib/api-client";
 
 interface BookRow {
@@ -23,6 +30,8 @@ interface BookRow {
   display_code: string;
   name: string;
   unit: string;
+  unit_symbol: string;
+  unit_position: string;
   type_labels: Record<string, string>;
   is_active: boolean;
   created_at: string;
@@ -48,6 +57,8 @@ export default function BooksPage() {
   const [displayCode, setDisplayCode] = useState("");
   const [name, setName] = useState("");
   const [unit, setUnit] = useState("");
+  const [unitSymbol, setUnitSymbol] = useState("");
+  const [unitPosition, setUnitPosition] = useState<"left" | "right">("left");
   const [typeLabels, setTypeLabels] = useState<Record<string, string>>({});
 
   const fetchBooks = useCallback(async () => {
@@ -72,6 +83,8 @@ export default function BooksPage() {
     setDisplayCode("");
     setName("");
     setUnit("");
+    setUnitSymbol("");
+    setUnitPosition("left");
     setTypeLabels({});
     setDialogOpen(true);
   };
@@ -81,6 +94,8 @@ export default function BooksPage() {
     setDisplayCode(book.display_code);
     setName(book.name);
     setUnit(book.unit);
+    setUnitSymbol(book.unit_symbol ?? "");
+    setUnitPosition(book.unit_position === "right" ? "right" : "left");
     setTypeLabels(book.type_labels ?? {});
     setDialogOpen(true);
   };
@@ -116,7 +131,7 @@ export default function BooksPage() {
         if (v.trim()) labels[k] = v.trim();
       }
 
-      const payload: Record<string, unknown> = { name, unit };
+      const payload: Record<string, unknown> = { name, unit, unit_symbol: unitSymbol, unit_position: unitPosition };
       if (displayCode) payload.display_code = displayCode;
       if (Object.keys(labels).length > 0) payload.type_labels = labels;
 
@@ -186,6 +201,13 @@ export default function BooksPage() {
                       <td className="py-2 px-3">{book.name}</td>
                       <td className="py-2 px-3">
                         <Badge variant="secondary">{book.unit}</Badge>
+                        {book.unit_symbol && (
+                          <span className="text-xs text-muted-foreground ml-1">
+                            {book.unit_position === "right"
+                              ? `100${book.unit_symbol}`
+                              : `${book.unit_symbol}100`}
+                          </span>
+                        )}
                       </td>
                       <td className="py-2 px-3">
                         {inactive ? (
@@ -292,12 +314,35 @@ export default function BooksPage() {
             </div>
 
             <div className="space-y-2">
-              <Label>単位</Label>
+              <Label>単位名</Label>
               <Input
                 value={unit}
                 onChange={(e) => setUnit(e.target.value)}
-                placeholder="例: JPY, USD, candy_pcs"
+                placeholder="例: 円, ドル, 個"
               />
+            </div>
+
+            <div className="flex gap-3">
+              <div className="flex-1 space-y-2">
+                <Label>シンボル</Label>
+                <Input
+                  value={unitSymbol}
+                  onChange={(e) => setUnitSymbol(e.target.value)}
+                  placeholder="例: ¥, $, 個"
+                />
+              </div>
+              <div className="w-28 space-y-2">
+                <Label>位置</Label>
+                <Select value={unitPosition} onValueChange={(v) => setUnitPosition(v as "left" | "right")}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="left">左（{unitSymbol}100）</SelectItem>
+                    <SelectItem value="right">右（100{unitSymbol}）</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
             {/* Type labels section */}

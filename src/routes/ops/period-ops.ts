@@ -1,6 +1,7 @@
 import { createApp } from "@/lib/create-app";
 import { createRoute } from "@hono/zod-openapi";
-import { prisma } from "@/lib/prisma";
+import { db } from "@/lib/db";
+import { fiscalPeriod } from "@/lib/db/schema";
 import { getCurrent, getMaxRevision } from "@/lib/append-only";
 import {
   codeParamSchema,
@@ -77,20 +78,18 @@ app.openapi(close, async (c) => {
     code,
   });
 
-  const updated = await prisma.fiscalPeriod.create({
-    data: {
-      book_code: bookCode,
-      code,
-      display_code: current.display_code,
-      revision: maxRev + 1,
-      created_by: userId,
-      fiscal_year: current.fiscal_year,
-      period_no: current.period_no,
-      start_date: current.start_date,
-      end_date: current.end_date,
-      status: "closed",
-    },
-  });
+  const [updated] = await db.insert(fiscalPeriod).values({
+    book_code: bookCode,
+    code,
+    display_code: current.display_code,
+    revision: maxRev + 1,
+    created_by: userId,
+    fiscal_year: current.fiscal_year,
+    period_no: current.period_no,
+    start_date: current.start_date,
+    end_date: current.end_date,
+    status: "closed",
+  }).returning();
 
   recordAudit(c, { action: "close", entityType: "fiscal_period", entityCode: code, revision: maxRev + 1 });
   return c.json({ data: updated }, 200);
@@ -157,20 +156,18 @@ app.openapi(reopen, async (c) => {
     code,
   });
 
-  const updated = await prisma.fiscalPeriod.create({
-    data: {
-      book_code: bookCode,
-      code,
-      display_code: current.display_code,
-      revision: maxRev + 1,
-      created_by: userId,
-      fiscal_year: current.fiscal_year,
-      period_no: current.period_no,
-      start_date: current.start_date,
-      end_date: current.end_date,
-      status: "open",
-    },
-  });
+  const [updated] = await db.insert(fiscalPeriod).values({
+    book_code: bookCode,
+    code,
+    display_code: current.display_code,
+    revision: maxRev + 1,
+    created_by: userId,
+    fiscal_year: current.fiscal_year,
+    period_no: current.period_no,
+    start_date: current.start_date,
+    end_date: current.end_date,
+    status: "open",
+  }).returning();
 
   recordAudit(c, { action: "reopen", entityType: "fiscal_period", entityCode: code, revision: maxRev + 1 });
   return c.json({ data: updated }, 200);

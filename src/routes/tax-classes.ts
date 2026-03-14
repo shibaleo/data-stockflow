@@ -1,6 +1,7 @@
 import { createApp } from "@/lib/create-app";
 import { createRoute } from "@hono/zod-openapi";
-import { prisma } from "@/lib/prisma";
+import { db } from "@/lib/db";
+import { taxClass } from "@/lib/db/schema";
 import {
   listCurrent,
   getCurrent,
@@ -121,19 +122,17 @@ app.openapi(create, async (c) => {
   const userId = c.get("userId");
   const body = c.req.valid("json");
 
-  const created = await prisma.taxClass.create({
-    data: {
-      display_code: body.display_code,
-      revision: 1,
-      valid_from: body.valid_from ? new Date(body.valid_from) : undefined,
-      created_by: userId,
-      name: body.name,
-      direction: body.direction,
-      is_taxable: body.is_taxable,
-      deduction_ratio: body.deduction_ratio,
-      invoice_type: body.invoice_type,
-    },
-  });
+  const [created] = await db.insert(taxClass).values({
+    display_code: body.display_code,
+    revision: 1,
+    valid_from: body.valid_from ? new Date(body.valid_from) : undefined,
+    created_by: userId,
+    name: body.name,
+    direction: body.direction,
+    is_taxable: body.is_taxable,
+    deduction_ratio: body.deduction_ratio,
+    invoice_type: body.invoice_type,
+  }).returning();
 
   recordAudit(c, { action: "create", entityType: "tax_class", entityCode: created.code, revision: 1 });
   return c.json({ data: created }, 201);
@@ -154,32 +153,30 @@ app.openapi(update, async (c) => {
 
   const maxRev = await getMaxRevision("tax_class", { code });
 
-  const updated = await prisma.taxClass.create({
-    data: {
-      code,
-      display_code:
-        body.display_code !== undefined
-          ? body.display_code
-          : current.display_code,
-      revision: maxRev + 1,
-      valid_from: body.valid_from ? new Date(body.valid_from) : undefined,
-      created_by: userId,
-      name: body.name ?? current.name,
-      direction:
-        body.direction !== undefined ? body.direction : current.direction,
-      is_taxable: body.is_taxable ?? current.is_taxable,
-      deduction_ratio:
-        body.deduction_ratio !== undefined
-          ? body.deduction_ratio
-          : current.deduction_ratio
-            ? Number(current.deduction_ratio)
-            : null,
-      invoice_type:
-        body.invoice_type !== undefined
-          ? body.invoice_type
-          : current.invoice_type,
-    },
-  });
+  const [updated] = await db.insert(taxClass).values({
+    code,
+    display_code:
+      body.display_code !== undefined
+        ? body.display_code
+        : current.display_code,
+    revision: maxRev + 1,
+    valid_from: body.valid_from ? new Date(body.valid_from) : undefined,
+    created_by: userId,
+    name: body.name ?? current.name,
+    direction:
+      body.direction !== undefined ? body.direction : current.direction,
+    is_taxable: body.is_taxable ?? current.is_taxable,
+    deduction_ratio:
+      body.deduction_ratio !== undefined
+        ? body.deduction_ratio
+        : current.deduction_ratio
+          ? Number(current.deduction_ratio)
+          : null,
+    invoice_type:
+      body.invoice_type !== undefined
+        ? body.invoice_type
+        : current.invoice_type,
+  }).returning();
 
   recordAudit(c, { action: "update", entityType: "tax_class", entityCode: code, revision: maxRev + 1 });
   return c.json({ data: updated }, 200);
@@ -198,21 +195,19 @@ app.openapi(del, async (c) => {
 
   const maxRev = await getMaxRevision("tax_class", { code });
 
-  await prisma.taxClass.create({
-    data: {
-      code,
-      display_code: current.display_code,
-      revision: maxRev + 1,
-      created_by: userId,
-      name: current.name,
-      is_active: false,
-      direction: current.direction,
-      is_taxable: current.is_taxable,
-      deduction_ratio: current.deduction_ratio
-        ? Number(current.deduction_ratio)
-        : null,
-      invoice_type: current.invoice_type,
-    },
+  await db.insert(taxClass).values({
+    code,
+    display_code: current.display_code,
+    revision: maxRev + 1,
+    created_by: userId,
+    name: current.name,
+    is_active: false,
+    direction: current.direction,
+    is_taxable: current.is_taxable,
+    deduction_ratio: current.deduction_ratio
+      ? Number(current.deduction_ratio)
+      : null,
+    invoice_type: current.invoice_type,
   });
 
   recordAudit(c, { action: "deactivate", entityType: "tax_class", entityCode: code, revision: maxRev + 1 });

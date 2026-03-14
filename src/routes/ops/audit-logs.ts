@@ -1,6 +1,7 @@
 import { createApp } from "@/lib/create-app";
 import { createRoute } from "@hono/zod-openapi";
-import { prisma } from "@/lib/prisma";
+import { db } from "@/lib/db";
+import { sql } from "drizzle-orm";
 import { decodeCursor, encodeCursor } from "@/lib/append-only";
 import {
   errorSchema,
@@ -9,8 +10,6 @@ import {
   auditLogQuerySchema,
 } from "@/lib/validators";
 import { requireTenant, requireAuth, requireRole } from "@/middleware/guards";
-
-const S = "data_stockflow";
 
 const app = createApp();
 
@@ -52,50 +51,31 @@ app.openapi(list, async (c) => {
   const limit = Math.min(Number(query.limit || 50), 200);
   const cursor = query.cursor ? decodeCursor(query.cursor) : undefined;
 
-  const conditions: string[] = ["tenant_id = $1"];
-  const params: unknown[] = [tenantId];
-  let paramIdx = 2;
+  const conditions: ReturnType<typeof sql>[] = [sql`tenant_id = ${tenantId}`];
 
   if (query.entity_type) {
-    conditions.push(`entity_type = $${paramIdx}`);
-    params.push(query.entity_type);
-    paramIdx++;
+    conditions.push(sql`entity_type = ${query.entity_type}`);
   }
 
   if (query.entity_code) {
-    conditions.push(`entity_code = $${paramIdx}`);
-    params.push(query.entity_code);
-    paramIdx++;
+    conditions.push(sql`entity_code = ${query.entity_code}`);
   }
 
   if (query.action) {
-    conditions.push(`action = $${paramIdx}`);
-    params.push(query.action);
-    paramIdx++;
+    conditions.push(sql`action = ${query.action}`);
   }
 
   if (query.user_id) {
-    conditions.push(`user_id = $${paramIdx}::uuid`);
-    params.push(query.user_id);
-    paramIdx++;
+    conditions.push(sql`user_id = ${query.user_id}::uuid`);
   }
 
   if (cursor) {
     conditions.push(
-      `(created_at, id) < ($${paramIdx}::timestamptz, $${paramIdx + 1}::uuid)`
+      sql`(created_at, id) < (${cursor.created_at}::timestamptz, ${cursor.id}::uuid)`
     );
-    params.push(cursor.created_at, cursor.id);
-    paramIdx += 2;
   }
 
-  params.push(limit);
-
-  const sql = `
-    SELECT * FROM "${S}"."audit_log"
-    WHERE ${conditions.join(" AND ")}
-    ORDER BY created_at DESC, id DESC
-    LIMIT $${paramIdx}
-  `;
+  const whereClause = sql.join(conditions, sql` AND `);
 
   interface AuditLogRow {
     id: string;
@@ -111,7 +91,13 @@ app.openapi(list, async (c) => {
     created_at: Date;
   }
 
-  const rows = await prisma.$queryRawUnsafe<AuditLogRow[]>(sql, ...params);
+  const { rows: rawRows } = await db.execute(sql`
+    SELECT * FROM "data_stockflow"."audit_log"
+    WHERE ${whereClause}
+    ORDER BY created_at DESC, id DESC
+    LIMIT ${limit}
+  `);
+  const rows = rawRows as unknown as AuditLogRow[];
 
   return c.json(
     {

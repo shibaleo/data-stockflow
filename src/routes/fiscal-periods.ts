@@ -1,6 +1,7 @@
 import { createApp } from "@/lib/create-app";
 import { createRoute } from "@hono/zod-openapi";
-import { prisma } from "@/lib/prisma";
+import { db } from "@/lib/db";
+import { fiscalPeriod } from "@/lib/db/schema";
 import {
   listCurrent,
   getCurrent,
@@ -103,15 +104,13 @@ app.openapi(create, async (c) => {
   const userId = c.get("userId");
   const body = c.req.valid("json");
 
-  const created = await prisma.fiscalPeriod.create({
-    data: {
-      book_code: bookCode, display_code: body.display_code, revision: 1,
-      valid_from: body.valid_from ? new Date(body.valid_from) : undefined,
-      created_by: userId, fiscal_year: body.fiscal_year, period_no: body.period_no,
-      start_date: new Date(body.start_date), end_date: new Date(body.end_date),
-      status: body.status,
-    },
-  });
+  const [created] = await db.insert(fiscalPeriod).values({
+    book_code: bookCode, display_code: body.display_code, revision: 1,
+    valid_from: body.valid_from ? new Date(body.valid_from) : undefined,
+    created_by: userId, fiscal_year: body.fiscal_year, period_no: body.period_no,
+    start_date: new Date(body.start_date), end_date: new Date(body.end_date),
+    status: body.status,
+  }).returning();
   recordAudit(c, { action: "create", entityType: "fiscal_period", entityCode: created.code, revision: 1 });
   return c.json({ data: created }, 201);
 });
@@ -128,19 +127,17 @@ app.openapi(update, async (c) => {
 
   const maxRev = await getMaxRevision("fiscal_period", { book_code: bookCode, code });
 
-  const updated = await prisma.fiscalPeriod.create({
-    data: {
-      book_code: bookCode, code,
-      display_code: body.display_code !== undefined ? body.display_code : current.display_code,
-      revision: maxRev + 1, valid_from: body.valid_from ? new Date(body.valid_from) : undefined,
-      created_by: userId,
-      fiscal_year: body.fiscal_year ?? current.fiscal_year,
-      period_no: body.period_no ?? current.period_no,
-      start_date: body.start_date ? new Date(body.start_date) : current.start_date,
-      end_date: body.end_date ? new Date(body.end_date) : current.end_date,
-      status: body.status ?? current.status,
-    },
-  });
+  const [updated] = await db.insert(fiscalPeriod).values({
+    book_code: bookCode, code,
+    display_code: body.display_code !== undefined ? body.display_code : current.display_code,
+    revision: maxRev + 1, valid_from: body.valid_from ? new Date(body.valid_from) : undefined,
+    created_by: userId,
+    fiscal_year: body.fiscal_year ?? current.fiscal_year,
+    period_no: body.period_no ?? current.period_no,
+    start_date: body.start_date ? new Date(body.start_date) : current.start_date,
+    end_date: body.end_date ? new Date(body.end_date) : current.end_date,
+    status: body.status ?? current.status,
+  }).returning();
   recordAudit(c, { action: "update", entityType: "fiscal_period", entityCode: code, revision: maxRev + 1 });
   return c.json({ data: updated }, 200);
 });

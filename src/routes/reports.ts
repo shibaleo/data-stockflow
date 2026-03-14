@@ -1,7 +1,8 @@
 import { createApp } from "@/lib/create-app";
 import { createRoute } from "@hono/zod-openapi";
 import { z } from "@hono/zod-openapi";
-import { prisma } from "@/lib/prisma";
+import { db } from "@/lib/db";
+import { sql } from "drizzle-orm";
 import { errorSchema } from "@/lib/validators";
 import { requireTenant, requireAuth, requireBook } from "@/middleware/guards";
 
@@ -77,43 +78,30 @@ app.openapi(balances, async (c) => {
   const { period_from, period_to } = c.req.valid("query");
 
   // Build fiscal period code filters by resolving display_code → code
-  const conditions: string[] = [
-    "a.book_code = $1",
-    "a.is_active = true",
-  ];
-  const params: (string | null)[] = [bookCode];
-  let paramIdx = 2;
-
-  // We need tenantId for journal_line filtering
-  params.push(tenantId);
-  const tenantParamIdx = paramIdx;
-  paramIdx++;
+  const conditions = [sql`a.book_code = ${bookCode}`, sql`a.is_active = true`];
 
   // Filter journal lines by period range via journal_header
-  let periodJoin = "";
-  const periodConditions: string[] = [];
+  let periodJoin = sql``;
+  const periodConditions: ReturnType<typeof sql>[] = [];
 
   if (period_from) {
-    periodConditions.push(`fp_filter.display_code >= $${paramIdx}`);
-    params.push(period_from);
-    paramIdx++;
+    periodConditions.push(sql`fp_filter.display_code >= ${period_from}`);
   }
   if (period_to) {
-    periodConditions.push(`fp_filter.display_code <= $${paramIdx}`);
-    params.push(period_to);
-    paramIdx++;
+    periodConditions.push(sql`fp_filter.display_code <= ${period_to}`);
   }
 
   if (periodConditions.length > 0) {
-    periodJoin = `
-      JOIN data_stockflow.journal_header jh
-        ON jh.idempotency_code = j.idempotency_code AND jh.tenant_id = j.tenant_id
+    const periodFilter = sql.join(periodConditions, sql` AND `);
+    periodJoin = sql`
       JOIN data_stockflow.current_fiscal_period fp_filter
-        ON fp_filter.code = jh.fiscal_period_code AND fp_filter.book_code = $1
-        AND ${periodConditions.join(" AND ")}`;
+        ON fp_filter.code = cj.fiscal_period_code AND fp_filter.book_code = ${bookCode}
+        AND ${periodFilter}`;
   }
 
-  const sql = `
+  const whereClause = sql.join(conditions, sql` AND `);
+
+  const query = sql`
     SELECT
       a.code AS account_code,
       a.display_code,
@@ -129,29 +117,30 @@ app.openapi(balances, async (c) => {
     LEFT JOIN LATERAL (
       SELECT SUM(jl.amount) AS balance
       FROM data_stockflow.journal_line jl
-      JOIN data_stockflow.journal j
-        ON j.id = jl.journal_id AND j.tenant_id = jl.tenant_id
-        AND j.is_active = true
+      JOIN data_stockflow.current_journal cj
+        ON cj.id = jl.journal_id AND cj.tenant_id = jl.tenant_id
+        AND cj.is_active = true
       ${periodJoin}
-      WHERE jl.tenant_id = $${tenantParamIdx}
+      WHERE jl.tenant_id = ${tenantId}
         AND jl.account_code = a.code
     ) bal ON true
-    WHERE ${conditions.join(" AND ")}
+    WHERE ${whereClause}
     ORDER BY a.display_code
   `;
 
-  const rows = await prisma.$queryRawUnsafe<BalanceRow[]>(sql, ...params);
+  const { rows } = await db.execute(query);
+  const typedRows = rows as unknown as BalanceRow[];
 
   // Also fetch available periods for the frontend selector
-  const periods = await prisma.$queryRawUnsafe<PeriodRow[]>(
-    `SELECT display_code FROM data_stockflow.current_fiscal_period
-     WHERE book_code = $1 ORDER BY display_code`,
-    bookCode
+  const { rows: periodRows } = await db.execute(
+    sql`SELECT display_code FROM data_stockflow.current_fiscal_period
+     WHERE book_code = ${bookCode} ORDER BY display_code`
   );
+  const periods = periodRows as unknown as PeriodRow[];
 
   return c.json(
     {
-      data: rows,
+      data: typedRows,
       periods: periods.map((p) => p.display_code),
     },
     200

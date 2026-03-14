@@ -1,4 +1,5 @@
-import { prisma } from "@/lib/prisma";
+import { db } from "@/lib/db";
+import { auditLog } from "@/lib/db/schema";
 import type { Context } from "hono";
 import type { AppVariables } from "@/middleware/context";
 
@@ -48,21 +49,19 @@ export function recordAudit(
     null;
 
   // Fire-and-forget: don't await, don't block API response
-  prisma.auditLog
-    .create({
-      data: {
-        tenant_id: tenantId,
-        user_id: userId,
-        user_role: userRole,
-        action: entry.action,
-        entity_type: entry.entityType,
-        entity_code: entry.entityCode,
-        revision: entry.revision ?? null,
-        detail: entry.detail ? JSON.stringify(entry.detail) : null,
-        source_ip: sourceIp,
-      },
+  db.insert(auditLog)
+    .values({
+      tenant_id: tenantId,
+      user_id: userId,
+      user_role: userRole,
+      action: entry.action,
+      entity_type: entry.entityType,
+      entity_code: entry.entityCode,
+      revision: entry.revision ?? null,
+      detail: entry.detail ? JSON.stringify(entry.detail) : null,
+      source_ip: sourceIp,
     })
-    .catch((err) => {
+    .catch((err: unknown) => {
       console.error("[audit] Failed to record audit log:", err);
     });
 }

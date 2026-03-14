@@ -1,6 +1,7 @@
 import { createApp } from "@/lib/create-app";
 import { createRoute } from "@hono/zod-openapi";
-import { prisma } from "@/lib/prisma";
+import { db } from "@/lib/db";
+import { tag } from "@/lib/db/schema";
 import {
   listCurrent,
   getCurrent,
@@ -125,13 +126,11 @@ app.openapi(create, async (c) => {
   const userId = c.get("userId");
   const body = c.req.valid("json");
 
-  const created = await prisma.tag.create({
-    data: {
-      tenant_id: tenantId, display_code: body.display_code, revision: 1,
-      valid_from: body.valid_from ? new Date(body.valid_from) : undefined,
-      created_by: userId, name: body.name, tag_type: body.tag_type,
-    },
-  });
+  const [created] = await db.insert(tag).values({
+    tenant_id: tenantId, display_code: body.display_code, revision: 1,
+    valid_from: body.valid_from ? new Date(body.valid_from) : undefined,
+    created_by: userId, name: body.name, tag_type: body.tag_type,
+  }).returning();
   recordAudit(c, { action: "create", entityType: "tag", entityCode: created.code, revision: 1 });
   return c.json({ data: created }, 201);
 });
@@ -149,15 +148,13 @@ app.openapi(update, async (c) => {
 
   const maxRev = await getMaxRevision("tag", { tenant_id: tenantId, code });
 
-  const updated = await prisma.tag.create({
-    data: {
-      tenant_id: tenantId, code,
-      display_code: body.display_code !== undefined ? body.display_code : current.display_code,
-      revision: maxRev + 1, valid_from: body.valid_from ? new Date(body.valid_from) : undefined,
-      created_by: userId, name: body.name ?? current.name,
-      tag_type: body.tag_type ?? current.tag_type,
-    },
-  });
+  const [updated] = await db.insert(tag).values({
+    tenant_id: tenantId, code,
+    display_code: body.display_code !== undefined ? body.display_code : current.display_code,
+    revision: maxRev + 1, valid_from: body.valid_from ? new Date(body.valid_from) : undefined,
+    created_by: userId, name: body.name ?? current.name,
+    tag_type: body.tag_type ?? current.tag_type,
+  }).returning();
   recordAudit(c, { action: "update", entityType: "tag", entityCode: code, revision: maxRev + 1 });
   return c.json({ data: updated }, 200);
 });
@@ -173,11 +170,9 @@ app.openapi(del, async (c) => {
   if (!current.is_active) return c.json({ error: "Already inactive" }, 404);
 
   const maxRev = await getMaxRevision("tag", { tenant_id: tenantId, code });
-  await prisma.tag.create({
-    data: {
-      tenant_id: tenantId, code, display_code: current.display_code, revision: maxRev + 1,
-      created_by: userId, name: current.name, tag_type: current.tag_type, is_active: false,
-    },
+  await db.insert(tag).values({
+    tenant_id: tenantId, code, display_code: current.display_code, revision: maxRev + 1,
+    created_by: userId, name: current.name, tag_type: current.tag_type, is_active: false,
   });
   recordAudit(c, { action: "deactivate", entityType: "tag", entityCode: code, revision: maxRev + 1 });
   return c.json({ message: "Deactivated" }, 200);
@@ -194,11 +189,9 @@ app.openapi(restore, async (c) => {
   if (current.is_active) return c.json({ error: "Already active" }, 404);
 
   const maxRev = await getMaxRevision("tag", { tenant_id: tenantId, code });
-  await prisma.tag.create({
-    data: {
-      tenant_id: tenantId, code, display_code: current.display_code, revision: maxRev + 1,
-      created_by: userId, name: current.name, tag_type: current.tag_type, is_active: true,
-    },
+  await db.insert(tag).values({
+    tenant_id: tenantId, code, display_code: current.display_code, revision: maxRev + 1,
+    created_by: userId, name: current.name, tag_type: current.tag_type, is_active: true,
   });
   recordAudit(c, { action: "restore", entityType: "tag", entityCode: code, revision: maxRev + 1 });
   return c.json({ message: "Restored" }, 200);

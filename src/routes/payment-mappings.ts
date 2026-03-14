@@ -1,6 +1,7 @@
 import { createApp } from "@/lib/create-app";
 import { createRoute } from "@hono/zod-openapi";
-import { prisma } from "@/lib/prisma";
+import { db } from "@/lib/db";
+import { paymentMapping } from "@/lib/db/schema";
 import {
   listCurrent,
   getCurrent,
@@ -157,17 +158,15 @@ app.openapi(create, async (c) => {
   });
   if (!account) return c.json({ error: "account_code not found" }, 422);
 
-  const created = await prisma.paymentMapping.create({
-    data: {
-      book_code: bookCode,
-      source_system: body.source_system,
-      payment_method: body.payment_method,
-      revision: 1,
-      valid_from: body.valid_from ? new Date(body.valid_from) : undefined,
-      created_by: userId,
-      account_code: body.account_code,
-    },
-  });
+  const [created] = await db.insert(paymentMapping).values({
+    book_code: bookCode,
+    source_system: body.source_system,
+    payment_method: body.payment_method,
+    revision: 1,
+    valid_from: body.valid_from ? new Date(body.valid_from) : undefined,
+    created_by: userId,
+    account_code: body.account_code,
+  }).returning();
 
   recordAudit(c, { action: "create", entityType: "payment_mapping", entityCode: created.id, revision: 1 });
   return c.json({ data: created }, 201);
@@ -202,17 +201,15 @@ app.openapi(update, async (c) => {
     payment_method: current.payment_method,
   });
 
-  const updated = await prisma.paymentMapping.create({
-    data: {
-      book_code: bookCode,
-      source_system: current.source_system,
-      payment_method: current.payment_method,
-      revision: maxRev + 1,
-      valid_from: body.valid_from ? new Date(body.valid_from) : undefined,
-      created_by: userId,
-      account_code: body.account_code ?? current.account_code,
-    },
-  });
+  const [updated] = await db.insert(paymentMapping).values({
+    book_code: bookCode,
+    source_system: current.source_system,
+    payment_method: current.payment_method,
+    revision: maxRev + 1,
+    valid_from: body.valid_from ? new Date(body.valid_from) : undefined,
+    created_by: userId,
+    account_code: body.account_code ?? current.account_code,
+  }).returning();
 
   recordAudit(c, { action: "update", entityType: "payment_mapping", entityCode: id, revision: maxRev + 1 });
   return c.json({ data: updated }, 200);
@@ -237,16 +234,14 @@ app.openapi(del, async (c) => {
     payment_method: current.payment_method,
   });
 
-  await prisma.paymentMapping.create({
-    data: {
-      book_code: bookCode,
-      source_system: current.source_system,
-      payment_method: current.payment_method,
-      revision: maxRev + 1,
-      created_by: userId,
-      is_active: false,
-      account_code: current.account_code,
-    },
+  await db.insert(paymentMapping).values({
+    book_code: bookCode,
+    source_system: current.source_system,
+    payment_method: current.payment_method,
+    revision: maxRev + 1,
+    created_by: userId,
+    is_active: false,
+    account_code: current.account_code,
   });
 
   recordAudit(c, { action: "deactivate", entityType: "payment_mapping", entityCode: id, revision: maxRev + 1 });
@@ -272,16 +267,14 @@ app.openapi(restore, async (c) => {
     payment_method: current.payment_method,
   });
 
-  await prisma.paymentMapping.create({
-    data: {
-      book_code: bookCode,
-      source_system: current.source_system,
-      payment_method: current.payment_method,
-      revision: maxRev + 1,
-      created_by: userId,
-      is_active: true,
-      account_code: current.account_code,
-    },
+  await db.insert(paymentMapping).values({
+    book_code: bookCode,
+    source_system: current.source_system,
+    payment_method: current.payment_method,
+    revision: maxRev + 1,
+    created_by: userId,
+    is_active: true,
+    account_code: current.account_code,
   });
 
   recordAudit(c, { action: "restore", entityType: "payment_mapping", entityCode: id, revision: maxRev + 1 });

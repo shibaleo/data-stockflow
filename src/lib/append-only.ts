@@ -1,5 +1,5 @@
-import { prisma } from "@/lib/prisma";
-import { Prisma } from "@prisma/client";
+import { db } from "@/lib/db";
+import { sql } from "drizzle-orm";
 
 const S = "data_stockflow";
 
@@ -18,9 +18,11 @@ export async function listCurrent<T>(
   options: {
     limit?: number;
     cursor?: { created_at: string; id: string };
+    activeOnly?: boolean;
   } = {}
 ): Promise<T[]> {
   const limit = Math.min(options.limit ?? 50, 200);
+  const activeClause = options.activeOnly ? sql`AND is_active = true` : sql``;
 
   // Determine filter column and value
   let filterCol: string | null = null;
@@ -36,49 +38,47 @@ export async function listCurrent<T>(
   }
 
   if (filterCol && filterVal && options.cursor) {
-    return prisma.$queryRawUnsafe<T[]>(
-      `SELECT * FROM "${S}"."${viewName}"
-       WHERE "${filterCol}" = $1
-         AND (created_at, id) < ($2::timestamptz, $3::uuid)
-       ORDER BY created_at DESC, id DESC
-       LIMIT $4`,
-      filterVal,
-      options.cursor.created_at,
-      options.cursor.id,
-      limit
-    );
+    const { rows } = await db.execute(sql`
+      SELECT * FROM "data_stockflow".${sql.raw(`"${viewName}"`)}
+      WHERE ${sql.raw(`"${filterCol}"`)} = ${filterVal}
+        ${activeClause}
+        AND (created_at, id) < (${options.cursor.created_at}::timestamptz, ${options.cursor.id}::uuid)
+      ORDER BY created_at DESC, id DESC
+      LIMIT ${limit}
+    `);
+    return rows as T[];
   }
 
   if (filterCol && filterVal) {
-    return prisma.$queryRawUnsafe<T[]>(
-      `SELECT * FROM "${S}"."${viewName}"
-       WHERE "${filterCol}" = $1
-       ORDER BY created_at DESC, id DESC
-       LIMIT $2`,
-      filterVal,
-      limit
-    );
+    const { rows } = await db.execute(sql`
+      SELECT * FROM "data_stockflow".${sql.raw(`"${viewName}"`)}
+      WHERE ${sql.raw(`"${filterCol}"`)} = ${filterVal}
+        ${activeClause}
+      ORDER BY created_at DESC, id DESC
+      LIMIT ${limit}
+    `);
+    return rows as T[];
   }
 
   // No filter (e.g. tax_class)
   if (options.cursor) {
-    return prisma.$queryRawUnsafe<T[]>(
-      `SELECT * FROM "${S}"."${viewName}"
-       WHERE (created_at, id) < ($1::timestamptz, $2::uuid)
-       ORDER BY created_at DESC, id DESC
-       LIMIT $3`,
-      options.cursor.created_at,
-      options.cursor.id,
-      limit
-    );
+    const { rows } = await db.execute(sql`
+      SELECT * FROM "data_stockflow".${sql.raw(`"${viewName}"`)}
+      WHERE 1=1 ${activeClause}
+        AND (created_at, id) < (${options.cursor.created_at}::timestamptz, ${options.cursor.id}::uuid)
+      ORDER BY created_at DESC, id DESC
+      LIMIT ${limit}
+    `);
+    return rows as T[];
   }
 
-  return prisma.$queryRawUnsafe<T[]>(
-    `SELECT * FROM "${S}"."${viewName}"
-     ORDER BY created_at DESC, id DESC
-     LIMIT $1`,
-    limit
-  );
+  const { rows } = await db.execute(sql`
+    SELECT * FROM "data_stockflow".${sql.raw(`"${viewName}"`)}
+    WHERE 1=1 ${activeClause}
+    ORDER BY created_at DESC, id DESC
+    LIMIT ${limit}
+  `);
+  return rows as T[];
 }
 
 /**
@@ -89,14 +89,18 @@ export async function getCurrent<T>(
   keyFilter: Record<string, unknown>
 ): Promise<T | null> {
   const keys = Object.keys(keyFilter);
-  const where = keys.map((k, i) => `"${k}" = $${i + 1}`).join(" AND ");
-  const values = keys.map((k) => keyFilter[k]);
+  const whereParts = keys.map((k, i) => {
+    const val = keyFilter[k];
+    return sql`${sql.raw(`"${k}"`)} = ${val}`;
+  });
+  const whereClause = whereParts.reduce((acc, part) => sql`${acc} AND ${part}`);
 
-  const rows = await prisma.$queryRawUnsafe<T[]>(
-    `SELECT * FROM "${S}"."${viewName}" WHERE ${where} LIMIT 1`,
-    ...values
-  );
-  return rows[0] ?? null;
+  const { rows } = await db.execute(sql`
+    SELECT * FROM "data_stockflow".${sql.raw(`"${viewName}"`)}
+    WHERE ${whereClause}
+    LIMIT 1
+  `);
+  return (rows[0] as T) ?? null;
 }
 
 /**
@@ -107,15 +111,18 @@ export async function getMaxRevision(
   keyFilter: Record<string, unknown>
 ): Promise<number> {
   const keys = Object.keys(keyFilter);
-  const where = keys.map((k, i) => `"${k}" = $${i + 1}`).join(" AND ");
-  const values = keys.map((k) => keyFilter[k]);
+  const whereParts = keys.map((k) => {
+    const val = keyFilter[k];
+    return sql`${sql.raw(`"${k}"`)} = ${val}`;
+  });
+  const whereClause = whereParts.reduce((acc, part) => sql`${acc} AND ${part}`);
 
-  const rows = await prisma.$queryRawUnsafe<{ max_rev: bigint | null }[]>(
-    `SELECT COALESCE(MAX(revision), 0) as max_rev
-     FROM "${S}"."${tableName}" WHERE ${where}`,
-    ...values
-  );
-  return Number(rows[0]?.max_rev ?? 0);
+  const { rows } = await db.execute(sql`
+    SELECT COALESCE(MAX(revision), 0) as max_rev
+    FROM "data_stockflow".${sql.raw(`"${tableName}"`)}
+    WHERE ${whereClause}
+  `);
+  return Number((rows[0] as { max_rev: bigint | null })?.max_rev ?? 0);
 }
 
 /**
@@ -136,8 +143,12 @@ export function decodeCursor(
 /**
  * Encode a cursor from a row with created_at and id.
  */
-export function encodeCursor(row: { created_at: Date; id: string }): string {
+export function encodeCursor(row: { created_at: Date | string; id: string }): string {
+  const ts =
+    row.created_at instanceof Date
+      ? row.created_at.toISOString()
+      : row.created_at;
   return Buffer.from(
-    JSON.stringify({ created_at: row.created_at.toISOString(), id: row.id })
+    JSON.stringify({ created_at: ts, id: row.id })
   ).toString("base64url");
 }

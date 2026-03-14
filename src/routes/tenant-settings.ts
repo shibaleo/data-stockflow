@@ -1,6 +1,7 @@
 import { createApp } from "@/lib/create-app";
 import { createRoute } from "@hono/zod-openapi";
-import { prisma } from "@/lib/prisma";
+import { db } from "@/lib/db";
+import { tenantSetting } from "@/lib/db/schema";
 import { getCurrent, getMaxRevision } from "@/lib/append-only";
 import {
   errorSchema,
@@ -78,15 +79,13 @@ app.openapi(create, async (c) => {
   );
   if (existing) return c.json({ error: "Setting already exists" }, 409);
 
-  const created = await prisma.tenantSetting.create({
-    data: {
-      tenant_id: tenantId,
-      revision: 1,
-      valid_from: body.valid_from ? new Date(body.valid_from) : undefined,
-      created_by: userId,
-      locked_until: body.locked_until ? new Date(body.locked_until) : null,
-    },
-  });
+  const [created] = await db.insert(tenantSetting).values({
+    tenant_id: tenantId,
+    revision: 1,
+    valid_from: body.valid_from ? new Date(body.valid_from) : undefined,
+    created_by: userId,
+    locked_until: body.locked_until ? new Date(body.locked_until) : null,
+  }).returning();
 
   recordAudit(c, { action: "create", entityType: "tenant_setting", entityCode: tenantId, revision: 1 });
   return c.json({ data: created }, 201);
@@ -108,20 +107,18 @@ app.openapi(update, async (c) => {
     tenant_id: tenantId,
   });
 
-  const updated = await prisma.tenantSetting.create({
-    data: {
-      tenant_id: tenantId,
-      revision: maxRev + 1,
-      valid_from: body.valid_from ? new Date(body.valid_from) : undefined,
-      created_by: userId,
-      locked_until:
-        body.locked_until !== undefined
-          ? body.locked_until
-            ? new Date(body.locked_until)
-            : null
-          : current.locked_until,
-    },
-  });
+  const [updated] = await db.insert(tenantSetting).values({
+    tenant_id: tenantId,
+    revision: maxRev + 1,
+    valid_from: body.valid_from ? new Date(body.valid_from) : undefined,
+    created_by: userId,
+    locked_until:
+      body.locked_until !== undefined
+        ? body.locked_until
+          ? new Date(body.locked_until)
+          : null
+        : current.locked_until,
+  }).returning();
 
   recordAudit(c, { action: "update", entityType: "tenant_setting", entityCode: tenantId, revision: maxRev + 1 });
   return c.json({ data: updated }, 200);

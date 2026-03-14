@@ -1,13 +1,12 @@
-import { PrismaPg } from "@prisma/adapter-pg";
-import { PrismaClient } from "@prisma/client";
+import { Pool } from "@neondatabase/serverless";
+import { drizzle } from "drizzle-orm/neon-serverless";
+import * as schema from "../src/lib/db/schema";
 import dotenv from "dotenv";
 
 dotenv.config();
 
-const adapter = new PrismaPg({
-  connectionString: process.env.DATABASE_URL,
-});
-const prisma = new PrismaClient({ adapter });
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const db = drizzle({ client: pool });
 
 // ============================================================
 // Test constants
@@ -21,16 +20,14 @@ async function main() {
   console.log(`  User:   ${USER_ID}`);
 
   // ---- Book ----
-  const book = await prisma.book.create({
-    data: {
-      tenant_id: TENANT_ID,
-      code: "default",
-      display_code: "default",
-      name: "JPY Ledger",
-      unit: "JPY",
-      created_by: USER_ID,
-    },
-  });
+  const [book] = await db.insert(schema.book).values({
+    tenant_id: TENANT_ID,
+    code: "default",
+    display_code: "default",
+    name: "JPY Ledger",
+    unit: "JPY",
+    created_by: USER_ID,
+  }).returning();
   console.log(`  Book: ${book.code} (${book.unit}) created`);
 
   // ---- Accounts ----
@@ -50,34 +47,30 @@ async function main() {
   ];
 
   for (const a of accounts) {
-    await prisma.account.create({
-      data: {
-        book_code: book.code,
-        code: a.code,
-        display_code: a.code,
-        revision: 1,
-        created_by: USER_ID,
-        name: a.name,
-        account_type: a.account_type,
-      },
+    await db.insert(schema.account).values({
+      book_code: book.code,
+      code: a.code,
+      display_code: a.code,
+      revision: 1,
+      created_by: USER_ID,
+      name: a.name,
+      account_type: a.account_type,
     });
   }
   console.log(`  Accounts: ${accounts.length} created`);
 
   // ---- Fiscal Period ----
-  await prisma.fiscalPeriod.create({
-    data: {
-      book_code: book.code,
-      code: "2026-01",
-      display_code: "2026-01",
-      revision: 1,
-      created_by: USER_ID,
-      fiscal_year: 2026,
-      period_no: 1,
-      start_date: new Date("2026-04-01T00:00:00Z"),
-      end_date: new Date("2026-04-30T23:59:59Z"),
-      status: "open",
-    },
+  await db.insert(schema.fiscalPeriod).values({
+    book_code: book.code,
+    code: "2026-01",
+    display_code: "2026-01",
+    revision: 1,
+    created_by: USER_ID,
+    fiscal_year: 2026,
+    period_no: 1,
+    start_date: new Date("2026-04-01T00:00:00Z"),
+    end_date: new Date("2026-04-30T23:59:59Z"),
+    status: "open",
   });
   console.log("  Fiscal Period: 2026-01 created");
 
@@ -87,53 +80,43 @@ async function main() {
     { code: "ADMIN", name: "Administration" },
   ];
   for (const d of departments) {
-    await prisma.department.create({
-      data: {
-        tenant_id: TENANT_ID,
-        code: d.code,
-        display_code: d.code,
-        revision: 1,
-        created_by: USER_ID,
-        name: d.name,
-      },
+    await db.insert(schema.department).values({
+      tenant_id: TENANT_ID,
+      code: d.code,
+      display_code: d.code,
+      revision: 1,
+      created_by: USER_ID,
+      name: d.name,
     });
   }
   console.log(`  Departments: ${departments.length} created`);
 
   // ---- Counterparties ----
-  await prisma.counterparty.create({
-    data: {
-      tenant_id: TENANT_ID,
-      code: "CP001",
-      display_code: "CP001",
-      revision: 1,
-      created_by: USER_ID,
-      name: "Test Supplier",
-    },
+  await db.insert(schema.counterparty).values({
+    tenant_id: TENANT_ID,
+    code: "CP001",
+    display_code: "CP001",
+    revision: 1,
+    created_by: USER_ID,
+    name: "Test Supplier",
   });
   console.log("  Counterparties: 1 created");
 
   // ---- Tenant Setting ----
-  await prisma.tenantSetting.create({
-    data: {
-      tenant_id: TENANT_ID,
-      revision: 1,
-      created_by: USER_ID,
-    },
+  await db.insert(schema.tenantSetting).values({
+    tenant_id: TENANT_ID,
+    revision: 1,
+    created_by: USER_ID,
   });
   console.log("  Tenant Setting: created");
 
   // ---- Tenant User (dev mapping) ----
-  // Links a known Clerk user ID to the test tenant/user.
-  // Update CLERK_USER_ID to your actual Clerk user ID after first login.
   const CLERK_USER_ID = process.env.CLERK_DEV_USER_ID || "dev_placeholder";
-  await prisma.tenantUser.create({
-    data: {
-      external_id: CLERK_USER_ID,
-      tenant_id: TENANT_ID,
-      user_id: USER_ID,
-      role: "admin",
-    },
+  await db.insert(schema.tenantUser).values({
+    external_id: CLERK_USER_ID,
+    tenant_id: TENANT_ID,
+    user_id: USER_ID,
+    role: "admin",
   });
   console.log(`  Tenant User: mapped ${CLERK_USER_ID} → ${USER_ID}`);
 
@@ -145,4 +128,4 @@ main()
     console.error(e);
     process.exit(1);
   })
-  .finally(() => prisma.$disconnect());
+  .finally(() => pool.end());

@@ -18,6 +18,8 @@ interface BookRow {
   code: string;
   name: string;
   unit: string;
+  unit_symbol: string;
+  unit_position: string;
   type_labels: Record<string, string>;
   is_active: boolean;
 }
@@ -40,11 +42,13 @@ type ViewMode = "tree" | "t-account";
 
 // ── Helpers ──
 
-function formatAmount(amount: number): string {
+function formatAmount(amount: number, symbol = "", position: "left" | "right" = "left"): string {
   if (amount === 0) return "-";
   const abs = Math.abs(amount);
   const formatted = abs.toLocaleString("ja-JP");
-  return amount < 0 ? `△${formatted}` : `¥${formatted}`;
+  const sep = symbol ? " " : "";
+  const value = position === "right" ? `${formatted}${sep}${symbol}` : `${symbol}${sep}${formatted}`;
+  return amount < 0 ? `△${value}` : value;
 }
 
 interface TreeNode {
@@ -166,6 +170,16 @@ export default function ReportsPage() {
     [books, selectedBookCode],
   );
 
+  const fmt = useCallback(
+    (amount: number) =>
+      formatAmount(
+        amount,
+        selectedBook?.unit_symbol ?? "",
+        (selectedBook?.unit_position === "right" ? "right" : "left"),
+      ),
+    [selectedBook],
+  );
+
   const typeLabels = useMemo(() => {
     const labels = selectedBook?.type_labels ?? {};
     return {
@@ -258,7 +272,7 @@ export default function ReportsPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-4">
-          <h2 className="text-xl font-semibold">財務レポート</h2>
+          <h2 className="text-xl font-semibold">集計</h2>
           {books.length > 1 && (
             <Select value={selectedBookCode} onValueChange={setSelectedBookCode}>
               <SelectTrigger className="w-48 h-8">
@@ -368,6 +382,7 @@ export default function ReportsPage() {
             equityTotal={equityTotal}
             netIncome={netIncome}
             typeLabels={typeLabels}
+            fmt={fmt}
           />
         ) : (
           <TreeProfitLoss
@@ -377,6 +392,7 @@ export default function ReportsPage() {
             expenseTotal={expenseTotal}
             netIncome={netIncome}
             typeLabels={typeLabels}
+            fmt={fmt}
           />
         )
       ) : tab === "bs" ? (
@@ -389,6 +405,7 @@ export default function ReportsPage() {
           equityTotal={equityTotal}
           netIncome={netIncome}
           typeLabels={typeLabels}
+          fmt={fmt}
         />
       ) : (
         <TAccountProfitLoss
@@ -398,6 +415,7 @@ export default function ReportsPage() {
           expenseTotal={expenseTotal}
           netIncome={netIncome}
           typeLabels={typeLabels}
+          fmt={fmt}
         />
       )}
     </div>
@@ -411,11 +429,13 @@ function TreeSection({
   roots,
   total,
   badge,
+  fmt,
 }: {
   title: string;
   roots: TreeNode[];
   total: number;
   badge?: string;
+  fmt: (n: number) => string;
 }) {
   const flat = flattenTree(roots);
   return (
@@ -450,7 +470,7 @@ function TreeSection({
                   {node.name}
                 </td>
                 <td className="py-2 px-3 text-right font-mono whitespace-nowrap w-40">
-                  {formatAmount(node.subtotal)}
+                  {fmt(node.subtotal)}
                 </td>
               </tr>
             ))}
@@ -459,7 +479,7 @@ function TreeSection({
             <tr className="bg-muted/50 font-semibold">
               <td className="py-2 px-3">{title}合計</td>
               <td className="py-2 px-3 text-right font-mono whitespace-nowrap w-40">
-                {formatAmount(total)}
+                {fmt(total)}
               </td>
             </tr>
           </tfoot>
@@ -486,6 +506,7 @@ function TreeBalanceSheet({
   equityTotal,
   netIncome,
   typeLabels,
+  fmt,
 }: {
   assetTree: TreeNode[];
   liabilityTree: TreeNode[];
@@ -495,16 +516,18 @@ function TreeBalanceSheet({
   equityTotal: number;
   netIncome: number;
   typeLabels: TypeLabels;
+  fmt: (n: number) => string;
 }) {
   return (
     <div>
-      <TreeSection title={typeLabels.asset} roots={assetTree} total={assetTotal} />
+      <TreeSection title={typeLabels.asset} roots={assetTree} total={assetTotal} fmt={fmt} />
       <TreeSection
         title={typeLabels.liability}
         roots={liabilityTree}
         total={liabilityTotal}
+        fmt={fmt}
       />
-      <TreeSection title={typeLabels.equity} roots={equityTree} total={equityTotal} />
+      <TreeSection title={typeLabels.equity} roots={equityTree} total={equityTotal} fmt={fmt} />
 
       {/* Net income as equity addition */}
       <div className="border border-border rounded-md overflow-hidden mb-6">
@@ -515,7 +538,7 @@ function TreeBalanceSheet({
                 当期損益（P/L差額）
               </td>
               <td className="py-2 px-3 text-right font-mono whitespace-nowrap w-40">
-                {formatAmount(netIncome)}
+                {fmt(netIncome)}
               </td>
             </tr>
           </tbody>
@@ -526,18 +549,18 @@ function TreeBalanceSheet({
       <div className="border-t-2 border-border pt-4 space-y-2">
         <div className="flex justify-between text-sm font-bold px-3">
           <span>{typeLabels.asset}合計</span>
-          <span className="font-mono">{formatAmount(assetTotal)}</span>
+          <span className="font-mono">{fmt(assetTotal)}</span>
         </div>
         <div className="flex justify-between text-sm font-bold px-3">
           <span>{typeLabels.liability}・{typeLabels.equity}合計</span>
           <span className="font-mono">
-            {formatAmount(liabilityTotal + equityTotal + netIncome)}
+            {fmt(liabilityTotal + equityTotal + netIncome)}
           </span>
         </div>
         {assetTotal !== liabilityTotal + equityTotal + netIncome && (
           <div className="text-xs text-destructive px-3">
             差額:{" "}
-            {formatAmount(
+            {fmt(
               assetTotal - (liabilityTotal + equityTotal + netIncome)
             )}
           </div>
@@ -554,6 +577,7 @@ function TreeProfitLoss({
   expenseTotal,
   netIncome,
   typeLabels,
+  fmt,
 }: {
   revenueTree: TreeNode[];
   expenseTree: TreeNode[];
@@ -561,16 +585,17 @@ function TreeProfitLoss({
   expenseTotal: number;
   netIncome: number;
   typeLabels: TypeLabels;
+  fmt: (n: number) => string;
 }) {
   return (
     <div>
-      <TreeSection title={typeLabels.revenue} roots={revenueTree} total={revenueTotal} />
-      <TreeSection title={typeLabels.expense} roots={expenseTree} total={expenseTotal} />
+      <TreeSection title={typeLabels.revenue} roots={revenueTree} total={revenueTotal} fmt={fmt} />
+      <TreeSection title={typeLabels.expense} roots={expenseTree} total={expenseTotal} fmt={fmt} />
 
       <div className="border-t-2 border-border pt-4">
         <div className="flex justify-between text-sm font-bold px-3">
           <span>当期損益</span>
-          <span className="font-mono">{formatAmount(netIncome)}</span>
+          <span className="font-mono">{fmt(netIncome)}</span>
         </div>
       </div>
     </div>
@@ -583,10 +608,12 @@ function TAccountSide({
   title,
   roots,
   total,
+  fmt,
 }: {
   title: string;
   roots: TreeNode[];
   total: number;
+  fmt: (n: number) => string;
 }) {
   const flat = flattenTree(roots);
   return (
@@ -614,7 +641,7 @@ function TAccountSide({
                   {node.name}
                 </td>
                 <td className="py-1.5 px-2 text-right font-mono whitespace-nowrap text-xs w-28">
-                  {formatAmount(node.subtotal)}
+                  {fmt(node.subtotal)}
                 </td>
               </tr>
             ))}
@@ -623,7 +650,7 @@ function TAccountSide({
             <tr className="bg-muted/50 font-semibold">
               <td className="py-1.5 px-2 text-xs">合計</td>
               <td className="py-1.5 px-2 text-right font-mono whitespace-nowrap text-xs w-28">
-                {formatAmount(total)}
+                {fmt(total)}
               </td>
             </tr>
           </tfoot>
@@ -642,6 +669,7 @@ function TAccountBalanceSheet({
   equityTotal,
   netIncome,
   typeLabels,
+  fmt,
 }: {
   assetTree: TreeNode[];
   liabilityTree: TreeNode[];
@@ -651,6 +679,7 @@ function TAccountBalanceSheet({
   equityTotal: number;
   netIncome: number;
   typeLabels: TypeLabels;
+  fmt: (n: number) => string;
 }) {
   return (
     <div>
@@ -660,6 +689,7 @@ function TAccountBalanceSheet({
           title={`借方（${typeLabels.asset}）`}
           roots={assetTree}
           total={assetTotal}
+          fmt={fmt}
         />
 
         {/* Divider */}
@@ -671,11 +701,13 @@ function TAccountBalanceSheet({
             title={`貸方（${typeLabels.liability}）`}
             roots={liabilityTree}
             total={liabilityTotal}
+            fmt={fmt}
           />
           <TAccountSide
             title={`貸方（${typeLabels.equity}）`}
             roots={equityTree}
             total={equityTotal}
+            fmt={fmt}
           />
           {/* Net income */}
           <div className="border border-border rounded-md overflow-hidden">
@@ -684,7 +716,7 @@ function TAccountBalanceSheet({
                 <tr className="bg-muted/30 font-medium">
                   <td className="py-1.5 px-2 text-xs">当期損益</td>
                   <td className="py-1.5 px-2 text-right font-mono whitespace-nowrap text-xs w-28">
-                    {formatAmount(netIncome)}
+                    {fmt(netIncome)}
                   </td>
                 </tr>
               </tbody>
@@ -697,12 +729,12 @@ function TAccountBalanceSheet({
       <div className="flex gap-4 mt-4 border-t-2 border-border pt-3">
         <div className="flex-1 text-center text-sm font-bold">
           <span className="text-muted-foreground mr-2">借方合計:</span>
-          <span className="font-mono">{formatAmount(assetTotal)}</span>
+          <span className="font-mono">{fmt(assetTotal)}</span>
         </div>
         <div className="flex-1 text-center text-sm font-bold">
           <span className="text-muted-foreground mr-2">貸方合計:</span>
           <span className="font-mono">
-            {formatAmount(liabilityTotal + equityTotal + netIncome)}
+            {fmt(liabilityTotal + equityTotal + netIncome)}
           </span>
         </div>
       </div>
@@ -717,6 +749,7 @@ function TAccountProfitLoss({
   expenseTotal,
   netIncome,
   typeLabels,
+  fmt,
 }: {
   revenueTree: TreeNode[];
   expenseTree: TreeNode[];
@@ -724,6 +757,7 @@ function TAccountProfitLoss({
   expenseTotal: number;
   netIncome: number;
   typeLabels: TypeLabels;
+  fmt: (n: number) => string;
 }) {
   return (
     <div>
@@ -734,6 +768,7 @@ function TAccountProfitLoss({
             title={`借方（${typeLabels.expense}）`}
             roots={expenseTree}
             total={expenseTotal}
+            fmt={fmt}
           />
           {/* Net income on debit side if positive (profit) */}
           {netIncome > 0 && (
@@ -743,7 +778,7 @@ function TAccountProfitLoss({
                   <tr className="bg-green-900/20 font-medium">
                     <td className="py-1.5 px-2 text-xs">当期利益</td>
                     <td className="py-1.5 px-2 text-right font-mono whitespace-nowrap text-xs w-28">
-                      {formatAmount(netIncome)}
+                      {fmt(netIncome)}
                     </td>
                   </tr>
                 </tbody>
@@ -761,6 +796,7 @@ function TAccountProfitLoss({
             title={`貸方（${typeLabels.revenue}）`}
             roots={revenueTree}
             total={revenueTotal}
+            fmt={fmt}
           />
           {/* Net loss on credit side if negative */}
           {netIncome < 0 && (
@@ -770,7 +806,7 @@ function TAccountProfitLoss({
                   <tr className="bg-red-900/20 font-medium">
                     <td className="py-1.5 px-2 text-xs">当期損失</td>
                     <td className="py-1.5 px-2 text-right font-mono whitespace-nowrap text-xs w-28">
-                      {formatAmount(Math.abs(netIncome))}
+                      {fmt(Math.abs(netIncome))}
                     </td>
                   </tr>
                 </tbody>
@@ -785,13 +821,13 @@ function TAccountProfitLoss({
         <div className="flex-1 text-center text-sm font-bold">
           <span className="text-muted-foreground mr-2">借方合計:</span>
           <span className="font-mono">
-            {formatAmount(expenseTotal + Math.max(0, netIncome))}
+            {fmt(expenseTotal + Math.max(0, netIncome))}
           </span>
         </div>
         <div className="flex-1 text-center text-sm font-bold">
           <span className="text-muted-foreground mr-2">貸方合計:</span>
           <span className="font-mono">
-            {formatAmount(revenueTotal + Math.max(0, -netIncome))}
+            {fmt(revenueTotal + Math.max(0, -netIncome))}
           </span>
         </div>
       </div>

@@ -82,6 +82,8 @@ export const bookResponseSchema = z.object({
   created_at: z.string(),
   name: z.string(),
   unit: z.string(),
+  unit_symbol: z.string(),
+  unit_position: z.string(),
   type_labels: typeLabelsResponseSchema,
   is_active: z.boolean(),
 });
@@ -90,6 +92,8 @@ export const createBookSchema = z.object({
   display_code: zSanitized(z.string().min(1).max(50)).optional(),
   name: zSanitized(z.string().min(1).max(200)),
   unit: zSanitized(z.string().min(1).max(50)),
+  unit_symbol: zSanitized(z.string().max(20)).optional(),
+  unit_position: z.enum(["left", "right"]).optional(),
   type_labels: typeLabelsSchema.optional(),
 });
 
@@ -97,6 +101,8 @@ export const updateBookSchema = z.object({
   display_code: zSanitized(z.string().min(1).max(50)).optional(),
   name: zSanitized(z.string().min(1).max(200)).optional(),
   unit: zSanitized(z.string().min(1).max(50)).optional(),
+  unit_symbol: zSanitized(z.string().max(20)).optional(),
+  unit_position: z.enum(["left", "right"]).optional(),
   type_labels: typeLabelsSchema.optional(),
 });
 
@@ -120,6 +126,8 @@ export const accountResponseSchema = z.object({
   account_type: z.string(),
   sign: z.number(),
   parent_account_code: z.string().nullable(),
+  unit_symbol: z.string(),
+  unit_position: z.string(),
 });
 
 export const createAccountSchema = z.object({

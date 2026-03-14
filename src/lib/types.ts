@@ -10,6 +10,8 @@ export interface CurrentBook {
   created_at: Date;
   name: string;
   unit: string;
+  unit_symbol: string;
+  unit_position: string;
   type_labels: Record<string, string>;
   is_active: boolean;
 }
@@ -30,6 +32,8 @@ export interface CurrentAccount {
   account_type: string;
   sign: number;
   parent_account_code: string | null;
+  unit_symbol: string;
+  unit_position: string;
 }
 
 export interface CurrentTag {

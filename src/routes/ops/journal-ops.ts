@@ -1,6 +1,8 @@
 import { createApp } from "@/lib/create-app";
 import { createRoute } from "@hono/zod-openapi";
-import { prisma } from "@/lib/prisma";
+import { db } from "@/lib/db";
+import { sql } from "drizzle-orm";
+import { journal, journalHeader, journalLine, journalTag } from "@/lib/db/schema";
 import { getCurrent } from "@/lib/append-only";
 import {
   codeParamSchema,
@@ -118,31 +120,29 @@ app.openapi(reverse, async (c) => {
   }
 
   // 5. Fiscal period must be open (in any book under this tenant)
-  const fpRows = await prisma.$queryRawUnsafe<CurrentFiscalPeriod[]>(
-    `SELECT fp.* FROM "data_stockflow"."current_fiscal_period" fp
-     JOIN "data_stockflow"."current_book" cb ON cb.code = fp.book_code
-     WHERE cb.tenant_id = $1 AND fp.code = $2 AND cb.is_active = true LIMIT 1`,
-    tenantId,
-    current.fiscal_period_code
+  const { rows: fpRows } = await db.execute(
+    sql`SELECT fp.* FROM "${sql.raw(S)}"."current_fiscal_period" fp
+     JOIN "${sql.raw(S)}"."current_book" cb ON cb.code = fp.book_code
+     WHERE cb.tenant_id = ${tenantId} AND fp.code = ${current.fiscal_period_code} AND cb.is_active = true LIMIT 1`
   );
-  const fp = fpRows[0] ?? null;
+  const fp = (fpRows as CurrentFiscalPeriod[])[0] ?? null;
   if (!fp) return c.json({ error: "Fiscal period not found" }, 422);
   if (fp.status !== "open")
     return c.json({ error: "Fiscal period is not open" }, 422);
 
   // 6. Get original lines
-  const lines = await prisma.$queryRawUnsafe<JournalLineRow[]>(
-    `SELECT * FROM "${S}"."journal_line" WHERE journal_id = $1 ORDER BY line_group, side`,
-    current.id
+  const { rows: linesRaw } = await db.execute(
+    sql`SELECT * FROM "${sql.raw(S)}"."journal_line" WHERE journal_id = ${current.id} ORDER BY line_group, side`
   );
+  const lines = linesRaw as JournalLineRow[];
   if (lines.length === 0)
     return c.json({ error: "Original journal has no lines" }, 422);
 
   // 7. Get original tags
-  const tags = await prisma.$queryRawUnsafe<JournalTagRow[]>(
-    `SELECT * FROM "${S}"."journal_tag" WHERE journal_id = $1`,
-    current.id
+  const { rows: tagsRaw } = await db.execute(
+    sql`SELECT * FROM "${sql.raw(S)}"."journal_tag" WHERE journal_id = ${current.id}`
   );
+  const tags = tagsRaw as JournalTagRow[];
 
   // 8. Build reversal idempotency_code
   const reversalCode = `reverse:${code}`;
@@ -150,75 +150,69 @@ app.openapi(reverse, async (c) => {
     body.description ?? `Reversal of ${current.description || code}`;
 
   // 9. Transaction
-  const result = await prisma.$transaction(async (tx) => {
+  const result = await db.transaction(async (tx: typeof db) => {
     // Voucher code auto-generation
-    const voucherRows = await tx.$queryRawUnsafe<{ next_code: bigint }[]>(
-      `SELECT COALESCE(MAX(voucher_code::int), 0) + 1 as next_code
-       FROM "${S}"."journal_header"
-       WHERE tenant_id = $1 AND fiscal_period_code = $2`,
-      tenantId,
-      current.fiscal_period_code
+    const { rows: voucherRows } = await tx.execute(
+      sql`SELECT COALESCE(MAX(voucher_code::int), 0) + 1 as next_code
+       FROM "${sql.raw(S)}"."journal_header"
+       WHERE tenant_id = ${tenantId} AND fiscal_period_code = ${current.fiscal_period_code}`
     );
-    const voucherCode = String(voucherRows[0].next_code);
+    const voucherCode = String((voucherRows as { next_code: bigint }[])[0].next_code);
 
-    // Insert journal_header (idempotency prevents duplicates — will throw P2002 if already reversed)
-    const header = await tx.journalHeader.create({
-      data: {
-        idempotency_code: reversalCode,
-        tenant_id: tenantId,
-        voucher_code: voucherCode,
-        fiscal_period_code: current.fiscal_period_code,
-        created_by: userId,
-      },
-    });
+    // Insert journal_header (idempotency prevents duplicates — will throw unique constraint error if already reversed)
+    const [header] = await tx.insert(journalHeader).values({
+      idempotency_code: reversalCode,
+      tenant_id: tenantId,
+      voucher_code: voucherCode,
+      fiscal_period_code: current.fiscal_period_code,
+      created_by: userId,
+    }).returning();
 
     // Insert journal (revision=1)
-    const journal = await tx.journal.create({
-      data: {
-        tenant_id: tenantId,
-        idempotency_code: reversalCode,
-        revision: 1,
-        posted_date: postedDate,
-        journal_type: current.journal_type,
-        slip_category: current.slip_category,
-        adjustment_flag: current.adjustment_flag,
-        description,
-        source_system: current.source_system,
-        created_by: userId,
-      },
-    });
+    const [j] = await tx.insert(journal).values({
+      tenant_id: tenantId,
+      idempotency_code: reversalCode,
+      revision: 1,
+      posted_date: postedDate,
+      journal_type: current.journal_type,
+      slip_category: current.slip_category,
+      adjustment_flag: current.adjustment_flag,
+      description,
+      source_system: current.source_system,
+      created_by: userId,
+    }).returning();
 
-    // Insert reversed lines (flip side: debit→credit, credit→debit; negate amount)
-    await tx.journalLine.createMany({
-      data: lines.map((l) => ({
+    // Insert reversed lines (flip side: debit->credit, credit->debit; negate amount)
+    await tx.insert(journalLine).values(
+      lines.map((l) => ({
         tenant_id: tenantId,
-        journal_id: journal.id,
+        journal_id: j.id,
         line_group: l.line_group,
         side: l.side === "debit" ? "credit" : "debit",
         account_code: l.account_code,
         department_code: l.department_code,
         counterparty_code: l.counterparty_code,
         tax_class_code: l.tax_class_code,
-        tax_rate: l.tax_rate ? parseFloat(l.tax_rate) : null,
+        tax_rate: l.tax_rate ?? null,
         is_reduced: l.is_reduced,
-        amount: -parseFloat(String(l.amount)), // negate: original debit(-) → credit(+), original credit(+) → debit(-)
+        amount: String(-parseFloat(String(l.amount))), // negate: original debit(-) -> credit(+), original credit(+) -> debit(-)
         description: l.description,
       })),
-    });
+    );
 
     // Copy tags
     if (tags.length > 0) {
-      await tx.journalTag.createMany({
-        data: tags.map((t) => ({
+      await tx.insert(journalTag).values(
+        tags.map((t) => ({
           tenant_id: tenantId,
-          journal_id: journal.id,
+          journal_id: j.id,
           tag_code: t.tag_code,
           created_by: userId,
         })),
-      });
+      );
     }
 
-    return { header, journal };
+    return { header, journal: j };
   });
 
   recordAudit(c, { action: "reverse", entityType: "journal", entityCode: code, revision: 1, detail: { reversal_code: reversalCode } });

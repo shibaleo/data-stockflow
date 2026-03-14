@@ -28,6 +28,8 @@ interface BookRow {
   code: string;
   name: string;
   unit: string;
+  unit_symbol: string;
+  unit_position: string;
   is_active: boolean;
 }
 

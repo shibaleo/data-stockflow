@@ -22,7 +22,7 @@ const COLLAPSED_WIDTH = 56;
 
 const navItems = [
   { href: "/journals", label: "仕訳入力", icon: PenLine },
-  { href: "/reports", label: "財務レポート", icon: BarChart3 },
+  { href: "/aggregation", label: "集計", icon: BarChart3 },
   { href: "/accounts", label: "勘定科目", icon: BookOpen },
   { href: "/tags", label: "タグ", icon: Tag },
   { href: "/fiscal-periods", label: "会計期間", icon: Calendar },

@@ -1,6 +1,7 @@
 import { createApp } from "@/lib/create-app";
 import { createRoute } from "@hono/zod-openapi";
-import { prisma } from "@/lib/prisma";
+import { db } from "@/lib/db";
+import { counterparty } from "@/lib/db/schema";
 import {
   listCurrent,
   getCurrent,
@@ -125,15 +126,13 @@ app.openapi(create, async (c) => {
   const userId = c.get("userId");
   const body = c.req.valid("json");
 
-  const created = await prisma.counterparty.create({
-    data: {
-      tenant_id: tenantId, display_code: body.display_code, revision: 1,
-      valid_from: body.valid_from ? new Date(body.valid_from) : undefined,
-      created_by: userId, name: body.name,
-      qualified_invoice_number: body.qualified_invoice_number,
-      is_qualified_issuer: body.is_qualified_issuer,
-    },
-  });
+  const [created] = await db.insert(counterparty).values({
+    tenant_id: tenantId, display_code: body.display_code, revision: 1,
+    valid_from: body.valid_from ? new Date(body.valid_from) : undefined,
+    created_by: userId, name: body.name,
+    qualified_invoice_number: body.qualified_invoice_number,
+    is_qualified_issuer: body.is_qualified_issuer,
+  }).returning();
   recordAudit(c, { action: "create", entityType: "counterparty", entityCode: created.code, revision: 1 });
   return c.json({ data: created }, 201);
 });
@@ -151,17 +150,15 @@ app.openapi(update, async (c) => {
 
   const maxRev = await getMaxRevision("counterparty", { tenant_id: tenantId, code });
 
-  const updated = await prisma.counterparty.create({
-    data: {
-      tenant_id: tenantId, code,
-      display_code: body.display_code !== undefined ? body.display_code : current.display_code,
-      revision: maxRev + 1, valid_from: body.valid_from ? new Date(body.valid_from) : undefined,
-      created_by: userId, name: body.name ?? current.name,
-      qualified_invoice_number: body.qualified_invoice_number !== undefined
-        ? body.qualified_invoice_number : current.qualified_invoice_number,
-      is_qualified_issuer: body.is_qualified_issuer ?? current.is_qualified_issuer,
-    },
-  });
+  const [updated] = await db.insert(counterparty).values({
+    tenant_id: tenantId, code,
+    display_code: body.display_code !== undefined ? body.display_code : current.display_code,
+    revision: maxRev + 1, valid_from: body.valid_from ? new Date(body.valid_from) : undefined,
+    created_by: userId, name: body.name ?? current.name,
+    qualified_invoice_number: body.qualified_invoice_number !== undefined
+      ? body.qualified_invoice_number : current.qualified_invoice_number,
+    is_qualified_issuer: body.is_qualified_issuer ?? current.is_qualified_issuer,
+  }).returning();
   recordAudit(c, { action: "update", entityType: "counterparty", entityCode: code, revision: maxRev + 1 });
   return c.json({ data: updated }, 200);
 });
@@ -177,13 +174,11 @@ app.openapi(del, async (c) => {
   if (!current.is_active) return c.json({ error: "Already inactive" }, 404);
 
   const maxRev = await getMaxRevision("counterparty", { tenant_id: tenantId, code });
-  await prisma.counterparty.create({
-    data: {
-      tenant_id: tenantId, code, display_code: current.display_code, revision: maxRev + 1,
-      created_by: userId, name: current.name, is_active: false,
-      qualified_invoice_number: current.qualified_invoice_number,
-      is_qualified_issuer: current.is_qualified_issuer,
-    },
+  await db.insert(counterparty).values({
+    tenant_id: tenantId, code, display_code: current.display_code, revision: maxRev + 1,
+    created_by: userId, name: current.name, is_active: false,
+    qualified_invoice_number: current.qualified_invoice_number,
+    is_qualified_issuer: current.is_qualified_issuer,
   });
   recordAudit(c, { action: "deactivate", entityType: "counterparty", entityCode: code, revision: maxRev + 1 });
   return c.json({ message: "Deactivated" }, 200);
@@ -200,13 +195,11 @@ app.openapi(restore, async (c) => {
   if (current.is_active) return c.json({ error: "Already active" }, 404);
 
   const maxRev = await getMaxRevision("counterparty", { tenant_id: tenantId, code });
-  await prisma.counterparty.create({
-    data: {
-      tenant_id: tenantId, code, display_code: current.display_code, revision: maxRev + 1,
-      created_by: userId, name: current.name, is_active: true,
-      qualified_invoice_number: current.qualified_invoice_number,
-      is_qualified_issuer: current.is_qualified_issuer,
-    },
+  await db.insert(counterparty).values({
+    tenant_id: tenantId, code, display_code: current.display_code, revision: maxRev + 1,
+    created_by: userId, name: current.name, is_active: true,
+    qualified_invoice_number: current.qualified_invoice_number,
+    is_qualified_issuer: current.is_qualified_issuer,
   });
   recordAudit(c, { action: "restore", entityType: "counterparty", entityCode: code, revision: maxRev + 1 });
   return c.json({ message: "Restored" }, 200);

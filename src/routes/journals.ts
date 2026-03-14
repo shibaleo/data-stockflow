@@ -1,6 +1,8 @@
 import { createApp } from "@/lib/create-app";
 import { createRoute, z } from "@hono/zod-openapi";
-import { prisma } from "@/lib/prisma";
+import { db } from "@/lib/db";
+import { sql } from "drizzle-orm";
+import { journal, journalHeader, journalLine, journalTag } from "@/lib/db/schema";
 import {
   listCurrent,
   getCurrent,
@@ -43,12 +45,16 @@ const app = createApp();
 
 app.use("*", requireTenant(), requireAuth());
 
+const journalListQuerySchema = listQuerySchema.extend({
+  book_code: z.string().optional().openapi({ description: "Filter journals by book_code (only journals with lines in this book)" }),
+});
+
 const list = createRoute({
   method: "get",
   path: "/",
   tags: ["Journals"],
   summary: "List current journals",
-  request: { query: listQuerySchema },
+  request: { query: journalListQuerySchema },
   responses: {
     200: { description: "Success", content: { "application/json": { schema: paginatedSchema(journalResponseSchema) } } },
   },
@@ -125,35 +131,40 @@ const del = createRoute({
 
 app.openapi(list, async (c) => {
   const tenantId = c.get("tenantId");
-  const { limit: limitStr, cursor: cursorParam } = c.req.valid("query");
+  const { limit: limitStr, cursor: cursorParam, book_code: bookCode } = c.req.valid("query");
   const limit = Math.min(Number(limitStr || 50), 200);
   const cursor = cursorParam ? decodeCursor(cursorParam) : undefined;
 
-  // Exclude journals whose accounts belong to deactivated books
   const cursorClause = cursor
-    ? `AND (cj.created_at, cj.id) < ($2::timestamptz, $3::uuid)`
-    : "";
-  const limitParam = cursor ? "$4" : "$2";
+    ? sql`AND (cj.created_at, cj.id) < (${cursor.created_at}::timestamptz, ${cursor.id}::uuid)`
+    : sql``;
 
-  const sql = `
-    SELECT cj.* FROM "${S}"."current_journal" cj
-    WHERE cj.tenant_id = $1
+  // Optional: filter to journals that have at least one line in the given book
+  const bookClause = bookCode
+    ? sql`AND EXISTS (
+        SELECT 1 FROM "${sql.raw(S)}"."journal_line" jl2
+        JOIN "${sql.raw(S)}"."current_account" ca2 ON ca2.code = jl2.account_code
+        WHERE jl2.journal_id = cj.id AND ca2.book_code = ${bookCode}
+      )`
+    : sql``;
+
+  const query = sql`
+    SELECT cj.* FROM "${sql.raw(S)}"."current_journal" cj
+    WHERE cj.tenant_id = ${tenantId}
       AND NOT EXISTS (
-        SELECT 1 FROM "${S}"."journal_line" jl
-        JOIN "${S}"."current_account" ca ON ca.code = jl.account_code
-        JOIN "${S}"."current_book" cb ON cb.code = ca.book_code
+        SELECT 1 FROM "${sql.raw(S)}"."journal_line" jl
+        JOIN "${sql.raw(S)}"."current_account" ca ON ca.code = jl.account_code
+        JOIN "${sql.raw(S)}"."current_book" cb ON cb.code = ca.book_code
         WHERE jl.journal_id = cj.id AND cb.is_active = false
       )
+      ${bookClause}
       ${cursorClause}
     ORDER BY cj.created_at DESC, cj.id DESC
-    LIMIT ${limitParam}
+    LIMIT ${limit}
   `;
 
-  const rows = cursor
-    ? await prisma.$queryRawUnsafe<CurrentJournal[]>(
-        sql, tenantId, cursor.created_at, cursor.id, limit
-      )
-    : await prisma.$queryRawUnsafe<CurrentJournal[]>(sql, tenantId, limit);
+  const { rows: rawRows } = await db.execute(query);
+  const rows = rawRows as CurrentJournal[];
 
   return c.json({
     data: rows,
@@ -172,20 +183,20 @@ app.openapi(get, async (c) => {
   });
   if (!journal) return c.json({ error: "Not found" }, 404);
 
-  const [lines, tags, attachments] = await Promise.all([
-    prisma.$queryRawUnsafe<JournalLineRow[]>(
-      `SELECT * FROM "${S}"."journal_line" WHERE journal_id = $1 ORDER BY line_group, side`,
-      journal.id
+  const [linesResult, tagsResult, attachmentsResult] = await Promise.all([
+    db.execute(
+      sql`SELECT * FROM "${sql.raw(S)}"."journal_line" WHERE journal_id = ${journal.id} ORDER BY line_group, side`
     ),
-    prisma.$queryRawUnsafe<JournalTagRow[]>(
-      `SELECT * FROM "${S}"."journal_tag" WHERE journal_id = $1`,
-      journal.id
+    db.execute(
+      sql`SELECT * FROM "${sql.raw(S)}"."journal_tag" WHERE journal_id = ${journal.id}`
     ),
-    prisma.$queryRawUnsafe<JournalAttachmentRow[]>(
-      `SELECT * FROM "${S}"."journal_attachment" WHERE idempotency_code = $1`,
-      code
+    db.execute(
+      sql`SELECT * FROM "${sql.raw(S)}"."journal_attachment" WHERE idempotency_code = ${code}`
     ),
   ]);
+  const lines = linesResult.rows as JournalLineRow[];
+  const tags = tagsResult.rows as JournalTagRow[];
+  const attachments = attachmentsResult.rows as JournalAttachmentRow[];
 
   // Convert signed DB amounts back to positive for API response
   const transformedLines = lines.map((l) => ({
@@ -203,14 +214,12 @@ app.openapi(create, async (c) => {
   const body = c.req.valid("json");
 
   // 1. Validate fiscal_period exists and is open (in any active book under this tenant)
-  const fpRows = await prisma.$queryRawUnsafe<CurrentFiscalPeriod[]>(
-    `SELECT fp.* FROM "${S}"."current_fiscal_period" fp
-     JOIN "${S}"."current_book" cb ON cb.code = fp.book_code
-     WHERE cb.tenant_id = $1 AND fp.code = $2 AND cb.is_active = true LIMIT 1`,
-    tenantId,
-    body.fiscal_period_code
+  const { rows: fpRows } = await db.execute(
+    sql`SELECT fp.* FROM "${sql.raw(S)}"."current_fiscal_period" fp
+     JOIN "${sql.raw(S)}"."current_book" cb ON cb.code = fp.book_code
+     WHERE cb.tenant_id = ${tenantId} AND fp.code = ${body.fiscal_period_code} AND cb.is_active = true LIMIT 1`
   );
-  const fp = fpRows[0] ?? null;
+  const fp = (fpRows as CurrentFiscalPeriod[])[0] ?? null;
   if (!fp)
     return c.json({ error: "fiscal_period_code not found" }, 422);
   if (fp.status !== "open")
@@ -259,22 +268,20 @@ app.openapi(create, async (c) => {
   // Convert to signed amounts for DB (debit=negative, credit=positive)
   const signedLines = body.lines.map((l) => ({
     ...l,
-    amount: l.side === "debit" ? -l.amount : l.amount,
+    amount: String(l.side === "debit" ? -l.amount : l.amount),
   }));
 
-  // 5. Validate reference codes (only active books)
+  // 5. Validate reference codes (only active books & active accounts)
   const accountCodes = [...new Set(body.lines.map((l) => l.account_code))];
   for (const ac of accountCodes) {
-    const aRows = await prisma.$queryRawUnsafe<CurrentAccount[]>(
-      `SELECT ca.* FROM "${S}"."current_account" ca
-       JOIN "${S}"."current_book" cb ON cb.code = ca.book_code
-       WHERE cb.tenant_id = $1 AND ca.code = $2 AND cb.is_active = true LIMIT 1`,
-      tenantId,
-      ac
+    const { rows: aRows } = await db.execute(
+      sql`SELECT ca.* FROM "${sql.raw(S)}"."current_account" ca
+       JOIN "${sql.raw(S)}"."current_book" cb ON cb.code = ca.book_code
+       WHERE cb.tenant_id = ${tenantId} AND ca.code = ${ac} AND ca.is_active = true AND cb.is_active = true LIMIT 1`
     );
-    const a = aRows[0] ?? null;
+    const a = (aRows as CurrentAccount[])[0] ?? null;
     if (!a)
-      return c.json({ error: `account_code '${ac}' not found` }, 422);
+      return c.json({ error: `account_code '${ac}' not found or inactive` }, 422);
     if (!a.is_leaf)
       return c.json({ error: `account_code '${ac}' is not a leaf account (cannot post to summary accounts)` }, 422);
   }
@@ -343,77 +350,69 @@ app.openapi(create, async (c) => {
   }
 
   // 6. Transaction
-  const result = await prisma.$transaction(async (tx) => {
+  const result = await db.transaction(async (tx: typeof db) => {
     // 6a. Voucher code auto-generation
-    const voucherRows = await tx.$queryRawUnsafe<
-      { next_code: bigint }[]
-    >(
-      `SELECT COALESCE(MAX(voucher_code::int), 0) + 1 as next_code
-       FROM "${S}"."journal_header"
-       WHERE tenant_id = $1 AND fiscal_period_code = $2`,
-      tenantId,
-      body.fiscal_period_code
+    const { rows: voucherRows } = await tx.execute(
+      sql`SELECT COALESCE(MAX(voucher_code::int), 0) + 1 as next_code
+       FROM "${sql.raw(S)}"."journal_header"
+       WHERE tenant_id = ${tenantId} AND fiscal_period_code = ${body.fiscal_period_code}`
     );
-    const voucherCode = String(voucherRows[0].next_code);
+    const voucherCode = String((voucherRows as { next_code: bigint }[])[0].next_code);
 
     // 6b. Insert journal_header
-    const header = await tx.journalHeader.create({
-      data: {
-        idempotency_code: body.idempotency_code,
-        tenant_id: tenantId,
-        voucher_code: voucherCode,
-        fiscal_period_code: body.fiscal_period_code,
-        created_by: userId,
-      },
-    });
+    const [header] = await tx.insert(journalHeader).values({
+      idempotency_code: body.idempotency_code,
+      tenant_id: tenantId,
+      voucher_code: voucherCode,
+      fiscal_period_code: body.fiscal_period_code,
+      created_by: userId,
+    }).returning();
 
     // 6c. Insert journal (revision=1)
-    const journal = await tx.journal.create({
-      data: {
-        tenant_id: tenantId,
-        idempotency_code: body.idempotency_code,
-        revision: 1,
-        posted_date: new Date(body.posted_date),
-        journal_type: body.journal_type,
-        slip_category: body.slip_category,
-        adjustment_flag: body.adjustment_flag,
-        description: body.description,
-        source_system: body.source_system,
-        created_by: userId,
-      },
-    });
+    const [j] = await tx.insert(journal).values({
+      tenant_id: tenantId,
+      idempotency_code: body.idempotency_code,
+      revision: 1,
+      posted_date: new Date(body.posted_date),
+      journal_type: body.journal_type,
+      slip_category: body.slip_category,
+      adjustment_flag: body.adjustment_flag,
+      description: body.description,
+      source_system: body.source_system,
+      created_by: userId,
+    }).returning();
 
     // 6d. Insert journal_lines (using signed amounts)
-    await tx.journalLine.createMany({
-      data: signedLines.map((l) => ({
+    await tx.insert(journalLine).values(
+      signedLines.map((l) => ({
         tenant_id: tenantId,
-        journal_id: journal.id,
+        journal_id: j.id,
         line_group: l.line_group,
         side: l.side,
         account_code: l.account_code,
         department_code: l.department_code,
         counterparty_code: l.counterparty_code,
         tax_class_code: l.tax_class_code,
-        tax_rate: l.tax_rate,
+        tax_rate: l.tax_rate != null ? String(l.tax_rate) : undefined,
         is_reduced: l.is_reduced,
         amount: l.amount,
         description: l.description,
       })),
-    });
+    );
 
     // 6e. Insert journal_tags
     if (body.tags?.length) {
-      await tx.journalTag.createMany({
-        data: body.tags.map((tagCode) => ({
+      await tx.insert(journalTag).values(
+        body.tags.map((tagCode) => ({
           tenant_id: tenantId,
-          journal_id: journal.id,
+          journal_id: j.id,
           tag_code: tagCode,
           created_by: userId,
         })),
-      });
+      );
     }
 
-    return { header, journal };
+    return { header, journal: j };
   });
 
   recordAudit(c, { action: "create", entityType: "journal", entityCode: body.idempotency_code, revision: 1 });
@@ -478,22 +477,20 @@ app.openapi(update, async (c) => {
   // Convert to signed amounts for DB (debit=negative, credit=positive)
   const signedLines = body.lines.map((l) => ({
     ...l,
-    amount: l.side === "debit" ? -l.amount : l.amount,
+    amount: String(l.side === "debit" ? -l.amount : l.amount),
   }));
 
-  // 5. Validate reference codes (only active books, same as POST)
+  // 5. Validate reference codes (only active books & active accounts, same as POST)
   const accountCodes = [...new Set(body.lines.map((l) => l.account_code))];
   for (const ac of accountCodes) {
-    const aRows = await prisma.$queryRawUnsafe<CurrentAccount[]>(
-      `SELECT ca.* FROM "${S}"."current_account" ca
-       JOIN "${S}"."current_book" cb ON cb.code = ca.book_code
-       WHERE cb.tenant_id = $1 AND ca.code = $2 AND cb.is_active = true LIMIT 1`,
-      tenantId,
-      ac
+    const { rows: aRows } = await db.execute(
+      sql`SELECT ca.* FROM "${sql.raw(S)}"."current_account" ca
+       JOIN "${sql.raw(S)}"."current_book" cb ON cb.code = ca.book_code
+       WHERE cb.tenant_id = ${tenantId} AND ca.code = ${ac} AND ca.is_active = true AND cb.is_active = true LIMIT 1`
     );
-    const a = aRows[0] ?? null;
+    const a = (aRows as CurrentAccount[])[0] ?? null;
     if (!a)
-      return c.json({ error: `account_code '${ac}' not found` }, 422);
+      return c.json({ error: `account_code '${ac}' not found or inactive` }, 422);
     if (!a.is_leaf)
       return c.json({ error: `account_code '${ac}' is not a leaf account (cannot post to summary accounts)` }, 422);
   }
@@ -515,54 +512,52 @@ app.openapi(update, async (c) => {
   });
 
   // 7. Transaction
-  const result = await prisma.$transaction(async (tx) => {
-    const journal = await tx.journal.create({
-      data: {
-        tenant_id: tenantId,
-        idempotency_code: code,
-        revision: maxRev + 1,
-        posted_date: postedDate,
-        journal_type: jType,
-        slip_category: body.slip_category ?? current.slip_category,
-        adjustment_flag: body.adjustment_flag ?? current.adjustment_flag,
-        description:
-          body.description !== undefined
-            ? body.description
-            : current.description,
-        source_system: current.source_system,
-        created_by: userId,
-      },
-    });
+  const result = await db.transaction(async (tx: typeof db) => {
+    const [j] = await tx.insert(journal).values({
+      tenant_id: tenantId,
+      idempotency_code: code,
+      revision: maxRev + 1,
+      posted_date: postedDate,
+      journal_type: jType,
+      slip_category: body.slip_category ?? current.slip_category,
+      adjustment_flag: body.adjustment_flag ?? current.adjustment_flag,
+      description:
+        body.description !== undefined
+          ? body.description
+          : current.description,
+      source_system: current.source_system,
+      created_by: userId,
+    }).returning();
 
-    await tx.journalLine.createMany({
-      data: signedLines.map((l) => ({
+    await tx.insert(journalLine).values(
+      signedLines.map((l) => ({
         tenant_id: tenantId,
-        journal_id: journal.id,
+        journal_id: j.id,
         line_group: l.line_group,
         side: l.side,
         account_code: l.account_code,
         department_code: l.department_code,
         counterparty_code: l.counterparty_code,
         tax_class_code: l.tax_class_code,
-        tax_rate: l.tax_rate,
+        tax_rate: l.tax_rate != null ? String(l.tax_rate) : undefined,
         is_reduced: l.is_reduced,
         amount: l.amount,
         description: l.description,
       })),
-    });
+    );
 
     if (body.tags?.length) {
-      await tx.journalTag.createMany({
-        data: body.tags.map((tagCode) => ({
+      await tx.insert(journalTag).values(
+        body.tags.map((tagCode) => ({
           tenant_id: tenantId,
-          journal_id: journal.id,
+          journal_id: j.id,
           tag_code: tagCode,
           created_by: userId,
         })),
-      });
+      );
     }
 
-    return journal;
+    return j;
   });
 
   recordAudit(c, { action: "update", entityType: "journal", entityCode: code, revision: maxRev + 1 });
@@ -612,20 +607,18 @@ app.openapi(del, async (c) => {
   });
 
   // Insert deactivation revision (no lines needed)
-  await prisma.journal.create({
-    data: {
-      tenant_id: tenantId,
-      idempotency_code: code,
-      revision: maxRev + 1,
-      is_active: false,
-      posted_date: current.posted_date,
-      journal_type: current.journal_type,
-      slip_category: current.slip_category,
-      adjustment_flag: current.adjustment_flag,
-      description: current.description,
-      source_system: current.source_system,
-      created_by: userId,
-    },
+  await db.insert(journal).values({
+    tenant_id: tenantId,
+    idempotency_code: code,
+    revision: maxRev + 1,
+    is_active: false,
+    posted_date: current.posted_date,
+    journal_type: current.journal_type,
+    slip_category: current.slip_category,
+    adjustment_flag: current.adjustment_flag,
+    description: current.description,
+    source_system: current.source_system,
+    created_by: userId,
   });
 
   recordAudit(c, { action: "deactivate", entityType: "journal", entityCode: code, revision: maxRev + 1 });
