@@ -7,7 +7,6 @@ import { requireTenant, requireAuth, requireRole } from "@/middleware/guards";
 import { recordAudit } from "@/lib/audit";
 import { computeMasterHashes } from "@/lib/entity-hash";
 import { createMapper, defineCrudRoutes } from "@/lib/crud-factory";
-import { signToken } from "@/lib/auth";
 import { createApiKey, listApiKeys, revokeApiKey } from "@/lib/api-keys";
 import type { CurrentUser } from "@/lib/types";
 
@@ -22,6 +21,13 @@ const routes = defineCrudRoutes("Users", "userId", userResponseSchema, createUse
 app.openapi(routes.list, async (c) => {
   const rows = await listCurrent<CurrentUser>("current_user", { tenant_key: c.get("tenantKey") });
   return c.json({ data: rows.map(mapUser) }, 200);
+});
+
+/** GET /users/me — current authenticated user */
+app.get("/me", async (c) => {
+  const row = await getCurrent<CurrentUser>("current_user", { tenant_key: c.get("tenantKey"), key: c.get("userKey") });
+  if (!row) return c.json({ error: "Not found" }, 404);
+  return c.json({ data: mapUser(row) }, 200);
 });
 
 app.openapi(routes.get, async (c) => {
