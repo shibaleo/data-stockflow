@@ -3,13 +3,11 @@
 import { useState, useEffect, useCallback, useMemo, type ReactNode } from "react";
 import {
   Plus,
-  Pencil,
   Trash2,
   RefreshCw,
   Undo2,
   ChevronRight,
   ChevronDown,
-  X,
   Eye,
   EyeOff,
 } from "lucide-react";
@@ -56,9 +54,7 @@ export interface ExtraField {
 }
 
 export interface GroupConfig {
-  /** Field to group by */
   field: string;
-  /** Sections: [field_value, display_label] */
   sections: [string, string][];
 }
 
@@ -70,10 +66,12 @@ export interface MasterPageConfig {
   extraFields?: ExtraField[];
   codePlaceholder?: string;
   namePlaceholder?: string;
-  /** Group items into sections (like account_type) */
   groupBy?: GroupConfig;
-  /** Extra dialog fields (e.g., account_type Select) */
   dialogExtraFields?: ExtraField[];
+  /** Extra dialog fields only for create (e.g., email for user invite) */
+  createOnlyFields?: ExtraField[];
+  icon?: ReactNode;
+  createLabel?: string;
 }
 
 // ── Tree ──
@@ -128,13 +126,12 @@ export function flattenTree(nodes: TreeNode[], collapsed: Set<number>): TreeNode
   return result;
 }
 
-// ── Tree Section (reusable) ──
+// ── Tree Section ──
 
 export function MasterTreeSection({
   title,
   nodes,
   collapsed,
-  selectedId,
   onToggleCollapse,
   onSelect,
   extraFields,
@@ -142,7 +139,6 @@ export function MasterTreeSection({
   title?: string;
   nodes: TreeNode[];
   collapsed: Set<number>;
-  selectedId: number | null;
   onToggleCollapse: (id: number) => void;
   onSelect: (id: number) => void;
   extraFields?: ExtraField[];
@@ -162,7 +158,7 @@ export function MasterTreeSection({
                 key={node.id}
                 className={`border-b border-border/30 transition-colors cursor-pointer ${
                   !node.isActive ? "opacity-50" : ""
-                } ${selectedId === node.id ? "bg-accent" : "hover:bg-accent/20"}`}
+                } hover:bg-accent/20`}
                 onClick={() => onSelect(node.id)}
               >
                 <td className="py-2 px-3" style={{ paddingLeft: `${node.depth * 24 + 12}px` }}>
@@ -204,134 +200,34 @@ export function MasterTreeSection({
   );
 }
 
-// ── Property Panel (reusable) ──
+// ── Unified Item Dialog (always-editable form) ──
 
-export function MasterPropertyPanel({
-  item,
-  items,
-  parentKey,
-  extraFields,
-  onClose,
-  onEdit,
-  onDelete,
-  onRestore,
-  extraContent,
-}: {
-  item: MasterRow;
-  items: MasterRow[];
-  parentKey?: string;
-  extraFields?: ExtraField[];
-  onClose: () => void;
-  onEdit: () => void;
-  onDelete: () => void;
-  onRestore: () => void;
-  extraContent?: ReactNode;
-}) {
-  const pk = parentKey ?? "parent_id";
-  const parentId = item[pk] as number | null;
-  const parent = parentId ? items.find((a) => a.id === parentId) : null;
-  const children = items.filter((a) => (a[pk] as number | null) === item.id);
-
-  return (
-    <div className="w-80 shrink-0 border border-border rounded-md p-4 space-y-4 self-start sticky top-6">
-      <div className="flex items-center justify-between">
-        <h3 className="font-semibold text-base truncate">{item.name}</h3>
-        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose}>
-          <X className="h-4 w-4" />
-        </Button>
-      </div>
-
-      <div className="space-y-3 text-sm">
-        <PropRow label="コード" value={item.code} mono />
-        <PropRow label="状態">
-          {item.is_active
-            ? <Badge className="bg-green-900/30 text-green-400 border-green-800/50">有効</Badge>
-            : <Badge className="bg-red-900/30 text-red-400 border-red-800/50">無効</Badge>}
-        </PropRow>
-
-        {parentKey && (
-          <PropRow label="親">
-            {parent ? (
-              <span className="text-xs">
-                <span className="font-mono text-muted-foreground mr-1">{parent.code}</span>
-                {parent.name}
-              </span>
-            ) : <span className="text-muted-foreground">—</span>}
-          </PropRow>
-        )}
-
-        {extraFields?.map((field) => {
-          const val = item[field.key];
-          const display = val ? (field.format ? field.format(val) : String(val)) : "—";
-          return <PropRow key={field.key} label={field.label} value={display} />;
-        })}
-
-        {extraContent}
-
-        {children.length > 0 && (
-          <div>
-            <span className="text-muted-foreground text-xs">子要素</span>
-            <div className="mt-1 space-y-0.5">
-              {children.map((child) => (
-                <div key={child.id} className="text-xs flex items-center gap-1">
-                  <span className="font-mono text-muted-foreground">{child.code}</span>
-                  <span className={!child.is_active ? "opacity-50" : ""}>{child.name}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-
-      <div className="flex gap-2 pt-2 border-t border-border">
-        {item.is_active ? (
-          <>
-            <Button variant="outline" size="sm" className="flex-1" onClick={onEdit}>
-              <Pencil className="h-3.5 w-3.5 mr-1" />編集
-            </Button>
-            <Button variant="outline" size="sm" onClick={onDelete}>
-              <Trash2 className="h-3.5 w-3.5 text-destructive" />
-            </Button>
-          </>
-        ) : (
-          <Button variant="outline" size="sm" className="flex-1" onClick={onRestore}>
-            <Undo2 className="h-3.5 w-3.5 mr-1 text-green-400" />復元
-          </Button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-export function PropRow({ label, value, mono, children }: {
-  label: string; value?: string; mono?: boolean; children?: ReactNode;
-}) {
-  return (
-    <div className="flex items-start justify-between gap-2">
-      <span className="text-muted-foreground text-xs shrink-0">{label}</span>
-      {children ?? <span className={`text-right ${mono ? "font-mono text-xs" : "text-sm"}`}>{value}</span>}
-    </div>
-  );
-}
-
-// ── Dialog (reusable) ──
-
-export function MasterDialog({
+export function MasterItemDialog({
   open,
   onOpenChange,
-  editId,
+  /** null = create mode, MasterRow = edit existing */
+  item,
   items,
   config,
-  onSuccess,
+  onSaved,
+  onDeleted,
+  onRestored,
+  canDelete = true,
+  detailExtra,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  editId: number | null;
+  item: MasterRow | null;
   items: MasterRow[];
   config: MasterPageConfig;
-  onSuccess: () => void;
+  onSaved: () => void;
+  onDeleted: () => void;
+  onRestored: () => void;
+  canDelete?: boolean;
+  detailExtra?: ReactNode;
 }) {
-  const [loading, setLoading] = useState(false);
+  const isCreate = item === null;
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
@@ -340,57 +236,59 @@ export function MasterDialog({
 
   const parentKey = config.parentKey ?? "parent_id";
   const allExtraFields = [...(config.dialogExtraFields ?? []), ...(config.extraFields ?? [])];
+  const createOnlyFields = config.createOnlyFields ?? [];
 
+  // Pre-fill form on open
   useEffect(() => {
-    if (!open) { setCode(""); setName(""); setParentId("__none__"); setExtras({}); setError(null); return; }
-    if (!editId) return;
-    const existing = items.find((c) => c.id === editId);
-    if (existing) {
-      setCode(existing.code);
-      setName(existing.name);
-      const pid = existing[parentKey] as number | null;
+    if (!open) { setError(null); return; }
+    if (item) {
+      setCode(item.code);
+      setName(item.name);
+      const pid = item[parentKey] as number | null;
       setParentId(pid ? String(pid) : "__none__");
       const ex: Record<string, string> = {};
       for (const field of allExtraFields) {
-        const val = existing[field.key];
+        const val = item[field.key];
         if (field.type === "date" && val) { ex[field.key] = String(val).slice(0, 10); }
         else { ex[field.key] = val ? String(val) : ""; }
       }
       setExtras(ex);
+    } else {
+      setCode(""); setName(""); setParentId("__none__"); setExtras({});
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, editId]);
+  }, [open]);
 
   const handleSubmit = async () => {
     setError(null);
     if (!code.trim() || !name.trim()) { setError("コードと名前は必須です"); return; }
-    setLoading(true);
+    setSaving(true);
     try {
       const payload: Record<string, unknown> = { code: code.trim(), name: name.trim() };
       if (config.parentKey) {
         if (parentId !== "__none__") {
           payload[config.parentKey] = Number(parentId);
-        } else if (editId) {
-          // 更新時のみ null を送る（親を外す）。新規作成時はフィールド省略
+        } else if (item) {
           payload[config.parentKey] = null;
         }
       }
-      for (const field of allExtraFields) {
+      const fieldsToSend = isCreate ? [...createOnlyFields, ...allExtraFields] : allExtraFields;
+      for (const field of fieldsToSend) {
         const apiKey = field.apiKey ?? field.key;
         const val = extras[field.key];
         if (field.type === "date" && val) { payload[apiKey] = new Date(val).toISOString(); }
         else if (val) { payload[apiKey] = val; }
       }
-      if (editId) {
-        await api.put(`${config.endpoint}/${editId}`, payload);
+      if (item) {
+        await api.put(`${config.endpoint}/${item.id}`, payload);
       } else {
         await api.post(config.endpoint, payload);
       }
-      onSuccess();
+      onSaved();
     } catch (e) {
       setError(e instanceof Error ? e.message : "保存に失敗しました");
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   };
 
@@ -398,10 +296,19 @@ export function MasterDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>{editId ? `${config.entityName}の編集` : `${config.entityName}の新規作成`}</DialogTitle>
-          <DialogDescription>{editId ? `${config.entityName}を更新します` : `新しい${config.entityName}を作成します`}</DialogDescription>
+          <DialogTitle>{isCreate ? (config.createLabel ?? `${config.entityName}の新規作成`) : item.name}</DialogTitle>
+          {!isCreate && <DialogDescription><span className="font-mono">{item.code}</span></DialogDescription>}
         </DialogHeader>
+
         <div className="space-y-4">
+          {/* Create-only fields (e.g., email) */}
+          {isCreate && createOnlyFields.map((field) => (
+            <div key={field.key} className="space-y-2">
+              <Label>{field.label}</Label>
+              <Input value={extras[field.key] || ""} onChange={(e) => setExtras((prev) => ({ ...prev, [field.key]: e.target.value }))} placeholder={field.placeholder} />
+            </div>
+          ))}
+
           <div className="space-y-2">
             <Label>コード</Label>
             <Input value={code} onChange={(e) => setCode(e.target.value)} placeholder={config.codePlaceholder ?? "例: code-001"} className="font-mono" />
@@ -418,7 +325,7 @@ export function MasterDialog({
                 <SelectTrigger><SelectValue placeholder="なし" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__none__">なし</SelectItem>
-                  {items.filter((a) => a.is_active && a.id !== editId).map((a) => (
+                  {items.filter((a) => a.is_active && a.id !== item?.id).map((a) => (
                     <SelectItem key={a.id} value={String(a.id)}>{a.code} {a.name}</SelectItem>
                   ))}
                 </SelectContent>
@@ -446,29 +353,57 @@ export function MasterDialog({
             </div>
           ))}
 
+          {/* Extra detail content (read-only info like email, external_id) */}
+          {!isCreate && detailExtra}
+
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
+
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={loading}>キャンセル</Button>
-          <Button onClick={handleSubmit} disabled={loading}>{loading ? "保存中..." : editId ? "更新" : "作成"}</Button>
+          {!isCreate && item.is_active && canDelete && (
+            <Button variant="outline" size="sm" className="text-destructive hover:text-destructive mr-auto" onClick={onDeleted}>
+              <Trash2 className="h-3.5 w-3.5 mr-1" />無効化
+            </Button>
+          )}
+          {!isCreate && !item.is_active && (
+            <Button variant="outline" size="sm" className="mr-auto" onClick={onRestored}>
+              <Undo2 className="h-3.5 w-3.5 mr-1 text-green-400" />復元
+            </Button>
+          )}
+          {isCreate && <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>キャンセル</Button>}
+          <Button onClick={handleSubmit} disabled={saving}>{saving ? "保存中..." : isCreate ? "作成" : "更新"}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
 
-// ── Full MasterPage (uses above parts) ──
+export function PropRow({ label, value, mono, children }: {
+  label: string; value?: string; mono?: boolean; children?: ReactNode;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-2">
+      <span className="text-muted-foreground text-xs shrink-0">{label}</span>
+      {children ?? <span className={`text-right ${mono ? "font-mono text-xs" : "text-sm"}`}>{value}</span>}
+    </div>
+  );
+}
 
-export function MasterPage({ config, headerSlot }: {
+// ── Full MasterPage ──
+
+export function MasterPage({ config, headerSlot, afterContent, canDelete, detailExtra }: {
   config: MasterPageConfig;
   headerSlot?: ReactNode;
+  afterContent?: ReactNode;
+  canDelete?: (item: MasterRow) => boolean;
+  /** Extra content rendered in the detail dialog */
+  detailExtra?: (item: MasterRow) => ReactNode;
 }) {
   const [items, setItems] = useState<MasterRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [editId, setEditId] = useState<number | null>(null);
+  const [dialogItem, setDialogItem] = useState<MasterRow | null>(null);
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
-  const [selectedId, setSelectedId] = useState<number | null>(null);
   const [showInactive, setShowInactive] = useState(false);
 
   const parentKey = config.parentKey ?? "parent_id";
@@ -492,9 +427,6 @@ export function MasterPage({ config, headerSlot }: {
     setCollapsed((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
   };
 
-  const selectedItem = useMemo(() => selectedId ? items.find((a) => a.id === selectedId) ?? null : null, [items, selectedId]);
-
-  // Group or single tree
   const sections = useMemo(() => {
     if (config.groupBy) {
       return config.groupBy.sections.map(([value, title]) => {
@@ -506,19 +438,31 @@ export function MasterPage({ config, headerSlot }: {
     return [{ title: undefined as string | undefined, roots: buildTree(items, parentKey) }];
   }, [items, parentKey, config.groupBy]);
 
-  const handleCreate = () => { setEditId(null); setDialogOpen(true); };
-  const handleEdit = (id: number) => { setEditId(id); setDialogOpen(true); };
+  const handleCreate = () => { setDialogItem(null); setDialogOpen(true); };
+  const handleRowClick = (id: number) => {
+    const found = items.find((a) => a.id === id) ?? null;
+    setDialogItem(found);
+    setDialogOpen(true);
+  };
   const handleDelete = async (id: number) => {
     if (!confirm(`この${config.entityName}を無効化しますか？`)) return;
-    try { await api.delete(`${config.endpoint}/${id}`); toast.success(`${config.entityName}を無効化しました`); fetchItems(); }
-    catch (e) { toast.error(e instanceof ApiError ? e.body.error : "無効化に失敗しました"); }
+    try {
+      await api.delete(`${config.endpoint}/${id}`);
+      toast.success(`${config.entityName}を無効化しました`);
+      setDialogOpen(false);
+      fetchItems();
+    } catch (e) { toast.error(e instanceof ApiError ? e.body.error : "無効化に失敗しました"); }
   };
   const handleRestore = async (id: number) => {
-    try { await api.post(`${config.endpoint}/${id}/restore`, {}); toast.success(`${config.entityName}を復元しました`); fetchItems(); }
-    catch (e) { toast.error(e instanceof ApiError ? e.body.error : "復元に失敗しました"); }
+    try {
+      await api.post(`${config.endpoint}/${id}/restore`, {});
+      toast.success(`${config.entityName}を復元しました`);
+      setDialogOpen(false);
+      fetchItems();
+    } catch (e) { toast.error(e instanceof ApiError ? e.body.error : "復元に失敗しました"); }
   };
-  const handleSuccess = () => {
-    toast.success(editId ? `${config.entityName}を更新しました` : `${config.entityName}を作成しました`);
+  const handleSaved = () => {
+    toast.success(dialogItem ? `${config.entityName}を更新しました` : `${config.entityName}を作成しました`);
     setDialogOpen(false);
     fetchItems();
   };
@@ -527,6 +471,7 @@ export function MasterPage({ config, headerSlot }: {
     <div className="p-4 md:p-6">
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-4">
+          {config.icon && <span className="text-muted-foreground">{config.icon}</span>}
           <h2 className="text-xl font-semibold">{config.title}</h2>
           {headerSlot}
         </div>
@@ -536,7 +481,7 @@ export function MasterPage({ config, headerSlot }: {
             削除済み
           </Button>
           <Button variant="outline" size="sm" onClick={fetchItems}><RefreshCw className="h-4 w-4" /></Button>
-          <Button size="sm" onClick={handleCreate}><Plus className="h-4 w-4 mr-1" />新規作成</Button>
+          <Button size="sm" onClick={handleCreate}><Plus className="h-4 w-4 mr-1" />{config.createLabel ?? "新規作成"}</Button>
         </div>
       </div>
 
@@ -545,45 +490,43 @@ export function MasterPage({ config, headerSlot }: {
       ) : items.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground">{config.entityName}がありません</div>
       ) : (
-        <div className="flex gap-6">
-          <div className="flex-1 min-w-0 space-y-6">
-            {sections.map(({ title, roots }) => {
-              if (roots.length === 0) return null;
-              const flat = flattenTree(roots, collapsed);
-              return (
-                <MasterTreeSection
-                  key={title ?? "_all"}
-                  title={title}
-                  nodes={flat}
-                  collapsed={collapsed}
-                  selectedId={selectedId}
-                  onToggleCollapse={toggleCollapse}
-                  onSelect={setSelectedId}
-                  extraFields={config.extraFields}
-                />
-              );
-            })}
-          </div>
-          {selectedItem && (
-            <MasterPropertyPanel
-              item={selectedItem}
-              items={items}
-              parentKey={config.parentKey}
-              extraFields={config.extraFields}
-              onClose={() => setSelectedId(null)}
-              onEdit={() => handleEdit(selectedItem.id)}
-              onDelete={() => handleDelete(selectedItem.id)}
-              onRestore={() => handleRestore(selectedItem.id)}
-            />
-          )}
+        <div className="space-y-6">
+          {sections.map(({ title, roots }) => {
+            if (roots.length === 0) return null;
+            const flat = flattenTree(roots, collapsed);
+            return (
+              <MasterTreeSection
+                key={title ?? "_all"}
+                title={title}
+                nodes={flat}
+                collapsed={collapsed}
+                onToggleCollapse={toggleCollapse}
+                onSelect={handleRowClick}
+                extraFields={config.extraFields}
+              />
+            );
+          })}
         </div>
       )}
+
+      {afterContent}
 
       <Button className="fixed bottom-6 right-6 h-14 w-14 rounded-full shadow-lg" size="icon" onClick={handleCreate}>
         <Plus className="h-6 w-6" />
       </Button>
 
-      <MasterDialog open={dialogOpen} onOpenChange={setDialogOpen} editId={editId} items={items} config={config} onSuccess={handleSuccess} />
+      <MasterItemDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        item={dialogItem}
+        items={items}
+        config={config}
+        onSaved={handleSaved}
+        onDeleted={() => dialogItem && handleDelete(dialogItem.id)}
+        onRestored={() => dialogItem && handleRestore(dialogItem.id)}
+        canDelete={dialogItem && canDelete ? canDelete(dialogItem) : true}
+        detailExtra={dialogItem && detailExtra ? detailExtra(dialogItem) : undefined}
+      />
     </div>
   );
 }

@@ -1,36 +1,21 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { RefreshCw, ShieldAlert, Key, Plus, Trash2, Copy, Check } from "lucide-react";
+import { ShieldAlert, Key, Plus, Trash2, Copy, Check } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import { api, ApiError } from "@/lib/api-client";
+import { MasterPage, PropRow } from "@/components/shared/master-page";
 
-interface UserRow {
-  id: number;
-  code: string;
-  name: string;
-  external_id: string;
-  role_id: number;
-  revision: number;
-  created_at: string;
-}
+// ── Types ──
 
 interface RoleRow {
   id: number;
@@ -64,37 +49,28 @@ const EXPIRY_OPTIONS = [
 ];
 
 export default function UsersPage() {
-  const [users, setUsers] = useState<UserRow[]>([]);
   const [roles, setRoles] = useState<RoleRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [updatingId, setUpdatingId] = useState<number | null>(null);
+  const [meId, setMeId] = useState<number | null>(null);
 
   // API Key state
   const [apiKeys, setApiKeys] = useState<ApiKeyRow[]>([]);
   const [keysLoading, setKeysLoading] = useState(true);
-  const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [showKeyDialog, setShowKeyDialog] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
   const [newKeyExpiry, setNewKeyExpiry] = useState("90");
-  const [creating, setCreating] = useState(false);
+  const [keyCreating, setKeyCreating] = useState(false);
   const [generatedKey, setGeneratedKey] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deletingKeyId, setDeletingKeyId] = useState<string | null>(null);
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [usersRes, rolesRes] = await Promise.all([
-        api.get<{ data: UserRow[] }>("/users"),
-        api.get<{ data: RoleRow[] }>("/roles"),
-      ]);
-      setUsers(usersRes.data);
+  useEffect(() => {
+    Promise.all([
+      api.get<{ data: RoleRow[] }>("/roles"),
+      api.get<{ data: { id: number } }>("/users/me"),
+    ]).then(([rolesRes, meRes]) => {
       setRoles(rolesRes.data);
-    } catch (e) {
-      const msg = e instanceof ApiError ? e.body.error : "データの取得に失敗しました";
-      toast.error(msg);
-    } finally {
-      setLoading(false);
-    }
+      setMeId(meRes.data.id);
+    });
   }, []);
 
   const fetchApiKeys = useCallback(async () => {
@@ -102,67 +78,45 @@ export default function UsersPage() {
     try {
       const res = await api.get<{ data: ApiKeyRow[] }>("/users/me/api-keys");
       setApiKeys(res.data);
-    } catch {
-      // silently fail for keys — user might not have permission
-    } finally {
-      setKeysLoading(false);
-    }
+    } catch { /* silently fail */ }
+    finally { setKeysLoading(false); }
   }, []);
 
-  useEffect(() => {
-    fetchData();
-    fetchApiKeys();
-  }, [fetchData, fetchApiKeys]);
+  useEffect(() => { fetchApiKeys(); }, [fetchApiKeys]);
 
-  const handleRoleChange = async (userId: number, roleId: string) => {
-    setUpdatingId(userId);
-    try {
-      await api.put(`/users/${userId}`, { role_id: Number(roleId) });
-      toast.success("ロールを更新しました");
-      fetchData();
-    } catch (e) {
-      const msg = e instanceof ApiError ? e.body.error : "ロールの更新に失敗しました";
-      toast.error(msg);
-    } finally {
-      setUpdatingId(null);
-    }
-  };
+  // ── Role helpers ──
+
+  const getRoleCode = (roleId: unknown) => roles.find((r) => r.id === Number(roleId))?.code ?? "";
+  const getRoleName = (roleId: unknown) => roles.find((r) => r.id === Number(roleId))?.name ?? String(roleId);
+
+  // ── API Key handlers ──
 
   const handleCreateKey = async () => {
     if (!newKeyName.trim()) return;
-    setCreating(true);
+    setKeyCreating(true);
     try {
       const expiryDays = Number(newKeyExpiry);
       const res = await api.post<{ data: ApiKeyRow & { raw_key: string } }>(
         "/users/me/api-keys",
-        {
-          name: newKeyName.trim(),
-          ...(expiryDays > 0 ? { expires_in_days: expiryDays } : {}),
-        }
+        { name: newKeyName.trim(), ...(expiryDays > 0 ? { expires_in_days: expiryDays } : {}) },
       );
       setGeneratedKey(res.data.raw_key);
       fetchApiKeys();
       toast.success("API Keyを作成しました");
     } catch (e) {
-      const msg = e instanceof ApiError ? e.body.error : "API Keyの作成に失敗しました";
-      toast.error(msg);
-    } finally {
-      setCreating(false);
-    }
+      toast.error(e instanceof ApiError ? e.body.error : "API Keyの作成に失敗しました");
+    } finally { setKeyCreating(false); }
   };
 
   const handleDeleteKey = async (uuid: string) => {
-    setDeletingId(uuid);
+    setDeletingKeyId(uuid);
     try {
       await api.delete(`/users/me/api-keys/${uuid}`);
       toast.success("API Keyを削除しました");
       fetchApiKeys();
     } catch (e) {
-      const msg = e instanceof ApiError ? e.body.error : "API Keyの削除に失敗しました";
-      toast.error(msg);
-    } finally {
-      setDeletingId(null);
-    }
+      toast.error(e instanceof ApiError ? e.body.error : "API Keyの削除に失敗しました");
+    } finally { setDeletingKeyId(null); }
   };
 
   const handleCopy = async () => {
@@ -172,210 +126,138 @@ export default function UsersPage() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleCloseCreateDialog = () => {
-    setShowCreateDialog(false);
+  const closeKeyDialog = () => {
+    setShowKeyDialog(false);
     setGeneratedKey(null);
     setNewKeyName("");
     setNewKeyExpiry("90");
     setCopied(false);
   };
 
-  const getRoleCode = (roleId: number) => {
-    return roles.find((r) => r.id === roleId)?.code ?? "";
-  };
-
-  const getRoleName = (roleId: number) => {
-    return roles.find((r) => r.id === roleId)?.name ?? String(roleId);
-  };
-
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between p-4 md:p-6 border-b border-border/30">
-        <div className="flex items-center gap-2">
-          <ShieldAlert className="size-5 text-muted-foreground" />
-          <h2 className="text-xl font-semibold">ユーザー管理</h2>
-        </div>
-        <Button variant="outline" size="sm" onClick={() => { fetchData(); fetchApiKeys(); }}>
-          <RefreshCw className="size-4 mr-1" />
-          更新
-        </Button>
-      </div>
-
-      <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-8">
-        {/* Users table */}
-        <section>
-          <p className="text-sm text-muted-foreground mb-4">
-            adminロール以上のユーザーのみ、他ユーザーのロールを変更できます。
-          </p>
-
-          {loading ? (
-            <div className="text-center py-12 text-muted-foreground">
-              読み込み中...
+    <>
+      <MasterPage
+        config={{
+          title: "ユーザー管理",
+          icon: <ShieldAlert className="size-5" />,
+          endpoint: "/users",
+          entityName: "ユーザー",
+          createLabel: "ユーザー招待",
+          codePlaceholder: "例: user001",
+          namePlaceholder: "例: 山田太郎",
+          createOnlyFields: [
+            { key: "email", label: "メールアドレス", type: "text", placeholder: "user@example.com" },
+          ],
+          dialogExtraFields: [
+            {
+              key: "role_id", label: "ロール", type: "select", apiKey: "role_id",
+              options: roles.filter((r) => !["platform", "audit"].includes(r.code))
+                .map((r) => ({ value: String(r.id), label: r.name })),
+            },
+          ],
+          extraFields: [
+            {
+              key: "role_id", label: "ロール", type: "text",
+              format: (v) => getRoleName(v),
+            },
+          ],
+        }}
+        canDelete={(item) => item.id !== meId}
+        detailExtra={(item) => {
+          const roleCode = getRoleCode(item.role_id);
+          return (
+            <>
+              <PropRow label="メール" value={String(item.email ?? "")} />
+              <PropRow label="ロール">
+                <Badge className={ROLE_COLOR[roleCode] || ""}>{getRoleName(item.role_id)}</Badge>
+              </PropRow>
+              <PropRow label="外部ID" value={String(item.external_id ?? "未連携")} />
+              {item.id === meId && (
+                <PropRow label="">
+                  <Badge variant="outline" className="text-xs">自分</Badge>
+                </PropRow>
+              )}
+            </>
+          );
+        }}
+        afterContent={
+          <section className="mt-8">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <Key className="size-5 text-muted-foreground" />
+                <h3 className="text-lg font-semibold">API Keys</h3>
+              </div>
+              <Button variant="outline" size="sm" onClick={() => setShowKeyDialog(true)}>
+                <Plus className="size-4 mr-1" />
+                新規作成
+              </Button>
             </div>
-          ) : users.length === 0 ? (
-            <div className="text-center py-12 text-muted-foreground">
-              ユーザーがいません
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border text-left text-muted-foreground">
-                    <th className="py-2 px-3 font-medium">名前</th>
-                    <th className="py-2 px-3 font-medium">ロール</th>
-                    <th className="py-2 px-3 font-medium">作成日</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {users.map((u) => {
-                    const roleCode = getRoleCode(u.role_id);
-                    const isAssignable = !["platform", "audit"].includes(roleCode);
-                    const assignableRoles = roles.filter(
-                      (r) => !["platform", "audit"].includes(r.code)
-                    );
-                    return (
-                      <tr
-                        key={u.id}
-                        className="border-b border-border/50 hover:bg-accent/20 transition-colors"
-                      >
-                        <td className="py-2 px-3">{u.name}</td>
+
+            <p className="text-sm text-muted-foreground mb-4">
+              API Keyを使用すると、Bearer認証でAPIに直接アクセスできます。キーは作成時に一度だけ表示されます。
+            </p>
+
+            {keysLoading ? (
+              <div className="text-center py-8 text-muted-foreground">読み込み中...</div>
+            ) : apiKeys.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">API Keyがありません</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border text-left text-muted-foreground">
+                      <th className="py-2 px-3 font-medium">名前</th>
+                      <th className="py-2 px-3 font-medium">プレフィックス</th>
+                      <th className="py-2 px-3 font-medium">ロール</th>
+                      <th className="py-2 px-3 font-medium">有効期限</th>
+                      <th className="py-2 px-3 font-medium">最終使用</th>
+                      <th className="py-2 px-3 font-medium">作成日</th>
+                      <th className="py-2 px-3 font-medium"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {apiKeys.map((k) => (
+                      <tr key={k.uuid} className="border-b border-border/50 hover:bg-accent/20 transition-colors">
+                        <td className="py-2 px-3 font-medium">{k.name}</td>
+                        <td className="py-2 px-3 font-mono text-xs">{k.key_prefix}...</td>
                         <td className="py-2 px-3">
-                          <div className="flex items-center gap-2">
-                            <Badge className={ROLE_COLOR[roleCode] || ""}>
-                              {getRoleName(u.role_id)}
-                            </Badge>
-                            {isAssignable && (
-                              <Select
-                                value={String(u.role_id)}
-                                onValueChange={(v) => handleRoleChange(u.id, v)}
-                                disabled={updatingId === u.id}
-                              >
-                                <SelectTrigger className="h-7 w-32 text-xs">
-                                  <SelectValue placeholder="変更" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {assignableRoles.map((r) => (
-                                    <SelectItem key={r.id} value={String(r.id)}>
-                                      {r.name}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            )}
-                          </div>
+                          <Badge className={ROLE_COLOR[k.role] || ""}>{k.role}</Badge>
                         </td>
                         <td className="py-2 px-3 text-xs text-muted-foreground">
-                          {new Date(u.created_at).toLocaleDateString("ja-JP")}
+                          {k.expires_at ? new Date(k.expires_at).toLocaleDateString("ja-JP") : "無期限"}
+                        </td>
+                        <td className="py-2 px-3 text-xs text-muted-foreground">
+                          {k.last_used_at ? new Date(k.last_used_at).toLocaleDateString("ja-JP") : "未使用"}
+                        </td>
+                        <td className="py-2 px-3 text-xs text-muted-foreground">
+                          {new Date(k.created_at).toLocaleDateString("ja-JP")}
+                        </td>
+                        <td className="py-2 px-3">
+                          <Button
+                            variant="ghost" size="sm"
+                            className="h-7 text-destructive hover:text-destructive"
+                            onClick={() => handleDeleteKey(k.uuid)}
+                            disabled={deletingKeyId === k.uuid}
+                          >
+                            <Trash2 className="size-3.5" />
+                          </Button>
                         </td>
                       </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        }
+      />
 
-        {/* API Keys section */}
-        <section>
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <Key className="size-5 text-muted-foreground" />
-              <h3 className="text-lg font-semibold">API Keys</h3>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowCreateDialog(true)}
-            >
-              <Plus className="size-4 mr-1" />
-              新規作成
-            </Button>
-          </div>
-
-          <p className="text-sm text-muted-foreground mb-4">
-            API Keyを使用すると、Bearer認証でAPIに直接アクセスできます。キーは作成時に一度だけ表示されます。
-          </p>
-
-          {keysLoading ? (
-            <div className="text-center py-8 text-muted-foreground">
-              読み込み中...
-            </div>
-          ) : apiKeys.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              API Keyがありません
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border text-left text-muted-foreground">
-                    <th className="py-2 px-3 font-medium">名前</th>
-                    <th className="py-2 px-3 font-medium">プレフィックス</th>
-                    <th className="py-2 px-3 font-medium">ロール</th>
-                    <th className="py-2 px-3 font-medium">有効期限</th>
-                    <th className="py-2 px-3 font-medium">最終使用</th>
-                    <th className="py-2 px-3 font-medium">作成日</th>
-                    <th className="py-2 px-3 font-medium"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {apiKeys.map((k) => (
-                    <tr
-                      key={k.uuid}
-                      className="border-b border-border/50 hover:bg-accent/20 transition-colors"
-                    >
-                      <td className="py-2 px-3 font-medium">{k.name}</td>
-                      <td className="py-2 px-3 font-mono text-xs">{k.key_prefix}...</td>
-                      <td className="py-2 px-3">
-                        <Badge className={ROLE_COLOR[k.role] || ""}>
-                          {k.role}
-                        </Badge>
-                      </td>
-                      <td className="py-2 px-3 text-xs text-muted-foreground">
-                        {k.expires_at
-                          ? new Date(k.expires_at).toLocaleDateString("ja-JP")
-                          : "無期限"}
-                      </td>
-                      <td className="py-2 px-3 text-xs text-muted-foreground">
-                        {k.last_used_at
-                          ? new Date(k.last_used_at).toLocaleDateString("ja-JP")
-                          : "未使用"}
-                      </td>
-                      <td className="py-2 px-3 text-xs text-muted-foreground">
-                        {new Date(k.created_at).toLocaleDateString("ja-JP")}
-                      </td>
-                      <td className="py-2 px-3">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 text-destructive hover:text-destructive"
-                          onClick={() => handleDeleteKey(k.uuid)}
-                          disabled={deletingId === k.uuid}
-                        >
-                          <Trash2 className="size-3.5" />
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
-      </div>
-
-      {/* Create API Key Dialog */}
-      <Dialog open={showCreateDialog} onOpenChange={(open) => {
-        if (!open) handleCloseCreateDialog();
-      }}>
+      {/* Create API Key dialog */}
+      <Dialog open={showKeyDialog} onOpenChange={(open) => { if (!open) closeKeyDialog(); }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>
-              {generatedKey ? "API Key が生成されました" : "API Key を作成"}
-            </DialogTitle>
+            <DialogTitle>{generatedKey ? "API Key が生成されました" : "API Key を作成"}</DialogTitle>
           </DialogHeader>
-
           {generatedKey ? (
             <div className="space-y-4">
               <p className="text-sm text-amber-400">
@@ -407,40 +289,30 @@ export default function UsersPage() {
               <div>
                 <label className="text-sm font-medium mb-1 block">有効期限</label>
                 <Select value={newKeyExpiry} onValueChange={setNewKeyExpiry}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {EXPIRY_OPTIONS.map((o) => (
-                      <SelectItem key={o.value} value={o.value}>
-                        {o.label}
-                      </SelectItem>
+                      <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
             </div>
           )}
-
           <DialogFooter>
             {generatedKey ? (
-              <Button onClick={handleCloseCreateDialog}>閉じる</Button>
+              <Button onClick={closeKeyDialog}>閉じる</Button>
             ) : (
               <>
-                <Button variant="outline" onClick={handleCloseCreateDialog}>
-                  キャンセル
-                </Button>
-                <Button
-                  onClick={handleCreateKey}
-                  disabled={creating || !newKeyName.trim()}
-                >
-                  {creating ? "作成中..." : "作成"}
+                <Button variant="outline" onClick={closeKeyDialog}>キャンセル</Button>
+                <Button onClick={handleCreateKey} disabled={keyCreating || !newKeyName.trim()}>
+                  {keyCreating ? "作成中..." : "作成"}
                 </Button>
               </>
             )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </>
   );
 }

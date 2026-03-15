@@ -5,13 +5,7 @@ import { MasterPage, type ExtraField } from "@/components/shared/master-page";
 import { BookSelector } from "@/components/shared/book-selector";
 import { useBooks } from "@/hooks/use-books";
 
-const ACCOUNT_TYPES = [
-  { value: "asset", label: "資産" },
-  { value: "liability", label: "負債" },
-  { value: "equity", label: "純資産" },
-  { value: "revenue", label: "収益" },
-  { value: "expense", label: "費用" },
-];
+const TYPE_KEYS = ["asset", "liability", "equity", "revenue", "expense"] as const;
 
 const DEFAULT_TYPE_LABELS: Record<string, string> = {
   asset: "資産の部",
@@ -21,26 +15,37 @@ const DEFAULT_TYPE_LABELS: Record<string, string> = {
   expense: "費用の部",
 };
 
-const dialogExtraFields: ExtraField[] = [
-  {
-    key: "account_type",
-    label: "分類",
-    type: "select",
-    options: ACCOUNT_TYPES,
-    format: (v) => ACCOUNT_TYPES.find((t) => t.value === v)?.label ?? String(v),
-  },
-];
-
 export default function AccountsPage() {
   const { books, selectedBookId, setSelectedBookId, selectedBook } = useBooks();
 
-  const sections = useMemo(() => {
-    const labels = selectedBook?.type_labels ?? {};
-    return ACCOUNT_TYPES.map((t) => [
-      t.value,
-      labels[t.value] || DEFAULT_TYPE_LABELS[t.value],
-    ] as [string, string]);
-  }, [selectedBook]);
+  const typeLabels = selectedBook?.type_labels ?? {};
+
+  const typeOptions = useMemo(
+    () => TYPE_KEYS.map((key) => ({
+      value: key,
+      label: typeLabels[key] || DEFAULT_TYPE_LABELS[key].replace("の部", ""),
+    })),
+    [typeLabels],
+  );
+
+  const sections = useMemo(
+    () => TYPE_KEYS.map((key) => [
+      key,
+      typeLabels[key] || DEFAULT_TYPE_LABELS[key],
+    ] as [string, string]),
+    [typeLabels],
+  );
+
+  const dialogExtraFields = useMemo<ExtraField[]>(
+    () => [{
+      key: "account_type",
+      label: "分類",
+      type: "select",
+      options: typeOptions,
+      format: (v) => typeOptions.find((t) => t.value === v)?.label ?? String(v),
+    }],
+    [typeOptions],
+  );
 
   const config = useMemo(
     () => ({
@@ -53,7 +58,7 @@ export default function AccountsPage() {
       groupBy: { field: "account_type", sections },
       dialogExtraFields,
     }),
-    [selectedBookId, sections],
+    [selectedBookId, sections, dialogExtraFields],
   );
 
   if (!selectedBookId) {
