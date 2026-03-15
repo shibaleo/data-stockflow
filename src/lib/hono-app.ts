@@ -6,6 +6,7 @@ import { requireWritable } from "@/middleware/guards";
 import { errorHandler } from "@/middleware/error-handler";
 import health from "@/routes/health";
 import auth from "@/routes/auth";
+import tenants from "@/routes/tenants";
 import roles from "@/routes/roles";
 import users from "@/routes/users";
 import books from "@/routes/books";
@@ -55,6 +56,7 @@ app.use("*", contextMiddleware);
 app.use("*", requireWritable());
 
 // Platform-scoped
+app.route("/tenants", tenants);
 app.route("/roles", roles);
 
 // Tenant-scoped master routes
@@ -108,7 +110,7 @@ Journal lines use standard double-entry format:
 
 ## Resource Hierarchy
 
-- \`/roles\` — Platform-scoped
+- \`/tenants\`, \`/roles\` — Platform-scoped
 - \`/users\`, \`/books\`, \`/tags\`, \`/departments\`, \`/counterparties\`, \`/voucher-types\`, \`/projects\` — Tenant-scoped
 - \`/books/{bookId}/accounts\`, \`/books/{bookId}/fiscal-periods\`, \`/books/{bookId}/journal-types\` — Book-scoped
 - \`/vouchers\` → \`/vouchers/{voucherId}/journals\` — Transaction layer`,

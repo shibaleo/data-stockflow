@@ -46,6 +46,27 @@ export const idParamSchema = z.object({
 });
 
 // ============================================================
+// Tenant
+// ============================================================
+
+export const tenantResponseSchema = z.object({
+  id: z.number(),
+  name: z.string(),
+  locked_until: z.string().nullable(),
+  revision: z.number(),
+  created_at: z.string(),
+});
+
+export const createTenantSchema = z.object({
+  name: zSanitized(z.string().min(1).max(200)),
+});
+
+export const updateTenantSchema = z.object({
+  name: zSanitized(z.string().min(1).max(200)).optional(),
+  locked_until: z.string().nullable().optional(),
+});
+
+// ============================================================
 // Role
 // ============================================================
 

@@ -22,6 +22,7 @@ export type AuditEntityType =
   | "counterparty"
   | "voucher"
   | "journal"
+  | "tenant"
   | "role"
   | "user"
   | "voucher_type"
