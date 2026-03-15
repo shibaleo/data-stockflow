@@ -62,9 +62,9 @@ export interface CurrentAccount extends BaseEntity {
   sign: number; // from current_account view
 }
 
-export interface CurrentFiscalPeriod extends BaseEntity {
+export interface CurrentPeriod extends BaseEntity {
   created_by: number;
-  book_key: number;
+  tenant_key: number;
   code: string;
   start_date: Date;
   end_date: Date;
@@ -138,7 +138,7 @@ export interface VoucherRow extends BaseEntity {
   created_by: number;
   tenant_key: number;
   idempotency_key: string;
-  fiscal_period_key: number;
+  period_key: number;
   voucher_code: string | null;
   posted_date: Date;
   description: string | null;

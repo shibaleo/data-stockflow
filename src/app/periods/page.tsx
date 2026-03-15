@@ -22,15 +22,12 @@ import {
   DialogFooter,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { BookSelector } from "@/components/shared/book-selector";
 import { SortHeader } from "@/components/shared/sort-header";
-import { useBooks } from "@/hooks/use-books";
 import { useSort } from "@/hooks/use-sort";
 import { api, ApiError } from "@/lib/api-client";
 
-interface FiscalPeriodRow {
+interface PeriodRow {
   id: number;
-  book_id: number;
   code: string;
   start_date: string;
   end_date: string;
@@ -53,37 +50,35 @@ const STATUS_STYLE: Record<string, string> = {
   finalized: "bg-blue-900/30 text-blue-400 border-blue-800/50",
 };
 
-type FPSortKey = "code" | "start_date" | "status";
+type PSortKey = "code" | "start_date" | "status";
 
-const COLUMNS: [FPSortKey, string][] = [
+const COLUMNS: [PSortKey, string][] = [
   ["code", "コード"],
   ["start_date", "期間"],
   ["status", "ステータス"],
 ];
 
-export default function FiscalPeriodsPage() {
-  const [periods, setPeriods] = useState<FiscalPeriodRow[]>([]);
+export default function PeriodsPage() {
+  const [periods, setPeriods] = useState<PeriodRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
   const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
 
-  const { books, selectedBookId, setSelectedBookId } = useBooks();
-  const { sorted, sortKey, sortDir, toggleSort } = useSort<FiscalPeriodRow, FPSortKey>(periods, "start_date");
+  const { sorted, sortKey, sortDir, toggleSort } = useSort<PeriodRow, PSortKey>(periods, "start_date");
 
   const fetchPeriods = useCallback(async () => {
-    if (!selectedBookId) return;
     setLoading(true);
     try {
-      const res = await api.get<{ data: FiscalPeriodRow[] }>(`/books/${selectedBookId}/fiscal-periods?limit=200`);
+      const res = await api.get<{ data: PeriodRow[] }>(`/periods?limit=200`);
       setPeriods(res.data);
     } catch (e) {
-      const msg = e instanceof ApiError ? e.body.error : "会計期間の取得に失敗しました";
+      const msg = e instanceof ApiError ? e.body.error : "期間の取得に失敗しました";
       toast.error(msg);
     } finally {
       setLoading(false);
     }
-  }, [selectedBookId]);
+  }, []);
 
   useEffect(() => {
     fetchPeriods();
@@ -93,7 +88,7 @@ export default function FiscalPeriodsPage() {
   const handleEdit = (id: number) => { setEditId(id); setDialogOpen(true); };
 
   const handleSuccess = () => {
-    toast.success(editId ? "会計期間を更新しました" : "会計期間を作成しました");
+    toast.success(editId ? "期間を更新しました" : "期間を作成しました");
     setDialogOpen(false);
     fetchPeriods();
   };
@@ -104,14 +99,7 @@ export default function FiscalPeriodsPage() {
   return (
     <div className="p-4 md:p-6">
       <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-4">
-          <h2 className="text-xl font-semibold">期間</h2>
-          <BookSelector
-            books={books}
-            selectedBookId={selectedBookId}
-            onValueChange={setSelectedBookId}
-          />
-        </div>
+        <h2 className="text-xl font-semibold">期間</h2>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={fetchPeriods}>
             <RefreshCw className="h-4 w-4" />
@@ -122,7 +110,7 @@ export default function FiscalPeriodsPage() {
       {loading ? (
         <div className="text-center py-12 text-muted-foreground">読み込み中...</div>
       ) : periods.length === 0 ? (
-        <div className="text-center py-12 text-muted-foreground">会計期間がありません</div>
+        <div className="text-center py-12 text-muted-foreground">期間がありません</div>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -165,35 +153,32 @@ export default function FiscalPeriodsPage() {
         </Button>
       </div>
 
-      <FiscalPeriodDialog
+      <PeriodDialog
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         editId={editId}
         periods={periods}
-        bookId={selectedBookId}
         onSuccess={handleSuccess}
       />
 
       <BulkCreateDialog
         open={bulkDialogOpen}
         onOpenChange={setBulkDialogOpen}
-        bookId={selectedBookId}
         onSuccess={handleBulkSuccess}
       />
     </div>
   );
 }
 
-// ── Fiscal Period Dialog ──
+// ── Period Dialog ──
 
-function FiscalPeriodDialog({
-  open, onOpenChange, editId, periods, bookId, onSuccess,
+function PeriodDialog({
+  open, onOpenChange, editId, periods, onSuccess,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   editId: number | null;
-  periods: FiscalPeriodRow[];
-  bookId: string;
+  periods: PeriodRow[];
   onSuccess: () => void;
 }) {
   const [loading, setLoading] = useState(false);
@@ -223,14 +208,14 @@ function FiscalPeriodDialog({
     setLoading(true);
     try {
       if (editId) {
-        await api.put(`/books/${bookId}/fiscal-periods/${editId}`, {
+        await api.put(`/periods/${editId}`, {
           code: code.trim(),
           start_date: new Date(startDate).toISOString(),
           end_date: new Date(endDate).toISOString(),
           status,
         });
       } else {
-        await api.post(`/books/${bookId}/fiscal-periods`, {
+        await api.post(`/periods`, {
           code: code.trim(),
           start_date: new Date(startDate).toISOString(),
           end_date: new Date(endDate).toISOString(),
@@ -249,9 +234,9 @@ function FiscalPeriodDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>{editId ? "会計期間の編集" : "会計期間の新規作成"}</DialogTitle>
+          <DialogTitle>{editId ? "期間の編集" : "期間の新規作成"}</DialogTitle>
           <DialogDescription>
-            {editId ? "会計期間を更新します" : "新しい会計期間を作成します"}
+            {editId ? "期間を更新します" : "新しい期間を作成します"}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
@@ -294,11 +279,10 @@ function FiscalPeriodDialog({
 // ── Bulk Create Dialog ──
 
 function BulkCreateDialog({
-  open, onOpenChange, bookId, onSuccess,
+  open, onOpenChange, onSuccess,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  bookId: string;
   onSuccess: () => void;
 }) {
   const [loading, setLoading] = useState(false);
@@ -327,12 +311,12 @@ function BulkCreateDialog({
     try {
       for (const p of preview) {
         setProgress(`${created + 1}/12 作成中...`);
-        await api.post(`/books/${bookId}/fiscal-periods`, {
+        await api.post(`/periods`, {
           code: p.code, start_date: p.start.toISOString(), end_date: p.end.toISOString(), status: "open",
         });
         created++;
       }
-      toast.success(`${created}件の会計期間を作成しました`);
+      toast.success(`${created}件の期間を作成しました`);
       onSuccess();
     } catch (e) {
       const msg = e instanceof Error ? e.message : "作成に失敗しました";
@@ -349,7 +333,7 @@ function BulkCreateDialog({
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>年度一括作成</DialogTitle>
-          <DialogDescription>指定した年度・開始月から12ヶ月分の会計期間を一括作成します</DialogDescription>
+          <DialogDescription>指定した年度・開始月から12ヶ月分の期間を一括作成します</DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4">

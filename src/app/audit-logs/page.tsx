@@ -60,7 +60,7 @@ const ENTITY_LABELS: Record<string, string> = {
   tag: "タグ",
   voucher_type: "伝票種別",
   journal_type: "仕訳種別",
-  fiscal_period: "会計期間",
+  period: "期間",
   project: "プロジェクト",
   voucher: "伝票",
   journal: "仕訳",

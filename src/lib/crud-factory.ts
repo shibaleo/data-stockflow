@@ -2,7 +2,7 @@
  * Generic CRUD factory for append-only master entities.
  *
  * Eliminates repetitive route definitions and handler boilerplate across
- * books, accounts, tags, departments, counterparties, fiscal-periods, roles, users.
+ * books, accounts, tags, departments, counterparties, periods, roles, users.
  */
 import { createApp } from "@/lib/create-app";
 import { createRoute } from "@hono/zod-openapi";

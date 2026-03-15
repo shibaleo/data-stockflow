@@ -13,7 +13,7 @@ CREATE SEQUENCE data_stockflow.role_key_seq          START WITH 100000000000;
 CREATE SEQUENCE data_stockflow.user_key_seq          START WITH 100000000000;
 CREATE SEQUENCE data_stockflow.book_key_seq          START WITH 100000000000;
 CREATE SEQUENCE data_stockflow.account_key_seq       START WITH 100000000000;
-CREATE SEQUENCE data_stockflow.fiscal_period_key_seq START WITH 100000000000;
+CREATE SEQUENCE data_stockflow.period_key_seq        START WITH 100000000000;
 CREATE SEQUENCE data_stockflow.tag_key_seq           START WITH 100000000000;
 CREATE SEQUENCE data_stockflow.department_key_seq    START WITH 100000000000;
 CREATE SEQUENCE data_stockflow.counterparty_key_seq  START WITH 100000000000;
@@ -124,9 +124,9 @@ CREATE TABLE data_stockflow.account (
   UNIQUE (book_key, code, revision)
 );
 
--- ---- fiscal_period ----
-CREATE TABLE data_stockflow.fiscal_period (
-  key              BIGINT NOT NULL DEFAULT nextval('data_stockflow.fiscal_period_key_seq'),
+-- ---- period ----
+CREATE TABLE data_stockflow.period (
+  key              BIGINT NOT NULL DEFAULT nextval('data_stockflow.period_key_seq'),
   revision         INTEGER NOT NULL DEFAULT 1,
   created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
   valid_from       TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -135,7 +135,7 @@ CREATE TABLE data_stockflow.fiscal_period (
   prev_revision_hash TEXT NOT NULL,
   revision_hash    TEXT NOT NULL,
   created_by       BIGINT NOT NULL,
-  book_key         BIGINT NOT NULL,
+  tenant_key       BIGINT NOT NULL,
   code             TEXT NOT NULL,
   start_date       TIMESTAMPTZ NOT NULL,
   end_date         TIMESTAMPTZ NOT NULL,
@@ -143,7 +143,7 @@ CREATE TABLE data_stockflow.fiscal_period (
   is_active        BOOLEAN NOT NULL DEFAULT true,
   parent_period_key BIGINT,
   PRIMARY KEY (key, revision),
-  UNIQUE (book_key, code, revision)
+  UNIQUE (tenant_key, code, revision)
 );
 
 -- ---- tag ----
@@ -284,7 +284,7 @@ CREATE TABLE data_stockflow.voucher (
   created_by       BIGINT NOT NULL,
   tenant_key       BIGINT NOT NULL,
   idempotency_key  TEXT NOT NULL UNIQUE,
-  fiscal_period_key BIGINT NOT NULL,
+  period_key       BIGINT NOT NULL,
   voucher_code     TEXT,
   posted_date      TIMESTAMPTZ NOT NULL,
   description      TEXT,
@@ -297,7 +297,7 @@ CREATE TABLE data_stockflow.voucher (
 
 -- Conditional unique on voucher_code (only when non-null)
 CREATE UNIQUE INDEX uq_voucher_code
-  ON data_stockflow.voucher (tenant_key, fiscal_period_key, voucher_code)
+  ON data_stockflow.voucher (tenant_key, period_key, voucher_code)
   WHERE voucher_code IS NOT NULL;
 
 -- ---- journal ----
@@ -454,9 +454,9 @@ FROM data_stockflow.account
 WHERE valid_from <= now() AND (valid_to IS NULL OR valid_to > now())
 ORDER BY key, created_at DESC;
 
-CREATE VIEW data_stockflow.current_fiscal_period AS
+CREATE VIEW data_stockflow.current_period AS
 SELECT DISTINCT ON (key) *
-FROM data_stockflow.fiscal_period
+FROM data_stockflow.period
 WHERE valid_from <= now() AND (valid_to IS NULL OR valid_to > now())
 ORDER BY key, created_at DESC;
 
@@ -523,8 +523,8 @@ SELECT * FROM data_stockflow.book ORDER BY key, revision;
 CREATE VIEW data_stockflow.history_account AS
 SELECT * FROM data_stockflow.account ORDER BY key, revision;
 
-CREATE VIEW data_stockflow.history_fiscal_period AS
-SELECT * FROM data_stockflow.fiscal_period ORDER BY key, revision;
+CREATE VIEW data_stockflow.history_period AS
+SELECT * FROM data_stockflow.period ORDER BY key, revision;
 
 CREATE VIEW data_stockflow.history_tag AS
 SELECT * FROM data_stockflow.tag ORDER BY key, revision;

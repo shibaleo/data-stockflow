@@ -18,7 +18,7 @@ export type AuditEntityType =
   | "account"
   | "tag"
   | "department"
-  | "fiscal_period"
+  | "period"
   | "counterparty"
   | "voucher"
   | "journal"

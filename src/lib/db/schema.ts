@@ -26,7 +26,7 @@ export const roleKeySeq = s.sequence("role_key_seq");
 export const userKeySeq = s.sequence("user_key_seq");
 export const bookKeySeq = s.sequence("book_key_seq");
 export const accountKeySeq = s.sequence("account_key_seq");
-export const fiscalPeriodKeySeq = s.sequence("fiscal_period_key_seq");
+export const periodKeySeq = s.sequence("period_key_seq");
 export const tagKeySeq = s.sequence("tag_key_seq");
 export const departmentKeySeq = s.sequence("department_key_seq");
 export const counterpartyKeySeq = s.sequence("counterparty_key_seq");
@@ -200,11 +200,11 @@ export const account = s.table(
   ]
 );
 
-export const fiscalPeriod = s.table(
-  "fiscal_period",
+export const period = s.table(
+  "period",
   {
     key: bigint("key", { mode: "number" })
-      .default(sql`nextval('data_stockflow.fiscal_period_key_seq')`)
+      .default(sql`nextval('data_stockflow.period_key_seq')`)
       .notNull(),
     revision: integer("revision").default(1).notNull(),
     created_at: timestamp("created_at", { withTimezone: true })
@@ -218,7 +218,7 @@ export const fiscalPeriod = s.table(
     prev_revision_hash: text("prev_revision_hash").notNull(),
     revision_hash: text("revision_hash").notNull(),
     created_by: bigint("created_by", { mode: "number" }).notNull(),
-    book_key: bigint("book_key", { mode: "number" }).notNull(),
+    tenant_key: bigint("tenant_key", { mode: "number" }).notNull(),
     code: text("code").notNull(),
     start_date: timestamp("start_date", { withTimezone: true }).notNull(),
     end_date: timestamp("end_date", { withTimezone: true }).notNull(),
@@ -228,8 +228,8 @@ export const fiscalPeriod = s.table(
   },
   (t) => [
     primaryKey({ columns: [t.key, t.revision] }),
-    uniqueIndex("fiscal_period_book_key_code_revision_key").on(
-      t.book_key,
+    uniqueIndex("period_tenant_key_code_revision_key").on(
+      t.tenant_key,
       t.code,
       t.revision
     ),
@@ -461,7 +461,7 @@ export const voucher = s.table(
     created_by: bigint("created_by", { mode: "number" }).notNull(),
     tenant_key: bigint("tenant_key", { mode: "number" }).notNull(),
     idempotency_key: text("idempotency_key").notNull().unique(),
-    fiscal_period_key: bigint("fiscal_period_key", { mode: "number" }).notNull(),
+    period_key: bigint("period_key", { mode: "number" }).notNull(),
     voucher_code: text("voucher_code"),
     posted_date: timestamp("posted_date", { withTimezone: true }).notNull(),
     description: text("description"),
@@ -473,7 +473,7 @@ export const voucher = s.table(
   (t) => [
     primaryKey({ columns: [t.key, t.revision] }),
     uniqueIndex("uq_voucher_code")
-      .on(t.tenant_key, t.fiscal_period_key, t.voucher_code)
+      .on(t.tenant_key, t.period_key, t.voucher_code)
       .where(sql`voucher_code IS NOT NULL`),
   ]
 );

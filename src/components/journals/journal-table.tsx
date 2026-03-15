@@ -7,7 +7,7 @@ import { useSort } from "@/hooks/use-sort";
 
 export interface VoucherRow {
   id: number;
-  fiscal_period_id: number;
+  period_id: number;
   idempotency_key: string;
   voucher_code: string | null;
   posted_date: string;

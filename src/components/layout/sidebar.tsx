@@ -47,7 +47,7 @@ const navItems: NavItem[] = [
   { href: "/voucher-types", label: "伝票種別", icon: Stamp },
   { href: "/journal-types", label: "仕訳種別", icon: Layers },
   // 設定
-  { href: "/fiscal-periods", label: "期間", icon: Calendar, separator: true },
+  { href: "/periods", label: "期間", icon: Calendar, separator: true },
   { href: "/books", label: "帳簿", icon: BookOpen },
   { href: "/users", label: "ユーザー", icon: Shield },
   { href: "/audit-logs", label: "監査ログ", icon: ScrollText },

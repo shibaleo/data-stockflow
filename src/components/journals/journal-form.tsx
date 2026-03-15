@@ -52,7 +52,7 @@ interface ProjectRow extends EntityRow {}
 
 interface VoucherDetail {
   id: number;
-  fiscal_period_id: number;
+  period_id: number;
   voucher_code: string | null;
   posted_date: string;
   description: string | null;

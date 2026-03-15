@@ -1,22 +1,22 @@
 import { createApp } from "@/lib/create-app";
-import { fiscalPeriod } from "@/lib/db/schema";
-import { requireAuth, requireBook } from "@/middleware/guards";
-import { fiscalPeriodResponseSchema, createFiscalPeriodSchema, updateFiscalPeriodSchema } from "@/lib/validators";
+import { period } from "@/lib/db/schema";
+import { requireAuth, requireTenant } from "@/middleware/guards";
+import { periodResponseSchema, createPeriodSchema, updatePeriodSchema } from "@/lib/validators";
 import { createMapper, defineCrudRoutes, registerCrudHandlers } from "@/lib/crud-factory";
-import type { CurrentFiscalPeriod } from "@/lib/types";
+import type { CurrentPeriod } from "@/lib/types";
 
 const app = createApp();
-app.use("*", requireAuth(), requireBook());
+app.use("*", requireTenant(), requireAuth());
 
-const routes = defineCrudRoutes("FiscalPeriods", "periodId", fiscalPeriodResponseSchema, createFiscalPeriodSchema, updateFiscalPeriodSchema);
+const routes = defineCrudRoutes("Periods", "periodId", periodResponseSchema, createPeriodSchema, updatePeriodSchema);
 
-registerCrudHandlers<CurrentFiscalPeriod>(app, routes, {
-  table: fiscalPeriod, tableName: "fiscal_period", viewName: "current_fiscal_period", historyView: "history_fiscal_period",
-  entityType: "fiscal_period", entityLabel: "会計期間", idParam: "periodId",
-  mapRow: createMapper<CurrentFiscalPeriod>([], ["book_key", "parent_period_key"]),
-  scope: (c) => ({ book_key: c.get("bookKey") }),
+registerCrudHandlers<CurrentPeriod>(app, routes, {
+  table: period, tableName: "period", viewName: "current_period", historyView: "history_period",
+  entityType: "period", entityLabel: "期間", idParam: "periodId",
+  mapRow: createMapper<CurrentPeriod>([], ["tenant_key", "parent_period_key"]),
+  scope: (c) => ({ tenant_key: c.get("tenantKey") }),
   buildCreate: (body, c) => ({
-    book_key: c.get("bookKey"), code: body.code,
+    tenant_key: c.get("tenantKey"), code: body.code,
     start_date: new Date(body.start_date as string), end_date: new Date(body.end_date as string),
     status: body.status ?? "open",
     parent_period_key: body.parent_period_id ?? null,
@@ -24,7 +24,7 @@ registerCrudHandlers<CurrentFiscalPeriod>(app, routes, {
   }),
   hashCreate: (body) => ({ code: body.code, start_date: body.start_date, end_date: body.end_date }),
   buildUpdate: (body, cur, c) => ({
-    book_key: c.get("bookKey"), code: body.code ?? cur.code,
+    tenant_key: c.get("tenantKey"), code: body.code ?? cur.code,
     start_date: body.start_date ? new Date(body.start_date as string) : cur.start_date,
     end_date: body.end_date ? new Date(body.end_date as string) : cur.end_date,
     status: body.status ?? cur.status,
@@ -37,7 +37,7 @@ registerCrudHandlers<CurrentFiscalPeriod>(app, routes, {
     end_date: body.end_date ?? String(cur.end_date),
   }),
   buildDeactivate: (cur, c) => ({
-    book_key: c.get("bookKey"), code: cur.code,
+    tenant_key: c.get("tenantKey"), code: cur.code,
     start_date: cur.start_date, end_date: cur.end_date,
     status: cur.status, parent_period_key: cur.parent_period_key,
     created_by: c.get("userKey"),

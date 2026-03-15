@@ -43,7 +43,7 @@ const balances = createRoute({
   tags: ["Reports"],
   summary: "Get account balances",
   description:
-    "Returns aggregated balances per account, optionally filtered by fiscal period range. " +
+    "Returns aggregated balances per account, optionally filtered by period range. " +
     "Amounts are signed (credit=positive, debit=negative). Multiply by account.sign to get display value.",
   request: { query: balancesQuerySchema },
   responses: {
@@ -79,7 +79,8 @@ app.openapi(balances, async (c) => {
 
   const conditions = [sql`a.book_key = ${bookKey}`, sql`a.is_active = true`];
 
-  // Filter journal lines by period range via voucher → fiscal_period
+  // Filter journal lines by period range via voucher → period
+  const tenantKey = c.get("tenantKey");
   let periodJoin = sql``;
   const periodConditions: ReturnType<typeof sql>[] = [];
 
@@ -95,8 +96,8 @@ app.openapi(balances, async (c) => {
     periodJoin = sql`
       JOIN ${sql.raw(`"${S}".voucher`)} v
         ON v.key = cj.voucher_key AND v.revision = 1
-      JOIN ${sql.raw(`"${S}".current_fiscal_period`)} fp
-        ON fp.key = v.fiscal_period_key AND fp.book_key = ${bookKey}
+      JOIN ${sql.raw(`"${S}".current_period`)} fp
+        ON fp.key = v.period_key AND fp.tenant_key = ${tenantKey}
         AND ${periodFilter}`;
   }
 
@@ -129,8 +130,8 @@ app.openapi(balances, async (c) => {
 
   // Fetch available periods for the frontend selector
   const { rows: periodRows } = await db.execute(
-    sql`SELECT key, code FROM ${sql.raw(`"${S}".current_fiscal_period`)}
-     WHERE book_key = ${bookKey} ORDER BY code`
+    sql`SELECT key, code FROM ${sql.raw(`"${S}".current_period`)}
+     WHERE tenant_key = ${tenantKey} ORDER BY code`
   );
   const periods = periodRows as unknown as PeriodRow[];
 

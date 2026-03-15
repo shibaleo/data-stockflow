@@ -17,7 +17,7 @@ import {
   type LineHashInput,
 } from "@/lib/hash-chain";
 import { getCurrent } from "@/lib/append-only";
-import type { CurrentFiscalPeriod, CurrentJournal, JournalLineRow, JournalTagRow, VoucherRow } from "@/lib/types";
+import type { CurrentPeriod, CurrentJournal, JournalLineRow, JournalTagRow, VoucherRow } from "@/lib/types";
 
 const S = "data_stockflow";
 const app = createApp();
@@ -25,7 +25,7 @@ app.use("*", requireTenant(), requireAuth());
 
 const mapVoucher = createMapper<VoucherRow>(
   ["tenant_key", "sequence_no", "prev_header_hash", "header_hash"],
-  ["fiscal_period_key"],
+  ["period_key"],
 );
 
 // ── Route definitions ──
@@ -139,28 +139,28 @@ app.openapi(create, async (c) => {
   const userKey = c.get("userKey");
   const body = c.req.valid("json");
 
-  // Resolve fiscal period
-  let fiscalPeriodKey: number;
-  if (body.fiscal_period_id) {
-    const fp = await getCurrent<CurrentFiscalPeriod>("current_fiscal_period", {
-      key: body.fiscal_period_id,
+  // Resolve period
+  let periodKey: number;
+  if (body.period_id) {
+    const fp = await getCurrent<CurrentPeriod>("current_period", {
+      key: body.period_id,
     });
-    if (!fp) return c.json({ error: "fiscal_period not found" }, 422);
-    if (fp.status !== "open") return c.json({ error: "Fiscal period is not open" }, 422);
-    fiscalPeriodKey = fp.key;
+    if (!fp) return c.json({ error: "Period not found" }, 422);
+    if (fp.status !== "open") return c.json({ error: "Period is not open" }, 422);
+    periodKey = fp.key;
   } else {
     // Auto-resolve from posted_date
     const { rows: fpRows } = await db.execute(sql`
-      SELECT key, status FROM ${sql.raw(`"${S}".current_fiscal_period`)}
+      SELECT key, status FROM ${sql.raw(`"${S}".current_period`)}
       WHERE start_date <= ${new Date(body.posted_date)}::timestamptz
         AND end_date >= ${new Date(body.posted_date)}::timestamptz
       ORDER BY start_date DESC
       LIMIT 1
     `);
-    if (fpRows.length === 0) return c.json({ error: "No fiscal period found for posted_date" }, 422);
+    if (fpRows.length === 0) return c.json({ error: "No period found for posted_date" }, 422);
     const fp = fpRows[0] as { key: number; status: string };
-    if (fp.status !== "open") return c.json({ error: "Fiscal period is not open" }, 422);
-    fiscalPeriodKey = fp.key;
+    if (fp.status !== "open") return c.json({ error: "Period is not open" }, 422);
+    periodKey = fp.key;
   }
 
   // Validate balance for each journal
@@ -194,7 +194,7 @@ app.openapi(create, async (c) => {
     // Insert voucher
     const [v] = await tx.insert(voucher).values({
       tenant_key: tenantKey, idempotency_key: body.idempotency_key,
-      fiscal_period_key: fiscalPeriodKey,
+      period_key: periodKey,
       voucher_code: body.voucher_code ?? null,
       posted_date: new Date(body.posted_date),
       description: body.description ?? null, source_system: body.source_system ?? null,

@@ -1,6 +1,6 @@
 # data-stockflow
 
-複式簿記の仕訳・勘定科目・残高管理に特化した会計データベース。
+汎用 Stockflow 管理システム。複式記帳・勘定科目・残高管理を中核に、在庫・物流など幅広いフロー管理に対応。
 Append-only / Bi-temporal / マルチテナント設計。
 
 ## 技術スタック
@@ -82,19 +82,53 @@ node scripts/seed-grocery.mjs      # 食料品帳簿 (デモ)
 - Scalar API Reference: `/api/reference`
 - ヘルスチェック: `GET /api/v1/health`
 
-### 主要エンドポイント
+### エンドポイント一覧
+
+#### Platform スコープ
+
+platform ロール専用。テナント・ロールの管理。
 
 | パス | 説明 |
 |---|---|
+| `/api/v1/tenants` | テナント CRUD |
+| `/api/v1/roles` | ロール CRUD |
+
+#### Tenant スコープ
+
+認証済みユーザーが自テナント内のリソースを操作。platform ロールは全テナントを横断可能。
+
+| パス | 説明 |
+|---|---|
+| `/api/v1/users` | ユーザー管理 |
 | `/api/v1/books` | 帳簿 CRUD |
-| `/api/v1/books/:bookId/accounts` | 勘定科目 CRUD |
-| `/api/v1/books/:bookId/journals` | 仕訳 CRUD |
-| `/api/v1/books/:bookId/vouchers` | 伝票 CRUD |
-| `/api/v1/counterparties` | 取引先 CRUD |
+| `/api/v1/periods` | 期間 CRUD + close/reopen |
 | `/api/v1/tags` | タグ CRUD |
 | `/api/v1/departments` | 部門 CRUD |
-| `/api/v1/fiscal-periods` | 会計期間 |
-| `/api/v1/users` | ユーザー管理 |
+| `/api/v1/counterparties` | 取引先 CRUD |
+| `/api/v1/voucher-types` | 伝票種別 CRUD |
+| `/api/v1/projects` | プロジェクト CRUD |
+| `/api/v1/vouchers` | 伝票 CRUD (仕訳含む) |
+
+#### Book スコープ
+
+帳簿配下のリソース。`bookId` パスパラメータでテナント所有権を検証。
+
+| パス | 説明 |
+|---|---|
+| `/api/v1/books/:bookId/accounts` | 勘定科目 CRUD |
+| `/api/v1/books/:bookId/journal-types` | 仕訳種別 CRUD |
+| `/api/v1/books/:bookId/reports/balances` | 残高レポート |
+
+#### 操作・監査
+
+| パス | 説明 |
+|---|---|
+| `/api/v1/journals/:journalId/reverse` | 逆仕訳 |
+| `/api/v1/periods/:periodId/close` | 期間締め |
+| `/api/v1/periods/:periodId/reopen` | 期間再開 |
+| `/api/v1/audit-logs` | システムログ (操作記録) |
+| `/api/v1/event-logs` | イベントログ (業務活動) |
+| `/api/v1/integrity` | ハッシュチェーン検証 |
 
 ### 認証方式
 
@@ -111,49 +145,67 @@ curl -H "Authorization: Bearer $PLATFORM_API_KEY" http://localhost:3000/api/v1/b
 
 ## ロール体系
 
-| ロール | 権限 |
-|---|---|
-| platform | 全操作 (bootstrap/CI 用) |
-| audit | 読み取り専用 + 監査ログ |
-| admin | マスタ管理 + 仕訳操作 |
-| user | 仕訳操作 |
+| ロール | 読み取り | マスタ書き込み | 仕訳操作 | 期間 close/reopen | テナント管理 |
+|---|---|---|---|---|---|
+| platform | 全テナント | 全テナント | 全テナント | 全テナント | 可 |
+| admin | 自テナント | 可 | 可 | 可 | 不可 |
+| user | 自テナント | 不可 | 可 | 不可 | 不可 |
+| audit | 自テナント | 不可 | 不可 | 不可 | 不可 |
 
-## API ファースト設計
+- **platform**: 全操作・全テナントにアクセス可能。bootstrap / CI 用
+- **admin**: 自テナント内のマスタ管理 + 仕訳操作 + 期間 close/reopen
+- **user**: 仕訳操作のみ (伝票作成・逆仕訳)
+- **audit**: 読み取り専用。全 POST/PUT/DELETE を `403` で拒否
 
-本システムは **API ファースト** で設計されています。
+### スコープ解決
 
-- **OpenAPI 仕様駆動**: 全エンドポイントを `@hono/zod-openapi` で定義。リクエスト・レスポンスのバリデーションとドキュメント生成を型安全に一元管理
-- **UI は API のクライアント**: フロントエンド (Next.js) は `/api/v1/*` を RESTful に呼び出すだけ。ビジネスロジックは API 層に集約
-- **複数クライアント対応**: ブラウザ UI、curl、CI スクリプト、外部システムのいずれも同一 API を利用
-- **認証の統一**: Clerk セッション (ブラウザ) と `sf_` API Key (スクリプト/CI) を単一の `authenticate()` で処理
-- **Scalar API Reference**: `/api/v1/reference` でインタラクティブな API ドキュメントを提供
+1. **認証**: Clerk セッション or `sf_` API Key → `tenantKey`, `userKey`, `userRole` をコンテキストに設定
+2. **テナント分離**: `requireTenant()` で tenantKey の存在を検証。platform ロールは `tenantKey=0` でテナントフィルタをバイパス
+3. **帳簿分離**: `requireBook()` で `bookId` パスパラメータからテナント所有権 + active 状態を検証
+4. **ロール制御**: `requireRole()` で操作権限を検証。platform ロールは常にパス
+5. **監査ロール制限**: `requireWritable()` で audit ロールの書き込み操作をグローバルに拒否
 
-## 監査・ログ設計
+## 監査ポリシー
+
+### 原則
+
+- **全操作を記録**: CUD (Create/Update/Delete) 操作は例外なくログに記録される
+- **改ざん不可**: Append-only アーキテクチャにより、過去のデータは変更・削除されない
+- **二層記録**: システムログ (技術) とイベントログ (業務) を分離
 
 ### 二層ログアーキテクチャ
 
-| ログ | テーブル | 用途 | エンドポイント |
+| ログ | テーブル | 対象者 | エンドポイント |
 |---|---|---|---|
-| **システムログ** | `system_log` | システム操作の記録 (entity_type, entity_key, revision) | `GET /api/v1/audit-logs` |
-| **イベントログ** | `event_log` | ビジネスレベルの活動記録 (誰が何をしたか) | `GET /api/v1/event-logs` |
+| **システムログ** | `system_log` | 開発者・運用者 | `GET /api/v1/audit-logs` |
+| **イベントログ** | `event_log` | 監査役・管理者 | `GET /api/v1/event-logs` |
 
-### システムログ (`system_log`)
+#### システムログ (`system_log`)
 - 全 CUD 操作を fire-and-forget で記録
-- entity_type / entity_key / revision で操作対象を特定
-- 開発者・運用者向けのトレーサビリティ
+- `entity_type` / `entity_key` / `revision` で操作対象を一意に特定
+- 発生源 IP (`source_ip`) を記録
+- 技術的トレーサビリティの確保が目的
 
-### イベントログ (`event_log`)
-- **ユーザー名のスナップショット**: 後からユーザー名が変更されても記録が残る
+#### イベントログ (`event_log`)
+- **ユーザー名スナップショット**: 後からユーザー名が変更されても記録時点の名前が残る
 - **人間可読な要約**: `summary` フィールド (例: `科目「現金」を作成しました`)
 - **対象エンティティ名**: `entity_name` で操作対象を直感的に特定
-- **変更差分**: `changes` (JSONB) にフィールド単位の変更 `[{ field, from, to }]` を記録
-- 監査役・管理者が「誰がいつ何をしたか」を時系列で確認可能
+- **変更差分**: `changes` (JSONB) にフィールド単位の `[{ field, from, to }]` を記録
+- 「誰がいつ何をしたか」を時系列で追跡可能
 
 ### データ改ざん防止
+
 - **Append-only**: 全マスタ・トランザクションは INSERT のみ。UPDATE / DELETE なし
-- **リビジョンチェーン**: 各エンティティの revision_hash で改ざん検知
-- **ヘッダーチェーン**: 伝票の header_hash で連番の改ざんを検知
-- **完全性検証**: `GET /api/v1/integrity` でハッシュチェーンの整合性を検証
+- **リビジョンチェーン**: 各エンティティの `revision_hash` で改ざん検知。前リビジョンのハッシュを入力に含む
+- **ヘッダーチェーン**: 伝票の `header_hash` でテナント内の連番改ざんを検知
+- **完全性検証**: `GET /api/v1/integrity` でハッシュチェーンの整合性をオンデマンド検証
+
+## API ファースト設計
+
+- **OpenAPI 仕様駆動**: 全エンドポイントを `@hono/zod-openapi` で定義。バリデーションとドキュメント生成を型安全に一元管理
+- **UI は API のクライアント**: フロントエンドは `/api/v1/*` を呼び出すだけ。ビジネスロジックは API 層に集約
+- **複数クライアント対応**: ブラウザ UI、curl、CI スクリプト、外部システムが同一 API を利用
+- **認証の統一**: Clerk セッションと `sf_` API Key を単一の `authenticate()` で処理
 
 ## 設計ドキュメント
 
@@ -178,4 +230,5 @@ src/
   lib/                  共通ライブラリ (auth, db, api-keys, etc.)
   middleware/            Hono ミドルウェア (guards, context)
   routes/               Hono API ルート
+    ops/                操作系 (close/reopen, reverse, audit-logs)
 ```

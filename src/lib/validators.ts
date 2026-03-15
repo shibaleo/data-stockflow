@@ -212,12 +212,11 @@ export const updateAccountSchema = z.object({
 });
 
 // ============================================================
-// Fiscal Period
+// Period
 // ============================================================
 
-export const fiscalPeriodResponseSchema = z.object({
+export const periodResponseSchema = z.object({
   id: z.number(),
-  book_id: z.number(),
   code: z.string(),
   start_date: z.string(),
   end_date: z.string(),
@@ -228,7 +227,7 @@ export const fiscalPeriodResponseSchema = z.object({
   created_at: z.string(),
 });
 
-export const createFiscalPeriodSchema = z.object({
+export const createPeriodSchema = z.object({
   code: zSanitized(z.string().min(1).max(50)),
   start_date: z.string().datetime(),
   end_date: z.string().datetime(),
@@ -236,7 +235,7 @@ export const createFiscalPeriodSchema = z.object({
   parent_period_id: z.number().int().positive().optional(),
 });
 
-export const updateFiscalPeriodSchema = z.object({
+export const updatePeriodSchema = z.object({
   code: zSanitized(z.string().min(1).max(100)).optional(),
   start_date: z.string().datetime().optional(),
   end_date: z.string().datetime().optional(),
@@ -428,7 +427,7 @@ export const updateProjectSchema = z.object({
 
 export const voucherResponseSchema = z.object({
   id: z.number(),
-  fiscal_period_id: z.number(),
+  period_id: z.number(),
   idempotency_key: z.string(),
   voucher_code: z.string().nullable(),
   posted_date: z.string(),
@@ -490,7 +489,7 @@ export const journalLineSchema = z.object({
 
 export const createVoucherSchema = z.object({
   idempotency_key: zSanitized(z.string().min(1)),
-  fiscal_period_id: z.number().int().positive().optional(),
+  period_id: z.number().int().positive().optional(),
   voucher_code: z.string().optional(),
   posted_date: z.string().datetime(),
   description: z.string().optional(),
