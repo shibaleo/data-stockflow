@@ -8,7 +8,7 @@ const S = "data_stockflow";
 
 export const requireTenant = () =>
   createMiddleware<{ Variables: AppVariables }>(async (c, next) => {
-    if (!c.get("tenantKey")) {
+    if (c.get("tenantKey") == null) {
       throw new HTTPException(401, { message: "Authentication required" });
     }
     await next();
@@ -16,7 +16,7 @@ export const requireTenant = () =>
 
 export const requireAuth = () =>
   createMiddleware<{ Variables: AppVariables }>(async (c, next) => {
-    if (!c.get("tenantKey") || !c.get("userKey") || !c.get("userRole")) {
+    if (c.get("tenantKey") == null || c.get("userKey") == null || !c.get("userRole")) {
       throw new HTTPException(401, { message: "Authentication required" });
     }
     await next();

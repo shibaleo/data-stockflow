@@ -71,7 +71,8 @@ CREATE TABLE data_stockflow."user" (
   revision_hash    TEXT NOT NULL,
   code             TEXT NOT NULL,
   name             TEXT NOT NULL,
-  external_id      TEXT NOT NULL,
+  email            TEXT NOT NULL,
+  external_id      TEXT,
   tenant_key       BIGINT NOT NULL,
   role_key         BIGINT NOT NULL,
   PRIMARY KEY (key, revision),
@@ -353,6 +354,24 @@ CREATE TABLE data_stockflow.journal_tag (
   FOREIGN KEY (journal_key, journal_revision) REFERENCES data_stockflow.journal (key, revision)
 );
 
+-- ---- api_key ----
+CREATE TABLE data_stockflow.api_key (
+  uuid             UUID NOT NULL DEFAULT gen_random_uuid(),
+  user_key         BIGINT NOT NULL,
+  tenant_key       BIGINT NOT NULL,
+  name             TEXT NOT NULL,
+  key_prefix       TEXT NOT NULL,
+  key_hash         TEXT NOT NULL,
+  role             TEXT NOT NULL,
+  expires_at       TIMESTAMPTZ,
+  last_used_at     TIMESTAMPTZ,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (uuid)
+);
+
+CREATE INDEX idx_api_key_user ON data_stockflow.api_key (user_key);
+CREATE INDEX idx_api_key_prefix ON data_stockflow.api_key (key_prefix);
+
 -- ---- audit_log ----
 CREATE TABLE data_stockflow.audit_log (
   uuid             UUID NOT NULL DEFAULT gen_random_uuid(),
@@ -505,204 +524,12 @@ SELECT * FROM data_stockflow.journal ORDER BY key, revision;
 
 -- ============================================================
 -- BOOTSTRAP DATA
--- All keys use nextval (12-digit sequences starting at 100000000000).
--- DO block captures generated keys in variables for FK references.
+-- Only roles are seeded. Tenants, users, and all tenant-scoped
+-- data are created via the platform API after bootstrap.
 -- ============================================================
 
-DO $$
-DECLARE
-  v_tenant  BIGINT;
-  v_role_platform BIGINT;
-  v_role_user     BIGINT;
-  v_user    BIGINT;
-  v_book    BIGINT;
-  v_vt_ordinary   BIGINT;
-  v_jt_normal     BIGINT;
-  v_dept_default  BIGINT;
-  v_cp_default    BIGINT;
-  v_proj_default  BIGINT;
-  -- parent account keys
-  a_current_assets BIGINT;
-  a_fixed_assets   BIGINT;
-  a_current_liab   BIGINT;
-  a_fixed_liab     BIGINT;
-BEGIN
-  -- Default tenant
-  INSERT INTO data_stockflow.tenant (key, revision, name, lines_hash, prev_revision_hash, revision_hash)
-  VALUES (nextval('data_stockflow.tenant_key_seq'), 1, 'Default Tenant', 'bootstrap', 'genesis', 'bootstrap')
-  RETURNING key INTO v_tenant;
-
-  -- Roles (4 types)
-  INSERT INTO data_stockflow.role (key, revision, code, name, lines_hash, prev_revision_hash, revision_hash)
-  VALUES (nextval('data_stockflow.role_key_seq'), 1, 'platform', 'Platform Admin', 'bootstrap', 'genesis', 'bootstrap')
-  RETURNING key INTO v_role_platform;
-
-  INSERT INTO data_stockflow.role (key, revision, code, name, lines_hash, prev_revision_hash, revision_hash) VALUES
-    (nextval('data_stockflow.role_key_seq'), 1, 'audit', 'Auditor', 'bootstrap', 'genesis', 'bootstrap'),
-    (nextval('data_stockflow.role_key_seq'), 1, 'admin', 'Tenant Admin', 'bootstrap', 'genesis', 'bootstrap');
-
-  INSERT INTO data_stockflow.role (key, revision, code, name, lines_hash, prev_revision_hash, revision_hash)
-  VALUES (nextval('data_stockflow.role_key_seq'), 1, 'user', 'User', 'bootstrap', 'genesis', 'bootstrap')
-  RETURNING key INTO v_role_user;
-
-  -- Initial user (platform admin)
-  INSERT INTO data_stockflow."user" (key, revision, code, name, external_id, tenant_key, role_key, lines_hash, prev_revision_hash, revision_hash)
-  VALUES (nextval('data_stockflow.user_key_seq'), 1, 'admin', 'システム管理者', 'clerk_placeholder', v_tenant, v_role_platform, 'bootstrap', 'genesis', 'bootstrap')
-  RETURNING key INTO v_user;
-
-  -- Default book (JPY general ledger)
-  INSERT INTO data_stockflow.book (key, revision, created_by, tenant_key, code, name, unit, unit_symbol, unit_position, type_labels, lines_hash, prev_revision_hash, revision_hash)
-  VALUES (
-    nextval('data_stockflow.book_key_seq'), 1, v_user, v_tenant,
-    'general', '一般帳簿', 'JPY', '¥', 'left',
-    '{"asset":"資産の部","liability":"負債の部","equity":"純資産の部","revenue":"収益の部","expense":"費用の部"}',
-    'bootstrap', 'genesis', 'bootstrap'
-  )
-  RETURNING key INTO v_book;
-
-  -- ============================================================
-  -- DEFAULT CHART OF ACCOUNTS (39 accounts)
-  -- Parent accounts are inserted first; children reference parent keys.
-  -- ============================================================
-
-  -- ── 資産 (asset): parents ──
-  INSERT INTO data_stockflow.account (key, revision, created_by, book_key, code, name, account_type, parent_account_key, lines_hash, prev_revision_hash, revision_hash)
-  VALUES (nextval('data_stockflow.account_key_seq'), 1, v_user, v_book, '100', '流動資産', 'asset', NULL, 'bootstrap', 'genesis', 'bootstrap')
-  RETURNING key INTO a_current_assets;
-
-  INSERT INTO data_stockflow.account (key, revision, created_by, book_key, code, name, account_type, parent_account_key, lines_hash, prev_revision_hash, revision_hash)
-  VALUES (nextval('data_stockflow.account_key_seq'), 1, v_user, v_book, '150', '固定資産', 'asset', NULL, 'bootstrap', 'genesis', 'bootstrap')
-  RETURNING key INTO a_fixed_assets;
-
-  -- ── 資産 (asset): children ──
-  INSERT INTO data_stockflow.account (key, revision, created_by, book_key, code, name, account_type, parent_account_key, lines_hash, prev_revision_hash, revision_hash) VALUES
-    (nextval('data_stockflow.account_key_seq'), 1, v_user, v_book, '101', '現金',         'asset', a_current_assets, 'bootstrap', 'genesis', 'bootstrap'),
-    (nextval('data_stockflow.account_key_seq'), 1, v_user, v_book, '102', '普通預金',     'asset', a_current_assets, 'bootstrap', 'genesis', 'bootstrap'),
-    (nextval('data_stockflow.account_key_seq'), 1, v_user, v_book, '110', '売掛金',       'asset', a_current_assets, 'bootstrap', 'genesis', 'bootstrap'),
-    (nextval('data_stockflow.account_key_seq'), 1, v_user, v_book, '120', '棚卸資産',     'asset', a_current_assets, 'bootstrap', 'genesis', 'bootstrap'),
-    (nextval('data_stockflow.account_key_seq'), 1, v_user, v_book, '130', '前払費用',     'asset', a_current_assets, 'bootstrap', 'genesis', 'bootstrap'),
-    (nextval('data_stockflow.account_key_seq'), 1, v_user, v_book, '140', '立替金',       'asset', a_current_assets, 'bootstrap', 'genesis', 'bootstrap'),
-    (nextval('data_stockflow.account_key_seq'), 1, v_user, v_book, '151', '建物',         'asset', a_fixed_assets,   'bootstrap', 'genesis', 'bootstrap'),
-    (nextval('data_stockflow.account_key_seq'), 1, v_user, v_book, '152', '工具器具備品', 'asset', a_fixed_assets,   'bootstrap', 'genesis', 'bootstrap'),
-    (nextval('data_stockflow.account_key_seq'), 1, v_user, v_book, '153', 'ソフトウェア', 'asset', a_fixed_assets,   'bootstrap', 'genesis', 'bootstrap'),
-    (nextval('data_stockflow.account_key_seq'), 1, v_user, v_book, '154', '車両運搬具',   'asset', a_fixed_assets,   'bootstrap', 'genesis', 'bootstrap');
-
-  -- ── 負債 (liability): parents ──
-  INSERT INTO data_stockflow.account (key, revision, created_by, book_key, code, name, account_type, parent_account_key, lines_hash, prev_revision_hash, revision_hash)
-  VALUES (nextval('data_stockflow.account_key_seq'), 1, v_user, v_book, '200', '流動負債', 'liability', NULL, 'bootstrap', 'genesis', 'bootstrap')
-  RETURNING key INTO a_current_liab;
-
-  INSERT INTO data_stockflow.account (key, revision, created_by, book_key, code, name, account_type, parent_account_key, lines_hash, prev_revision_hash, revision_hash)
-  VALUES (nextval('data_stockflow.account_key_seq'), 1, v_user, v_book, '250', '固定負債', 'liability', NULL, 'bootstrap', 'genesis', 'bootstrap')
-  RETURNING key INTO a_fixed_liab;
-
-  -- ── 負債 (liability): children ──
-  INSERT INTO data_stockflow.account (key, revision, created_by, book_key, code, name, account_type, parent_account_key, lines_hash, prev_revision_hash, revision_hash) VALUES
-    (nextval('data_stockflow.account_key_seq'), 1, v_user, v_book, '201', '買掛金',     'liability', a_current_liab, 'bootstrap', 'genesis', 'bootstrap'),
-    (nextval('data_stockflow.account_key_seq'), 1, v_user, v_book, '210', '未払金',     'liability', a_current_liab, 'bootstrap', 'genesis', 'bootstrap'),
-    (nextval('data_stockflow.account_key_seq'), 1, v_user, v_book, '211', '未払費用',   'liability', a_current_liab, 'bootstrap', 'genesis', 'bootstrap'),
-    (nextval('data_stockflow.account_key_seq'), 1, v_user, v_book, '220', '前受金',     'liability', a_current_liab, 'bootstrap', 'genesis', 'bootstrap'),
-    (nextval('data_stockflow.account_key_seq'), 1, v_user, v_book, '230', '預り金',     'liability', a_current_liab, 'bootstrap', 'genesis', 'bootstrap'),
-    (nextval('data_stockflow.account_key_seq'), 1, v_user, v_book, '251', '長期借入金', 'liability', a_fixed_liab,   'bootstrap', 'genesis', 'bootstrap');
-
-  -- ── 純資産 (equity) ──
-  INSERT INTO data_stockflow.account (key, revision, created_by, book_key, code, name, account_type, parent_account_key, lines_hash, prev_revision_hash, revision_hash) VALUES
-    (nextval('data_stockflow.account_key_seq'), 1, v_user, v_book, '300', '元入金',         'equity', NULL, 'bootstrap', 'genesis', 'bootstrap'),
-    (nextval('data_stockflow.account_key_seq'), 1, v_user, v_book, '310', '繰越利益剰余金', 'equity', NULL, 'bootstrap', 'genesis', 'bootstrap');
-
-  -- ── 収益 (revenue) ──
-  INSERT INTO data_stockflow.account (key, revision, created_by, book_key, code, name, account_type, parent_account_key, lines_hash, prev_revision_hash, revision_hash) VALUES
-    (nextval('data_stockflow.account_key_seq'), 1, v_user, v_book, '400', '売上高',   'revenue', NULL, 'bootstrap', 'genesis', 'bootstrap'),
-    (nextval('data_stockflow.account_key_seq'), 1, v_user, v_book, '410', '受取利息', 'revenue', NULL, 'bootstrap', 'genesis', 'bootstrap'),
-    (nextval('data_stockflow.account_key_seq'), 1, v_user, v_book, '490', '雑収入',   'revenue', NULL, 'bootstrap', 'genesis', 'bootstrap');
-
-  -- ── 費用 (expense) ──
-  INSERT INTO data_stockflow.account (key, revision, created_by, book_key, code, name, account_type, parent_account_key, lines_hash, prev_revision_hash, revision_hash) VALUES
-    (nextval('data_stockflow.account_key_seq'), 1, v_user, v_book, '500', '仕入高',     'expense', NULL, 'bootstrap', 'genesis', 'bootstrap'),
-    (nextval('data_stockflow.account_key_seq'), 1, v_user, v_book, '510', '給料手当',   'expense', NULL, 'bootstrap', 'genesis', 'bootstrap'),
-    (nextval('data_stockflow.account_key_seq'), 1, v_user, v_book, '511', '法定福利費', 'expense', NULL, 'bootstrap', 'genesis', 'bootstrap'),
-    (nextval('data_stockflow.account_key_seq'), 1, v_user, v_book, '520', '外注費',     'expense', NULL, 'bootstrap', 'genesis', 'bootstrap'),
-    (nextval('data_stockflow.account_key_seq'), 1, v_user, v_book, '530', '旅費交通費', 'expense', NULL, 'bootstrap', 'genesis', 'bootstrap'),
-    (nextval('data_stockflow.account_key_seq'), 1, v_user, v_book, '531', '通信費',     'expense', NULL, 'bootstrap', 'genesis', 'bootstrap'),
-    (nextval('data_stockflow.account_key_seq'), 1, v_user, v_book, '532', '消耗品費',   'expense', NULL, 'bootstrap', 'genesis', 'bootstrap'),
-    (nextval('data_stockflow.account_key_seq'), 1, v_user, v_book, '540', '地代家賃',   'expense', NULL, 'bootstrap', 'genesis', 'bootstrap'),
-    (nextval('data_stockflow.account_key_seq'), 1, v_user, v_book, '541', '水道光熱費', 'expense', NULL, 'bootstrap', 'genesis', 'bootstrap'),
-    (nextval('data_stockflow.account_key_seq'), 1, v_user, v_book, '550', '広告宣伝費', 'expense', NULL, 'bootstrap', 'genesis', 'bootstrap'),
-    (nextval('data_stockflow.account_key_seq'), 1, v_user, v_book, '560', '支払手数料', 'expense', NULL, 'bootstrap', 'genesis', 'bootstrap'),
-    (nextval('data_stockflow.account_key_seq'), 1, v_user, v_book, '570', '減価償却費', 'expense', NULL, 'bootstrap', 'genesis', 'bootstrap'),
-    (nextval('data_stockflow.account_key_seq'), 1, v_user, v_book, '580', '租税公課',   'expense', NULL, 'bootstrap', 'genesis', 'bootstrap'),
-    (nextval('data_stockflow.account_key_seq'), 1, v_user, v_book, '590', '雑損失',     'expense', NULL, 'bootstrap', 'genesis', 'bootstrap');
-
-  -- ============================================================
-  -- DEFAULT TAGS
-  -- ============================================================
-  INSERT INTO data_stockflow.tag (key, revision, created_by, tenant_key, code, name, tag_type, lines_hash, prev_revision_hash, revision_hash) VALUES
-    (nextval('data_stockflow.tag_key_seq'), 1, v_user, v_tenant, 'personal',   '個人',     'label',        'bootstrap', 'genesis', 'bootstrap'),
-    (nextval('data_stockflow.tag_key_seq'), 1, v_user, v_tenant, 'business',   '事業',     'label',        'bootstrap', 'genesis', 'bootstrap'),
-    (nextval('data_stockflow.tag_key_seq'), 1, v_user, v_tenant, 'tax-deduct', '経費対象', 'label',        'bootstrap', 'genesis', 'bootstrap'),
-    (nextval('data_stockflow.tag_key_seq'), 1, v_user, v_tenant, 'bank-sync',  '銀行同期', 'source',       'bootstrap', 'genesis', 'bootstrap'),
-    (nextval('data_stockflow.tag_key_seq'), 1, v_user, v_tenant, 'manual',     '手入力',   'source',       'bootstrap', 'genesis', 'bootstrap');
-
-  -- ============================================================
-  -- DEFAULT COUNTERPARTIES
-  -- ============================================================
-  INSERT INTO data_stockflow.counterparty (key, revision, created_by, tenant_key, code, name, lines_hash, prev_revision_hash, revision_hash)
-  VALUES (nextval('data_stockflow.counterparty_key_seq'), 1, v_user, v_tenant, 'unclassified', '未分類', 'bootstrap', 'genesis', 'bootstrap')
-  RETURNING key INTO v_cp_default;
-
-  INSERT INTO data_stockflow.counterparty (key, revision, created_by, tenant_key, code, name, lines_hash, prev_revision_hash, revision_hash) VALUES
-    (nextval('data_stockflow.counterparty_key_seq'), 1, v_user, v_tenant, 'cash',     '現金取引',   'bootstrap', 'genesis', 'bootstrap'),
-    (nextval('data_stockflow.counterparty_key_seq'), 1, v_user, v_tenant, 'owner',    '事業主',     'bootstrap', 'genesis', 'bootstrap'),
-    (nextval('data_stockflow.counterparty_key_seq'), 1, v_user, v_tenant, 'bank',     '銀行',       'bootstrap', 'genesis', 'bootstrap'),
-    (nextval('data_stockflow.counterparty_key_seq'), 1, v_user, v_tenant, 'tax',      '税務署',     'bootstrap', 'genesis', 'bootstrap'),
-    (nextval('data_stockflow.counterparty_key_seq'), 1, v_user, v_tenant, 'misc',     'その他',     'bootstrap', 'genesis', 'bootstrap');
-
-  -- ============================================================
-  -- DEFAULT VOUCHER TYPES
-  -- ============================================================
-  INSERT INTO data_stockflow.voucher_type (key, revision, created_by, tenant_key, code, name, lines_hash, prev_revision_hash, revision_hash)
-  VALUES (nextval('data_stockflow.voucher_type_key_seq'), 1, v_user, v_tenant, 'ordinary', '通常伝票', 'bootstrap', 'genesis', 'bootstrap')
-  RETURNING key INTO v_vt_ordinary;
-
-  INSERT INTO data_stockflow.voucher_type (key, revision, created_by, tenant_key, code, name, lines_hash, prev_revision_hash, revision_hash) VALUES
-    (nextval('data_stockflow.voucher_type_key_seq'), 1, v_user, v_tenant, 'transfer', '振替伝票', 'bootstrap', 'genesis', 'bootstrap'),
-    (nextval('data_stockflow.voucher_type_key_seq'), 1, v_user, v_tenant, 'receipt',  '入金伝票', 'bootstrap', 'genesis', 'bootstrap'),
-    (nextval('data_stockflow.voucher_type_key_seq'), 1, v_user, v_tenant, 'payment',  '出金伝票', 'bootstrap', 'genesis', 'bootstrap');
-
-  -- ============================================================
-  -- DEFAULT JOURNAL TYPES
-  -- ============================================================
-  INSERT INTO data_stockflow.journal_type (key, revision, created_by, book_key, code, name, lines_hash, prev_revision_hash, revision_hash)
-  VALUES (nextval('data_stockflow.journal_type_key_seq'), 1, v_user, v_book, 'normal', '日常仕訳', 'bootstrap', 'genesis', 'bootstrap')
-  RETURNING key INTO v_jt_normal;
-
-  INSERT INTO data_stockflow.journal_type (key, revision, created_by, book_key, code, name, lines_hash, prev_revision_hash, revision_hash) VALUES
-    (nextval('data_stockflow.journal_type_key_seq'), 1, v_user, v_book, 'closing',   '決算仕訳',   'bootstrap', 'genesis', 'bootstrap'),
-    (nextval('data_stockflow.journal_type_key_seq'), 1, v_user, v_book, 'prior_adj', '前期調整',   'bootstrap', 'genesis', 'bootstrap'),
-    (nextval('data_stockflow.journal_type_key_seq'), 1, v_user, v_book, 'auto',      '自動仕訳',   'bootstrap', 'genesis', 'bootstrap');
-
-  -- ============================================================
-  -- DEFAULT DEPARTMENTS
-  -- ============================================================
-  INSERT INTO data_stockflow.department (key, revision, created_by, tenant_key, code, name, lines_hash, prev_revision_hash, revision_hash)
-  VALUES (nextval('data_stockflow.department_key_seq'), 1, v_user, v_tenant, 'unclassified', '未分類', 'bootstrap', 'genesis', 'bootstrap')
-  RETURNING key INTO v_dept_default;
-
-  INSERT INTO data_stockflow.department (key, revision, created_by, tenant_key, code, name, lines_hash, prev_revision_hash, revision_hash) VALUES
-    (nextval('data_stockflow.department_key_seq'), 1, v_user, v_tenant, 'sales',      '営業部', 'bootstrap', 'genesis', 'bootstrap'),
-    (nextval('data_stockflow.department_key_seq'), 1, v_user, v_tenant, 'admin_dept', '管理部', 'bootstrap', 'genesis', 'bootstrap');
-
-  -- ============================================================
-  -- DEFAULT PROJECTS
-  -- ============================================================
-  INSERT INTO data_stockflow.project (key, revision, created_by, tenant_key, code, name, lines_hash, prev_revision_hash, revision_hash)
-  VALUES (nextval('data_stockflow.project_key_seq'), 1, v_user, v_tenant, 'unclassified', '未分類', 'bootstrap', 'genesis', 'bootstrap')
-  RETURNING key INTO v_proj_default;
-
-  -- ============================================================
-  -- DEFAULT FISCAL PERIOD
-  -- ============================================================
-  INSERT INTO data_stockflow.fiscal_period (key, revision, created_by, book_key, code, start_date, end_date, status, lines_hash, prev_revision_hash, revision_hash)
-  VALUES (nextval('data_stockflow.fiscal_period_key_seq'), 1, v_user, v_book, 'default', '1900-01-01'::TIMESTAMPTZ, '9999-12-31'::TIMESTAMPTZ, 'open', 'bootstrap', 'genesis', 'bootstrap');
-
-END $$;
+INSERT INTO data_stockflow.role (key, revision, code, name, lines_hash, prev_revision_hash, revision_hash) VALUES
+  (nextval('data_stockflow.role_key_seq'), 1, 'platform', 'Platform Admin', 'bootstrap', 'genesis', 'bootstrap'),
+  (nextval('data_stockflow.role_key_seq'), 1, 'audit',    'Auditor',        'bootstrap', 'genesis', 'bootstrap'),
+  (nextval('data_stockflow.role_key_seq'), 1, 'admin',    'Tenant Admin',   'bootstrap', 'genesis', 'bootstrap'),
+  (nextval('data_stockflow.role_key_seq'), 1, 'user',     'User',           'bootstrap', 'genesis', 'bootstrap');

@@ -33,11 +33,12 @@ app.openapi(routes.get, async (c) => {
 app.use(routes.create.getRoutingPath(), requireRole("admin"));
 app.openapi(routes.create, async (c) => {
   const body = c.req.valid("json") as Record<string, unknown>;
+  const email = body.email as string;
   const code = body.code as string;
   const name = body.name as string;
-  const hashes = computeMasterHashes({ external_id: body.external_id, role_key: String(body.role_id), code, name }, null);
+  const hashes = computeMasterHashes({ email, role_key: String(body.role_id), code, name }, null);
   const [created] = await db.insert(user).values({
-    external_id: body.external_id as string, tenant_key: c.get("tenantKey"),
+    email, tenant_key: c.get("tenantKey"),
     role_key: body.role_id as number, code, name, ...hashes,
   }).returning();
   recordAudit(c, { action: "create", entityType: "user", entityKey: created.key });
@@ -48,16 +49,23 @@ app.use(routes.update.getRoutingPath(), requireRole("admin"));
 app.openapi(routes.update, async (c) => {
   const userKey = Number(c.req.param("userId"));
   const body = c.req.valid("json") as Record<string, unknown>;
+
+  // Cannot modify own role
+  if (userKey === c.get("userKey") && body.role_id !== undefined) {
+    return c.json({ error: "Cannot change own role" }, 403);
+  }
+
   const current = await getCurrent<CurrentUser>("current_user", { tenant_key: c.get("tenantKey"), key: userKey });
   if (!current) return c.json({ error: "Not found" }, 404);
   const maxRev = await getMaxRevision("user", userKey);
   const newRoleKey = (body.role_id as number | undefined) ?? current.role_key;
   const newCode = (body.code as string | undefined) ?? current.code;
   const newName = (body.name as string | undefined) ?? current.name;
-  const hashes = computeMasterHashes({ external_id: current.external_id, role_key: String(newRoleKey), code: newCode, name: newName }, current.revision_hash);
+  const hashes = computeMasterHashes({ email: current.email, role_key: String(newRoleKey), code: newCode, name: newName }, current.revision_hash);
   const [updated] = await db.insert(user).values({
     key: userKey, revision: maxRev + 1,
-    external_id: current.external_id, tenant_key: c.get("tenantKey"),
+    email: current.email, external_id: current.external_id,
+    tenant_key: c.get("tenantKey"),
     role_key: newRoleKey, code: newCode, name: newName, ...hashes,
   }).returning();
   recordAudit(c, { action: "update", entityType: "user", entityKey: userKey, revision: maxRev + 1 });

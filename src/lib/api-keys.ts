@@ -88,7 +88,7 @@ export async function verifyApiKey(
   const tenantKey = Number(payload.tenant_key);
   const role = payload.role as string;
   const jti = payload.jti;
-  if (!userKey || !tenantKey || !role || !jti) return null;
+  if (userKey == null || tenantKey == null || !role || !jti) return null;
   if (!ROLES.includes(role)) return null;
 
   // Check not revoked (jti stored in key_hash column)

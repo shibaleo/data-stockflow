@@ -96,6 +96,7 @@ export function defineCrudRoutes(
       request: { params: idObj, body: jc(updateSchema) },
       responses: {
         200: { description: "Updated", ...jc(dataSchema(responseSchema)) },
+        403: { description: "Forbidden", ...jc(errorSchema) },
         404: { description: "Not found", ...jc(errorSchema) },
       },
     }),

@@ -96,7 +96,8 @@ export const updateRoleSchema = z.object({
 
 export const userResponseSchema = z.object({
   id: z.number(),
-  external_id: z.string(),
+  email: z.string(),
+  external_id: z.string().nullable(),
   code: z.string(),
   name: z.string(),
   tenant_id: z.number(),
@@ -106,7 +107,7 @@ export const userResponseSchema = z.object({
 });
 
 export const createUserSchema = z.object({
-  external_id: zSanitized(z.string().min(1)),
+  email: zSanitized(z.string().email()),
   code: zSanitized(z.string().min(1).max(50)),
   name: zSanitized(z.string().min(1).max(200)),
   role_id: z.number().int().positive(),

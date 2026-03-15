@@ -48,87 +48,110 @@ function getClerkJWKS(): ReturnType<typeof jose.createRemoteJWKSet> | null {
   return clerkJWKS;
 }
 
-async function verifyClerkToken(token: string): Promise<string | null> {
+interface ClerkIdentity {
+  userId: string;
+  email: string | null;
+}
+
+async function verifyClerkToken(token: string): Promise<ClerkIdentity | null> {
   const jwks = getClerkJWKS();
   if (!jwks) return null;
   try {
     const { payload } = await jose.jwtVerify(token, jwks);
-    return (payload.sub as string) || null;
+    const userId = payload.sub as string;
+    if (!userId) return null;
+
+    // Fetch email from Clerk Backend API
+    const clerkSecretKey = process.env.CLERK_SECRET_KEY;
+    let email: string | null = null;
+    if (clerkSecretKey) {
+      try {
+        const res = await fetch(`https://api.clerk.com/v1/users/${userId}`, {
+          headers: { Authorization: `Bearer ${clerkSecretKey}` },
+        });
+        if (res.ok) {
+          const userData = await res.json() as {
+            email_addresses?: Array<{ email_address: string; id: string }>;
+            primary_email_address_id?: string;
+          };
+          const primary = userData.email_addresses?.find(
+            (e) => e.id === userData.primary_email_address_id
+          );
+          email = primary?.email_address ?? userData.email_addresses?.[0]?.email_address ?? null;
+        }
+      } catch {
+        // Clerk API unreachable — continue without email
+      }
+    }
+
+    return { userId, email };
   } catch {
     return null;
   }
 }
 
-/**
- * Look up user by external_id from current_user view + current_role.
- * Auto-creates on first login using DEFAULT_TENANT_KEY.
- */
-async function findOrCreateUser(
-  externalId: string
-): Promise<AuthResult | null> {
-  // Try existing user
-  const { rows: existing } = await db.execute(sql`
-    SELECT u.key, u.tenant_key, u.role_key, r.code as role_code
-    FROM ${sql.raw(`"${S}".current_user`)} u
-    JOIN ${sql.raw(`"${S}".current_role`)} r ON r.key = u.role_key
-    WHERE u.external_id = ${externalId}
-    LIMIT 1
-  `);
+type UserRow = { key: number; tenant_key: number; role_key: number; role_code: string };
 
-  if (existing.length > 0) {
-    const row = existing[0] as {
-      key: number;
-      tenant_key: number;
-      role_key: number;
-      role_code: string;
-    };
-    if (!ROLES.includes(row.role_code)) return null;
-    return {
-      userKey: row.key,
-      tenantKey: row.tenant_key,
-      role: row.role_code as UserRole,
-      roleCode: row.role_code,
-    };
-  }
-
-  // Auto-create on first login
-  const defaultTenantKey = Number(process.env.DEFAULT_TENANT_KEY || "100000000000");
-  // Default role = 'user' (looked up from DB, fallback to bootstrap key)
-  const { rows: roleRows } = await db.execute(sql`
-    SELECT key FROM ${sql.raw(`"${S}".current_role`)}
-    WHERE code = 'user'
-    LIMIT 1
-  `);
-  const userRoleKey = roleRows.length > 0
-    ? (roleRows[0] as { key: number }).key
-    : 100000000003;
-
-  const { rows: created } = await db.execute(sql`
-    INSERT INTO ${sql.raw(`"${S}"."user"`)} (
-      key, revision, external_id, tenant_key, role_key,
-      code, name,
-      lines_hash, prev_revision_hash, revision_hash
-    ) VALUES (
-      nextval('${sql.raw(`${S}.user_key_seq`)}'), 1, ${externalId},
-      ${defaultTenantKey}, ${userRoleKey},
-      ${externalId.slice(0, 32)}, ${externalId},
-      'bootstrap', 'genesis', 'bootstrap'
-    )
-    RETURNING key, tenant_key, role_key
-  `);
-
-  if (created.length === 0) return null;
-  const row = created[0] as {
-    key: number;
-    tenant_key: number;
-    role_key: number;
-  };
+function toAuthResult(row: UserRow): AuthResult | null {
+  if (!ROLES.includes(row.role_code)) return null;
   return {
     userKey: row.key,
     tenantKey: row.tenant_key,
-    role: "user",
-    roleCode: "user",
+    role: row.role_code as UserRole,
+    roleCode: row.role_code,
   };
+}
+
+/**
+ * Look up user by external_id or email.
+ *
+ * 1. Search by external_id (Clerk User ID) — fast path for returning users
+ * 2. If not found, search by email — first login after invitation
+ *    → bind external_id to the matched user (append new revision)
+ */
+async function findUser(
+  identity: ClerkIdentity
+): Promise<AuthResult | null> {
+  // 1. Try external_id (Clerk User ID)
+  const { rows: byExtId } = await db.execute(sql`
+    SELECT u.key, u.tenant_key, u.role_key, r.code as role_code
+    FROM ${sql.raw(`"${S}".current_user`)} u
+    JOIN ${sql.raw(`"${S}".current_role`)} r ON r.key = u.role_key
+    WHERE u.external_id = ${identity.userId}
+    LIMIT 1
+  `);
+  if (byExtId.length > 0) return toAuthResult(byExtId[0] as UserRow);
+
+  // 2. Try email (invitation flow — first login)
+  if (!identity.email) return null;
+  const { rows: byEmail } = await db.execute(sql`
+    SELECT u.key, u.tenant_key, u.role_key, u.revision, u.code, u.name, u.email,
+           u.revision_hash, r.code as role_code
+    FROM ${sql.raw(`"${S}".current_user`)} u
+    JOIN ${sql.raw(`"${S}".current_role`)} r ON r.key = u.role_key
+    WHERE u.email = ${identity.email} AND u.external_id IS NULL
+    LIMIT 1
+  `);
+  if (byEmail.length === 0) return null;
+
+  const matched = byEmail[0] as UserRow & {
+    revision: number; code: string; name: string; email: string; revision_hash: string;
+  };
+
+  // Bind Clerk User ID by appending a new revision
+  const newRev = matched.revision + 1;
+  await db.execute(sql`
+    INSERT INTO ${sql.raw(`"${S}"."user"`)} (
+      key, revision, external_id, email, tenant_key, role_key, code, name,
+      lines_hash, prev_revision_hash, revision_hash
+    ) VALUES (
+      ${matched.key}, ${newRev}, ${identity.userId}, ${matched.email},
+      ${matched.tenant_key}, ${matched.role_key}, ${matched.code}, ${matched.name},
+      'bind', ${matched.revision_hash}, 'bind'
+    )
+  `);
+
+  return toAuthResult(matched);
 }
 
 // ============================================================
@@ -204,10 +227,10 @@ export async function authenticate(
       return verifyApiKey(token);
     }
 
-    // Try Clerk JWKS → DB lookup
-    const clerkUserId = await verifyClerkToken(token);
-    if (clerkUserId) {
-      return findOrCreateUser(clerkUserId);
+    // Try Clerk JWKS → DB lookup by external_id or email
+    const clerkIdentity = await verifyClerkToken(token);
+    if (clerkIdentity) {
+      return findUser(clerkIdentity);
     }
 
     // Fallback: dev HS256 token

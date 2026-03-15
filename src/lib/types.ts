@@ -30,7 +30,8 @@ export interface CurrentRole extends BaseEntity {
 export interface CurrentUser extends BaseEntity {
   code: string;
   name: string;
-  external_id: string;
+  email: string;
+  external_id: string | null;
   tenant_key: number;
   role_key: number;
 }

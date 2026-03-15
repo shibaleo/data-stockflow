@@ -1,34 +1,26 @@
 /**
- * Bootstrap: generate a platform API key for the bootstrap admin user.
- * Usage: npx tsx dev/bootstrap.ts
+ * Bootstrap: generate a platform API key.
  *
- * Requires DATABASE_URL and JWT_SECRET in .env (loaded by Next.js convention).
+ * Run after migration.sql. The API key enables all platform operations
+ * (create tenants, register users, etc.) via the API.
+ *
+ * Requires: DATABASE_URL, JWT_SECRET in .env
+ * Usage: npx tsx scripts/bootstrap.ts
  */
 
 import "dotenv/config";
 import { createApiKey } from "@/lib/api-keys";
 
-const PLATFORM_USER_KEY = 100000000000; // bootstrap admin user
-const PLATFORM_TENANT_KEY = 100000000000; // bootstrap tenant
-
 async function main() {
   const { rawKey } = await createApiKey({
-    userKey: PLATFORM_USER_KEY,
-    tenantKey: PLATFORM_TENANT_KEY,
-    role: "platform",
-    name: "bootstrap",
+    userKey: 0, tenantKey: 0, role: "platform", name: "bootstrap",
   });
 
-  console.log("\n=== Platform API Key (bootstrap) ===");
+  console.log("\n=== Platform API Key ===");
   console.log(rawKey);
-  console.log("\nUsage:");
-  console.log(`  curl -H "Authorization: Bearer ${rawKey.slice(0, 20)}..." ...`);
+  console.log(`\nPLATFORM_API_KEY=${rawKey}`);
   console.log("\nThis key will NOT be shown again.\n");
-
   process.exit(0);
 }
 
-main().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+main().catch((e) => { console.error(e); process.exit(1); });
