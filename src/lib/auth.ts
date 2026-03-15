@@ -105,10 +105,12 @@ async function findOrCreateUser(
   const { rows: created } = await db.execute(sql`
     INSERT INTO ${sql.raw(`"${S}"."user"`)} (
       key, revision, external_id, tenant_key, role_key,
+      code, name,
       lines_hash, prev_revision_hash, revision_hash
     ) VALUES (
       nextval('${sql.raw(`${S}.user_key_seq`)}'), 1, ${externalId},
       ${defaultTenantKey}, ${userRoleKey},
+      ${externalId.slice(0, 32)}, ${externalId},
       'bootstrap', 'genesis', 'bootstrap'
     )
     RETURNING key, tenant_key, role_key

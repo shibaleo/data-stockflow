@@ -76,8 +76,8 @@ async function buildJournalDetail(j: CurrentJournal) {
   }));
   return {
     id: j.key, voucher_id: j.voucher_key, book_id: j.book_key, revision: j.revision,
-    is_active: j.is_active, journal_type: j.journal_type,
-    slip_category: j.slip_category, adjustment_flag: j.adjustment_flag,
+    is_active: j.is_active, journal_type_id: j.journal_type_key,
+    voucher_type_id: j.voucher_type_key, adjustment_flag: j.adjustment_flag,
     description: j.description,
     created_at: j.created_at instanceof Date ? j.created_at.toISOString() : String(j.created_at),
     lines, tags,
@@ -190,8 +190,8 @@ app.openapi(updateRoute, async (c) => {
   const result = await db.transaction(async (tx: typeof db) => {
     const prevRevisionHash = await getPrevRevisionHash(tx, journalKey, maxRev + 1);
 
-    const resolvedType = body.journal_type ?? current.journal_type;
-    const resolvedSlip = body.slip_category ?? current.slip_category;
+    const resolvedTypeKey = body.journal_type_id ?? current.journal_type_key;
+    const resolvedVoucherTypeKey = body.voucher_type_id ?? current.voucher_type_key;
     const resolvedAdj = body.adjustment_flag ?? current.adjustment_flag;
     const resolvedDesc = body.description !== undefined ? body.description : current.description;
     const resolvedActive = body.is_active ?? current.is_active;
@@ -204,8 +204,8 @@ app.openapi(updateRoute, async (c) => {
     const linesHash = computeLinesHash(linesHashInputs);
     const revisionHash = computeRevisionHash({
       prev_revision_hash: prevRevisionHash, journal_key: journalKey,
-      revision: maxRev + 1, journal_type: resolvedType,
-      slip_category: resolvedSlip, adjustment_flag: resolvedAdj,
+      revision: maxRev + 1, journal_type_key: resolvedTypeKey,
+      voucher_type_key: resolvedVoucherTypeKey, adjustment_flag: resolvedAdj,
       description: resolvedDesc ?? null, lines_hash: linesHash,
     });
 
@@ -214,8 +214,8 @@ app.openapi(updateRoute, async (c) => {
     const [j] = await tx.insert(journal).values({
       key: journalKey, revision: maxRev + 1,
       tenant_key: tenantKey, voucher_key: voucherKey, book_key: resolvedBookKey,
-      is_active: resolvedActive, journal_type: resolvedType,
-      slip_category: resolvedSlip, adjustment_flag: resolvedAdj,
+      is_active: resolvedActive, journal_type_key: resolvedTypeKey,
+      voucher_type_key: resolvedVoucherTypeKey, adjustment_flag: resolvedAdj,
       description: resolvedDesc, created_by: userKey,
       lines_hash: linesHash, prev_revision_hash: prevRevisionHash,
       revision_hash: revisionHash,
@@ -270,16 +270,16 @@ app.openapi(deleteRoute, async (c) => {
     const linesHash = computeLinesHash([]);
     const revisionHash = computeRevisionHash({
       prev_revision_hash: prevRevisionHash, journal_key: journalKey,
-      revision: maxRev + 1, journal_type: current.journal_type,
-      slip_category: current.slip_category, adjustment_flag: current.adjustment_flag,
+      revision: maxRev + 1, journal_type_key: current.journal_type_key,
+      voucher_type_key: current.voucher_type_key, adjustment_flag: current.adjustment_flag,
       description: current.description ?? null, lines_hash: linesHash,
     });
 
     await tx.insert(journal).values({
       key: journalKey, revision: maxRev + 1,
       tenant_key: tenantKey, voucher_key: voucherKey, book_key: current.book_key,
-      is_active: false, journal_type: current.journal_type,
-      slip_category: current.slip_category, adjustment_flag: current.adjustment_flag,
+      is_active: false, journal_type_key: current.journal_type_key,
+      voucher_type_key: current.voucher_type_key, adjustment_flag: current.adjustment_flag,
       description: current.description, created_by: userKey,
       lines_hash: linesHash, prev_revision_hash: prevRevisionHash,
       revision_hash: revisionHash,
@@ -301,8 +301,8 @@ app.openapi(historyRoute, async (c) => {
   return c.json({
     data: journals.map((j) => ({
       id: j.key, voucher_id: j.voucher_key, book_id: j.book_key, revision: j.revision,
-      is_active: j.is_active, journal_type: j.journal_type,
-      slip_category: j.slip_category, adjustment_flag: j.adjustment_flag,
+      is_active: j.is_active, journal_type_id: j.journal_type_key,
+      voucher_type_id: j.voucher_type_key, adjustment_flag: j.adjustment_flag,
       description: j.description,
       created_at: j.created_at instanceof Date ? j.created_at.toISOString() : String(j.created_at),
     })),

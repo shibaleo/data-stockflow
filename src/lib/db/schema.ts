@@ -32,6 +32,8 @@ export const departmentKeySeq = s.sequence("department_key_seq");
 export const counterpartyKeySeq = s.sequence("counterparty_key_seq");
 export const voucherKeySeq = s.sequence("voucher_key_seq");
 export const journalKeySeq = s.sequence("journal_key_seq");
+export const voucherTypeKeySeq = s.sequence("voucher_type_key_seq");
+export const journalTypeKeySeq = s.sequence("journal_type_key_seq");
 
 // ============================================================
 // 基盤系
@@ -104,11 +106,16 @@ export const user = s.table(
     lines_hash: text("lines_hash").notNull(),
     prev_revision_hash: text("prev_revision_hash").notNull(),
     revision_hash: text("revision_hash").notNull(),
+    code: text("code").notNull(),
+    name: text("name").notNull(),
     external_id: text("external_id").notNull(),
     tenant_key: bigint("tenant_key", { mode: "number" }).notNull(),
     role_key: bigint("role_key", { mode: "number" }).notNull(),
   },
-  (t) => [primaryKey({ columns: [t.key, t.revision] })]
+  (t) => [
+    primaryKey({ columns: [t.key, t.revision] }),
+    uniqueIndex("user_tenant_key_code_revision_key").on(t.tenant_key, t.code, t.revision),
+  ]
 );
 
 // ============================================================
@@ -328,6 +335,64 @@ export const counterparty = s.table(
   ]
 );
 
+export const voucherType = s.table(
+  "voucher_type",
+  {
+    key: bigint("key", { mode: "number" })
+      .default(sql`nextval('data_stockflow.voucher_type_key_seq')`)
+      .notNull(),
+    revision: integer("revision").default(1).notNull(),
+    created_at: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    valid_from: timestamp("valid_from", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    valid_to: timestamp("valid_to", { withTimezone: true }),
+    lines_hash: text("lines_hash").notNull(),
+    prev_revision_hash: text("prev_revision_hash").notNull(),
+    revision_hash: text("revision_hash").notNull(),
+    created_by: bigint("created_by", { mode: "number" }).notNull(),
+    tenant_key: bigint("tenant_key", { mode: "number" }).notNull(),
+    code: text("code").notNull(),
+    name: text("name").notNull(),
+    is_active: boolean("is_active").default(true).notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.key, t.revision] }),
+    uniqueIndex("voucher_type_tenant_key_code_revision_key").on(t.tenant_key, t.code, t.revision),
+  ]
+);
+
+export const journalType = s.table(
+  "journal_type",
+  {
+    key: bigint("key", { mode: "number" })
+      .default(sql`nextval('data_stockflow.journal_type_key_seq')`)
+      .notNull(),
+    revision: integer("revision").default(1).notNull(),
+    created_at: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    valid_from: timestamp("valid_from", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    valid_to: timestamp("valid_to", { withTimezone: true }),
+    lines_hash: text("lines_hash").notNull(),
+    prev_revision_hash: text("prev_revision_hash").notNull(),
+    revision_hash: text("revision_hash").notNull(),
+    created_by: bigint("created_by", { mode: "number" }).notNull(),
+    book_key: bigint("book_key", { mode: "number" }).notNull(),
+    code: text("code").notNull(),
+    name: text("name").notNull(),
+    is_active: boolean("is_active").default(true).notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.key, t.revision] }),
+    uniqueIndex("journal_type_book_key_code_revision_key").on(t.book_key, t.code, t.revision),
+  ]
+);
+
 // ============================================================
 // トランザクション系
 // ============================================================
@@ -391,8 +456,8 @@ export const journal = s.table(
     voucher_key: bigint("voucher_key", { mode: "number" }).notNull(),
     book_key: bigint("book_key", { mode: "number" }).notNull(),
     is_active: boolean("is_active").default(true).notNull(),
-    journal_type: text("journal_type").default("normal").notNull(),
-    slip_category: text("slip_category").default("ordinary").notNull(),
+    journal_type_key: bigint("journal_type_key", { mode: "number" }).notNull(),
+    voucher_type_key: bigint("voucher_type_key", { mode: "number" }).notNull(),
     adjustment_flag: text("adjustment_flag").default("none").notNull(),
     description: text("description"),
   },

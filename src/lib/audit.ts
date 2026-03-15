@@ -22,7 +22,9 @@ export type AuditEntityType =
   | "voucher"
   | "journal"
   | "role"
-  | "user";
+  | "user"
+  | "voucher_type"
+  | "journal_type";
 
 interface AuditEntry {
   action: AuditAction;

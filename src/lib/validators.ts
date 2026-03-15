@@ -76,6 +76,8 @@ export const updateRoleSchema = z.object({
 export const userResponseSchema = z.object({
   id: z.number(),
   external_id: z.string(),
+  code: z.string(),
+  name: z.string(),
   tenant_id: z.number(),
   role_id: z.number(),
   revision: z.number(),
@@ -84,10 +86,14 @@ export const userResponseSchema = z.object({
 
 export const createUserSchema = z.object({
   external_id: zSanitized(z.string().min(1)),
+  code: zSanitized(z.string().min(1).max(50)),
+  name: zSanitized(z.string().min(1).max(200)),
   role_id: z.number().int().positive(),
 });
 
 export const updateUserSchema = z.object({
+  code: zSanitized(z.string().min(1).max(100)).optional(),
+  name: zSanitized(z.string().min(1).max(200)).optional(),
   role_id: z.number().int().positive().optional(),
 });
 
@@ -297,6 +303,55 @@ export const updateCounterpartySchema = z.object({
 });
 
 // ============================================================
+// Voucher Type
+// ============================================================
+
+export const voucherTypeResponseSchema = z.object({
+  id: z.number(),
+  code: z.string(),
+  name: z.string(),
+  is_active: z.boolean(),
+  revision: z.number(),
+  created_at: z.string(),
+});
+
+export const createVoucherTypeSchema = z.object({
+  code: zSanitized(z.string().min(1).max(50)),
+  name: zSanitized(z.string().min(1).max(200)),
+});
+
+export const updateVoucherTypeSchema = z.object({
+  code: zSanitized(z.string().min(1).max(100)).optional(),
+  name: zSanitized(z.string().min(1).max(200)).optional(),
+  is_active: z.boolean().optional(),
+});
+
+// ============================================================
+// Journal Type
+// ============================================================
+
+export const journalTypeResponseSchema = z.object({
+  id: z.number(),
+  book_id: z.number(),
+  code: z.string(),
+  name: z.string(),
+  is_active: z.boolean(),
+  revision: z.number(),
+  created_at: z.string(),
+});
+
+export const createJournalTypeSchema = z.object({
+  code: zSanitized(z.string().min(1).max(50)),
+  name: zSanitized(z.string().min(1).max(200)),
+});
+
+export const updateJournalTypeSchema = z.object({
+  code: zSanitized(z.string().min(1).max(100)).optional(),
+  name: zSanitized(z.string().min(1).max(200)).optional(),
+  is_active: z.boolean().optional(),
+});
+
+// ============================================================
 // Voucher
 // ============================================================
 
@@ -338,8 +393,8 @@ export const journalResponseSchema = z.object({
   book_id: z.number(),
   revision: z.number(),
   is_active: z.boolean(),
-  journal_type: z.string(),
-  slip_category: z.string(),
+  journal_type_id: z.number(),
+  voucher_type_id: z.number(),
   adjustment_flag: z.string(),
   description: z.string().nullable(),
   created_at: z.string(),
@@ -362,7 +417,7 @@ export const journalLineSchema = z.object({
 
 export const createVoucherSchema = z.object({
   idempotency_key: zSanitized(z.string().min(1)),
-  fiscal_period_id: z.number().int().positive(),
+  fiscal_period_id: z.number().int().positive().optional(),
   voucher_code: z.string().optional(),
   posted_date: z.string().datetime(),
   description: z.string().optional(),
@@ -371,12 +426,8 @@ export const createVoucherSchema = z.object({
     .array(
       z.object({
         book_id: z.number().int().positive(),
-        journal_type: z
-          .enum(["normal", "closing", "prior_adj", "auto"])
-          .default("normal"),
-        slip_category: z
-          .enum(["ordinary", "transfer", "receipt", "payment"])
-          .default("ordinary"),
+        journal_type_id: z.number().int().positive(),
+        voucher_type_id: z.number().int().positive(),
         adjustment_flag: z
           .enum(["none", "monthly_adj", "year_end_adj"])
           .default("none"),
@@ -394,12 +445,8 @@ export const voucherDetailResponseSchema = voucherResponseSchema.extend({
 
 export const updateJournalSchema = z.object({
   book_id: z.number().int().positive().optional(),
-  journal_type: z
-    .enum(["normal", "closing", "prior_adj", "auto"])
-    .optional(),
-  slip_category: z
-    .enum(["ordinary", "transfer", "receipt", "payment"])
-    .optional(),
+  journal_type_id: z.number().int().positive().optional(),
+  voucher_type_id: z.number().int().positive().optional(),
   adjustment_flag: z
     .enum(["none", "monthly_adj", "year_end_adj"])
     .optional(),

@@ -5,7 +5,7 @@ DROP SCHEMA IF EXISTS data_stockflow CASCADE;
 CREATE SCHEMA data_stockflow;
 
 -- ============================================================
--- SEQUENCES (11)
+-- SEQUENCES (13)
 -- ============================================================
 
 CREATE SEQUENCE data_stockflow.tenant_key_seq        START WITH 100000000000;
@@ -19,6 +19,8 @@ CREATE SEQUENCE data_stockflow.department_key_seq    START WITH 100000000000;
 CREATE SEQUENCE data_stockflow.counterparty_key_seq  START WITH 100000000000;
 CREATE SEQUENCE data_stockflow.voucher_key_seq       START WITH 100000000000;
 CREATE SEQUENCE data_stockflow.journal_key_seq       START WITH 100000000000;
+CREATE SEQUENCE data_stockflow.voucher_type_key_seq  START WITH 100000000000;
+CREATE SEQUENCE data_stockflow.journal_type_key_seq  START WITH 100000000000;
 
 -- ============================================================
 -- TABLES
@@ -66,10 +68,13 @@ CREATE TABLE data_stockflow."user" (
   lines_hash       TEXT NOT NULL,
   prev_revision_hash TEXT NOT NULL,
   revision_hash    TEXT NOT NULL,
+  code             TEXT NOT NULL,
+  name             TEXT NOT NULL,
   external_id      TEXT NOT NULL,
   tenant_key       BIGINT NOT NULL,
   role_key         BIGINT NOT NULL,
-  PRIMARY KEY (key, revision)
+  PRIMARY KEY (key, revision),
+  UNIQUE (tenant_key, code, revision)
 );
 
 -- ---- book ----
@@ -198,6 +203,44 @@ CREATE TABLE data_stockflow.counterparty (
   UNIQUE (tenant_key, code, revision)
 );
 
+-- ---- voucher_type ----
+CREATE TABLE data_stockflow.voucher_type (
+  key              BIGINT NOT NULL DEFAULT nextval('data_stockflow.voucher_type_key_seq'),
+  revision         INTEGER NOT NULL DEFAULT 1,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  valid_from       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  valid_to         TIMESTAMPTZ,
+  lines_hash       TEXT NOT NULL,
+  prev_revision_hash TEXT NOT NULL,
+  revision_hash    TEXT NOT NULL,
+  created_by       BIGINT NOT NULL,
+  tenant_key       BIGINT NOT NULL,
+  code             TEXT NOT NULL,
+  name             TEXT NOT NULL,
+  is_active        BOOLEAN NOT NULL DEFAULT true,
+  PRIMARY KEY (key, revision),
+  UNIQUE (tenant_key, code, revision)
+);
+
+-- ---- journal_type ----
+CREATE TABLE data_stockflow.journal_type (
+  key              BIGINT NOT NULL DEFAULT nextval('data_stockflow.journal_type_key_seq'),
+  revision         INTEGER NOT NULL DEFAULT 1,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  valid_from       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  valid_to         TIMESTAMPTZ,
+  lines_hash       TEXT NOT NULL,
+  prev_revision_hash TEXT NOT NULL,
+  revision_hash    TEXT NOT NULL,
+  created_by       BIGINT NOT NULL,
+  book_key         BIGINT NOT NULL,
+  code             TEXT NOT NULL,
+  name             TEXT NOT NULL,
+  is_active        BOOLEAN NOT NULL DEFAULT true,
+  PRIMARY KEY (key, revision),
+  UNIQUE (book_key, code, revision)
+);
+
 -- ---- voucher ----
 CREATE TABLE data_stockflow.voucher (
   key              BIGINT NOT NULL DEFAULT nextval('data_stockflow.voucher_key_seq'),
@@ -242,8 +285,8 @@ CREATE TABLE data_stockflow.journal (
   voucher_key      BIGINT NOT NULL,
   book_key         BIGINT NOT NULL,
   is_active        BOOLEAN NOT NULL DEFAULT true,
-  journal_type     TEXT NOT NULL DEFAULT 'normal',
-  slip_category    TEXT NOT NULL DEFAULT 'ordinary',
+  journal_type_key BIGINT NOT NULL,
+  voucher_type_key BIGINT NOT NULL,
   adjustment_flag  TEXT NOT NULL DEFAULT 'none',
   description      TEXT,
   PRIMARY KEY (key, revision)
@@ -361,6 +404,18 @@ FROM data_stockflow.counterparty
 WHERE valid_from <= now() AND (valid_to IS NULL OR valid_to > now())
 ORDER BY key, created_at DESC;
 
+CREATE VIEW data_stockflow.current_voucher_type AS
+SELECT DISTINCT ON (key) *
+FROM data_stockflow.voucher_type
+WHERE valid_from <= now() AND (valid_to IS NULL OR valid_to > now())
+ORDER BY key, created_at DESC;
+
+CREATE VIEW data_stockflow.current_journal_type AS
+SELECT DISTINCT ON (key) *
+FROM data_stockflow.journal_type
+WHERE valid_from <= now() AND (valid_to IS NULL OR valid_to > now())
+ORDER BY key, created_at DESC;
+
 CREATE VIEW data_stockflow.current_journal AS
 SELECT * FROM (
   SELECT DISTINCT ON (key) *
@@ -400,6 +455,12 @@ SELECT * FROM data_stockflow.department ORDER BY key, revision;
 CREATE VIEW data_stockflow.history_counterparty AS
 SELECT * FROM data_stockflow.counterparty ORDER BY key, revision;
 
+CREATE VIEW data_stockflow.history_voucher_type AS
+SELECT * FROM data_stockflow.voucher_type ORDER BY key, revision;
+
+CREATE VIEW data_stockflow.history_journal_type AS
+SELECT * FROM data_stockflow.journal_type ORDER BY key, revision;
+
 CREATE VIEW data_stockflow.history_journal AS
 SELECT * FROM data_stockflow.journal ORDER BY key, revision;
 
@@ -416,6 +477,8 @@ DECLARE
   v_role_user     BIGINT;
   v_user    BIGINT;
   v_book    BIGINT;
+  v_vt_ordinary   BIGINT;
+  v_jt_normal     BIGINT;
   -- parent account keys
   a_current_assets BIGINT;
   a_fixed_assets   BIGINT;
@@ -441,8 +504,8 @@ BEGIN
   RETURNING key INTO v_role_user;
 
   -- Initial user (platform admin)
-  INSERT INTO data_stockflow."user" (key, revision, external_id, tenant_key, role_key, lines_hash, prev_revision_hash, revision_hash)
-  VALUES (nextval('data_stockflow.user_key_seq'), 1, 'clerk_placeholder', v_tenant, v_role_platform, 'bootstrap', 'genesis', 'bootstrap')
+  INSERT INTO data_stockflow."user" (key, revision, code, name, external_id, tenant_key, role_key, lines_hash, prev_revision_hash, revision_hash)
+  VALUES (nextval('data_stockflow.user_key_seq'), 1, 'admin', 'システム管理者', 'clerk_placeholder', v_tenant, v_role_platform, 'bootstrap', 'genesis', 'bootstrap')
   RETURNING key INTO v_user;
 
   -- Default book (JPY general ledger)
@@ -547,5 +610,43 @@ BEGIN
     (nextval('data_stockflow.counterparty_key_seq'), 1, v_user, v_tenant, 'bank',     '銀行',       'bootstrap', 'genesis', 'bootstrap'),
     (nextval('data_stockflow.counterparty_key_seq'), 1, v_user, v_tenant, 'tax',      '税務署',     'bootstrap', 'genesis', 'bootstrap'),
     (nextval('data_stockflow.counterparty_key_seq'), 1, v_user, v_tenant, 'misc',     'その他',     'bootstrap', 'genesis', 'bootstrap');
+
+  -- ============================================================
+  -- DEFAULT VOUCHER TYPES
+  -- ============================================================
+  INSERT INTO data_stockflow.voucher_type (key, revision, created_by, tenant_key, code, name, lines_hash, prev_revision_hash, revision_hash)
+  VALUES (nextval('data_stockflow.voucher_type_key_seq'), 1, v_user, v_tenant, 'ordinary', '通常伝票', 'bootstrap', 'genesis', 'bootstrap')
+  RETURNING key INTO v_vt_ordinary;
+
+  INSERT INTO data_stockflow.voucher_type (key, revision, created_by, tenant_key, code, name, lines_hash, prev_revision_hash, revision_hash) VALUES
+    (nextval('data_stockflow.voucher_type_key_seq'), 1, v_user, v_tenant, 'transfer', '振替伝票', 'bootstrap', 'genesis', 'bootstrap'),
+    (nextval('data_stockflow.voucher_type_key_seq'), 1, v_user, v_tenant, 'receipt',  '入金伝票', 'bootstrap', 'genesis', 'bootstrap'),
+    (nextval('data_stockflow.voucher_type_key_seq'), 1, v_user, v_tenant, 'payment',  '出金伝票', 'bootstrap', 'genesis', 'bootstrap');
+
+  -- ============================================================
+  -- DEFAULT JOURNAL TYPES
+  -- ============================================================
+  INSERT INTO data_stockflow.journal_type (key, revision, created_by, book_key, code, name, lines_hash, prev_revision_hash, revision_hash)
+  VALUES (nextval('data_stockflow.journal_type_key_seq'), 1, v_user, v_book, 'normal', '日常仕訳', 'bootstrap', 'genesis', 'bootstrap')
+  RETURNING key INTO v_jt_normal;
+
+  INSERT INTO data_stockflow.journal_type (key, revision, created_by, book_key, code, name, lines_hash, prev_revision_hash, revision_hash) VALUES
+    (nextval('data_stockflow.journal_type_key_seq'), 1, v_user, v_book, 'closing',   '決算仕訳',   'bootstrap', 'genesis', 'bootstrap'),
+    (nextval('data_stockflow.journal_type_key_seq'), 1, v_user, v_book, 'prior_adj', '前期調整',   'bootstrap', 'genesis', 'bootstrap'),
+    (nextval('data_stockflow.journal_type_key_seq'), 1, v_user, v_book, 'auto',      '自動仕訳',   'bootstrap', 'genesis', 'bootstrap');
+
+  -- ============================================================
+  -- DEFAULT DEPARTMENTS
+  -- ============================================================
+  INSERT INTO data_stockflow.department (key, revision, created_by, tenant_key, code, name, lines_hash, prev_revision_hash, revision_hash) VALUES
+    (nextval('data_stockflow.department_key_seq'), 1, v_user, v_tenant, 'default',    'デフォルト部門', 'bootstrap', 'genesis', 'bootstrap'),
+    (nextval('data_stockflow.department_key_seq'), 1, v_user, v_tenant, 'sales',      '営業部',         'bootstrap', 'genesis', 'bootstrap'),
+    (nextval('data_stockflow.department_key_seq'), 1, v_user, v_tenant, 'admin_dept', '管理部',         'bootstrap', 'genesis', 'bootstrap');
+
+  -- ============================================================
+  -- DEFAULT FISCAL PERIOD
+  -- ============================================================
+  INSERT INTO data_stockflow.fiscal_period (key, revision, created_by, book_key, code, start_date, end_date, status, lines_hash, prev_revision_hash, revision_hash)
+  VALUES (nextval('data_stockflow.fiscal_period_key_seq'), 1, v_user, v_book, 'default', '1900-01-01'::TIMESTAMPTZ, '9999-12-31'::TIMESTAMPTZ, 'open', 'bootstrap', 'genesis', 'bootstrap');
 
 END $$;

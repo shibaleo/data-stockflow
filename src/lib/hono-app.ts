@@ -20,6 +20,8 @@ import journalOps from "@/routes/ops/journal-ops";
 import periodOps from "@/routes/ops/period-ops";
 import auditLogs from "@/routes/ops/audit-logs";
 import integrity from "@/routes/ops/integrity";
+import voucherTypes from "@/routes/voucher-types";
+import journalTypes from "@/routes/journal-types";
 import reports from "@/routes/reports";
 
 // ────────────────────────────────────────────
@@ -60,10 +62,12 @@ app.route("/books", books);
 app.route("/tags", tags);
 app.route("/departments", departments);
 app.route("/counterparties", counterparties);
+app.route("/voucher-types", voucherTypes);
 
 // Book-scoped master routes (requireBook middleware is inside each route)
 app.route("/books/:bookId/accounts", accounts);
 app.route("/books/:bookId/fiscal-periods", fiscalPeriods);
+app.route("/books/:bookId/journal-types", journalTypes);
 app.route("/books/:bookId/reports", reports);
 
 // Transaction routes (tenant-scoped)
@@ -103,8 +107,8 @@ Journal lines use standard double-entry format:
 ## Resource Hierarchy
 
 - \`/roles\` — Platform-scoped
-- \`/users\`, \`/books\`, \`/tags\`, \`/departments\`, \`/counterparties\` — Tenant-scoped
-- \`/books/{bookId}/accounts\`, \`/books/{bookId}/fiscal-periods\` — Book-scoped
+- \`/users\`, \`/books\`, \`/tags\`, \`/departments\`, \`/counterparties\`, \`/voucher-types\` — Tenant-scoped
+- \`/books/{bookId}/accounts\`, \`/books/{bookId}/fiscal-periods\`, \`/books/{bookId}/journal-types\` — Book-scoped
 - \`/vouchers\` → \`/vouchers/{voucherId}/journals\` — Transaction layer`,
   },
 });

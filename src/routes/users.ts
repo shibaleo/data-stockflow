@@ -31,10 +31,12 @@ app.openapi(routes.get, async (c) => {
 app.use(routes.create.getRoutingPath(), requireRole("admin"));
 app.openapi(routes.create, async (c) => {
   const body = c.req.valid("json") as Record<string, unknown>;
-  const hashes = computeMasterHashes({ external_id: body.external_id, role_key: String(body.role_id) }, null);
+  const code = body.code as string;
+  const name = body.name as string;
+  const hashes = computeMasterHashes({ external_id: body.external_id, role_key: String(body.role_id), code, name }, null);
   const [created] = await db.insert(user).values({
     external_id: body.external_id as string, tenant_key: c.get("tenantKey"),
-    role_key: body.role_id as number, ...hashes,
+    role_key: body.role_id as number, code, name, ...hashes,
   }).returning();
   recordAudit(c, { action: "create", entityType: "user", entityKey: created.key });
   return c.json({ data: mapUser(created as unknown as CurrentUser) }, 201);
@@ -48,11 +50,13 @@ app.openapi(routes.update, async (c) => {
   if (!current) return c.json({ error: "Not found" }, 404);
   const maxRev = await getMaxRevision("user", userKey);
   const newRoleKey = (body.role_id as number | undefined) ?? current.role_key;
-  const hashes = computeMasterHashes({ external_id: current.external_id, role_key: String(newRoleKey) }, current.revision_hash);
+  const newCode = (body.code as string | undefined) ?? current.code;
+  const newName = (body.name as string | undefined) ?? current.name;
+  const hashes = computeMasterHashes({ external_id: current.external_id, role_key: String(newRoleKey), code: newCode, name: newName }, current.revision_hash);
   const [updated] = await db.insert(user).values({
     key: userKey, revision: maxRev + 1,
     external_id: current.external_id, tenant_key: c.get("tenantKey"),
-    role_key: newRoleKey, ...hashes,
+    role_key: newRoleKey, code: newCode, name: newName, ...hashes,
   }).returning();
   recordAudit(c, { action: "update", entityType: "user", entityKey: userKey, revision: maxRev + 1 });
   return c.json({ data: mapUser(updated as unknown as CurrentUser) }, 200);

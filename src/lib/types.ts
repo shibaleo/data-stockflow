@@ -28,6 +28,8 @@ export interface CurrentRole extends BaseEntity {
 }
 
 export interface CurrentUser extends BaseEntity {
+  code: string;
+  name: string;
   external_id: string;
   tenant_key: number;
   role_key: number;
@@ -96,6 +98,22 @@ export interface CurrentCounterparty extends BaseEntity {
   is_active: boolean;
 }
 
+export interface CurrentVoucherType extends BaseEntity {
+  created_by: number;
+  tenant_key: number;
+  code: string;
+  name: string;
+  is_active: boolean;
+}
+
+export interface CurrentJournalType extends BaseEntity {
+  created_by: number;
+  book_key: number;
+  code: string;
+  name: string;
+  is_active: boolean;
+}
+
 // ── トランザクション系 ──
 
 export interface VoucherRow extends BaseEntity {
@@ -118,8 +136,8 @@ export interface CurrentJournal extends BaseEntity {
   voucher_key: number;
   book_key: number;
   is_active: boolean;
-  journal_type: string;
-  slip_category: string;
+  journal_type_key: number;
+  voucher_type_key: number;
   adjustment_flag: string;
   description: string | null;
 }

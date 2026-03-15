@@ -118,8 +118,8 @@ app.openapi(get, async (c) => {
     }));
     return {
       id: j.key, voucher_id: j.voucher_key, book_id: j.book_key, revision: j.revision,
-      is_active: j.is_active, journal_type: j.journal_type,
-      slip_category: j.slip_category, adjustment_flag: j.adjustment_flag,
+      is_active: j.is_active, journal_type_id: j.journal_type_key,
+      voucher_type_id: j.voucher_type_key, adjustment_flag: j.adjustment_flag,
       description: j.description,
       created_at: j.created_at instanceof Date ? j.created_at.toISOString() : String(j.created_at),
       lines, tags,
@@ -136,12 +136,29 @@ app.openapi(create, async (c) => {
   const userKey = c.get("userKey");
   const body = c.req.valid("json");
 
-  // Validate fiscal period
-  const fp = await getCurrent<CurrentFiscalPeriod>("current_fiscal_period", {
-    key: body.fiscal_period_id,
-  });
-  if (!fp) return c.json({ error: "fiscal_period not found" }, 422);
-  if (fp.status !== "open") return c.json({ error: "Fiscal period is not open" }, 422);
+  // Resolve fiscal period
+  let fiscalPeriodKey: number;
+  if (body.fiscal_period_id) {
+    const fp = await getCurrent<CurrentFiscalPeriod>("current_fiscal_period", {
+      key: body.fiscal_period_id,
+    });
+    if (!fp) return c.json({ error: "fiscal_period not found" }, 422);
+    if (fp.status !== "open") return c.json({ error: "Fiscal period is not open" }, 422);
+    fiscalPeriodKey = fp.key;
+  } else {
+    // Auto-resolve from posted_date
+    const { rows: fpRows } = await db.execute(sql`
+      SELECT key, status FROM ${sql.raw(`"${S}".current_fiscal_period`)}
+      WHERE start_date <= ${new Date(body.posted_date)}::timestamptz
+        AND end_date >= ${new Date(body.posted_date)}::timestamptz
+      ORDER BY start_date DESC
+      LIMIT 1
+    `);
+    if (fpRows.length === 0) return c.json({ error: "No fiscal period found for posted_date" }, 422);
+    const fp = fpRows[0] as { key: number; status: string };
+    if (fp.status !== "open") return c.json({ error: "Fiscal period is not open" }, 422);
+    fiscalPeriodKey = fp.key;
+  }
 
   // Validate balance for each journal
   for (const jInput of body.journals) {
@@ -166,7 +183,7 @@ app.openapi(create, async (c) => {
     const voucherLinesHash = computeLinesHash([]);
     const voucherRevisionHash = computeRevisionHash({
       prev_revision_hash: GENESIS_PREV_HASH, journal_key: 0,
-      revision: 1, journal_type: "voucher", slip_category: "voucher",
+      revision: 1, journal_type_key: 0, voucher_type_key: 0,
       adjustment_flag: "none", description: body.description ?? null,
       lines_hash: voucherLinesHash,
     });
@@ -174,7 +191,7 @@ app.openapi(create, async (c) => {
     // Insert voucher
     const [v] = await tx.insert(voucher).values({
       tenant_key: tenantKey, idempotency_key: body.idempotency_key,
-      fiscal_period_key: body.fiscal_period_id,
+      fiscal_period_key: fiscalPeriodKey,
       voucher_code: body.voucher_code ?? null,
       posted_date: new Date(body.posted_date),
       description: body.description ?? null, source_system: body.source_system ?? null,
@@ -200,16 +217,16 @@ app.openapi(create, async (c) => {
       const linesHash = computeLinesHash(linesHashInputs);
       const revisionHash = computeRevisionHash({
         prev_revision_hash: GENESIS_PREV_HASH, journal_key: 0, revision: 1,
-        journal_type: jInput.journal_type ?? "normal",
-        slip_category: jInput.slip_category ?? "ordinary",
+        journal_type_key: jInput.journal_type_id,
+        voucher_type_key: jInput.voucher_type_id,
         adjustment_flag: jInput.adjustment_flag ?? "none",
         description: jInput.description ?? null, lines_hash: linesHash,
       });
 
       const [j] = await tx.insert(journal).values({
         tenant_key: tenantKey, voucher_key: v.key, book_key: jInput.book_id,
-        journal_type: jInput.journal_type ?? "normal",
-        slip_category: jInput.slip_category ?? "ordinary",
+        journal_type_key: jInput.journal_type_id,
+        voucher_type_key: jInput.voucher_type_id,
         adjustment_flag: jInput.adjustment_flag ?? "none",
         description: jInput.description ?? null,
         created_by: userKey, lines_hash: linesHash,
@@ -252,7 +269,7 @@ app.openapi(create, async (c) => {
   const journalsResponse = result.journals.map((j: any) => ({
     id: j.journal.key, voucher_id: result.voucher.key, book_id: j.journal.book_key, revision: 1,
     is_active: true,
-    journal_type: j.journal.journal_type, slip_category: j.journal.slip_category,
+    journal_type_id: j.journal.journal_type_key, voucher_type_id: j.journal.voucher_type_key,
     adjustment_flag: j.journal.adjustment_flag, description: j.journal.description,
     created_at: j.journal.created_at instanceof Date ? j.journal.created_at.toISOString() : String(j.journal.created_at),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

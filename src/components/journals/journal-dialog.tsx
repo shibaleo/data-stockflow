@@ -6,13 +6,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -20,8 +13,10 @@ import {
   DialogFooter,
   DialogDescription,
 } from "@/components/ui/dialog";
+import { MasterCombobox } from "./master-combobox";
 import { JournalLineRow, type LineData } from "./journal-line-row";
 import { api } from "@/lib/api-client";
+import { useEntityManager, type EntityRow } from "@/hooks/use-entity-manager";
 
 interface BookRow {
   code: string;
@@ -37,18 +32,14 @@ interface Account {
   name: string;
 }
 
-interface FiscalPeriod {
-  code: string;
-  fiscal_year: number;
-  period_no: number;
-  status: string;
-}
+interface VoucherTypeRow extends EntityRow {}
+interface JournalTypeRow extends EntityRow {}
 
 interface JournalDetail {
   idempotency_code: string;
   posted_date: string;
-  journal_type: string;
-  slip_category: string;
+  journal_type_id: number;
+  voucher_type_id: number;
   description: string | null;
   lines: {
     side: string;
@@ -79,22 +70,37 @@ export function JournalDialog({
   onSuccess,
 }: Props) {
   const [accounts, setAccounts] = useState<Account[]>([]);
-  const [fiscalPeriods, setFiscalPeriods] = useState<FiscalPeriod[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Entity managers
+  const vts = useEntityManager<VoucherTypeRow>({ endpoint: open ? "/voucher-types" : null });
+  const jts = useEntityManager<JournalTypeRow>({ endpoint: open ? "/books/general/journal-types" : null });
+
   // Form state
   const [postedDate, setPostedDate] = useState("");
-  const [fiscalPeriodCode, setFiscalPeriodCode] = useState("");
-  const [journalType, setJournalType] = useState("normal");
-  const [slipCategory, setSlipCategory] = useState("ordinary");
+  const [journalTypeId, setJournalTypeId] = useState("");
+  const [voucherTypeId, setVoucherTypeId] = useState("");
   const [description, setDescription] = useState("");
   const [lines, setLines] = useState<LineData[]>([
     { ...EMPTY_LINE, side: "debit" },
     { ...EMPTY_LINE, side: "credit" },
   ]);
 
-  // Load master data (accounts & fiscal periods from all active books)
+  // Auto-select first values
+  useEffect(() => {
+    if (vts.items.length > 0 && !voucherTypeId) {
+      setVoucherTypeId(String(vts.items[0].id));
+    }
+  }, [vts.items, voucherTypeId]);
+
+  useEffect(() => {
+    if (jts.items.length > 0 && !journalTypeId) {
+      setJournalTypeId(String(jts.items[0].id));
+    }
+  }, [jts.items, journalTypeId]);
+
+  // Load master data (accounts from all active books)
   useEffect(() => {
     if (!open) return;
     (async () => {
@@ -102,30 +108,14 @@ export function JournalDialog({
         const booksRes = await api.get<{ data: BookRow[] }>("/books");
         const activeBooks = booksRes.data.filter((b) => b.is_active);
 
-        const [accountResults, fpResults] = await Promise.all([
-          Promise.all(
-            activeBooks.map((b) =>
-              api.get<{ data: Account[] }>(`/books/${b.code}/accounts?limit=200`)
-            )
-          ),
-          Promise.all(
-            activeBooks.map((b) =>
-              api.get<{ data: FiscalPeriod[] }>(`/books/${b.code}/fiscal-periods?limit=50`)
-            )
-          ),
-        ]);
+        const accountResults = await Promise.all(
+          activeBooks.map((b) =>
+            api.get<{ data: Account[] }>(`/books/${b.code}/accounts?limit=200`)
+          )
+        );
 
         const allAccounts = accountResults.flatMap((r) => r.data);
         setAccounts(Array.from(new Map(allAccounts.map((a) => [a.code, a])).values()));
-
-        const allFps = fpResults.flatMap((r) => r.data);
-        const uniqueFps = Array.from(
-          new Map(allFps.map((fp) => [fp.code, fp])).values()
-        ).filter((fp) => fp.status === "open");
-        setFiscalPeriods(uniqueFps);
-        if (uniqueFps.length > 0 && !fiscalPeriodCode) {
-          setFiscalPeriodCode(uniqueFps[0].code);
-        }
       } catch {
         setError("マスタデータの読み込みに失敗しました");
       }
@@ -141,8 +131,8 @@ export function JournalDialog({
       .then((res) => {
         const j = res.data;
         setPostedDate(j.posted_date.slice(0, 10));
-        setJournalType(j.journal_type);
-        setSlipCategory(j.slip_category);
+        setJournalTypeId(String(j.journal_type_id));
+        setVoucherTypeId(String(j.voucher_type_id));
         setDescription(j.description || "");
         setLines(
           j.lines.map((l) => ({
@@ -161,9 +151,8 @@ export function JournalDialog({
   useEffect(() => {
     if (!open) {
       setPostedDate("");
-      setFiscalPeriodCode("");
-      setJournalType("normal");
-      setSlipCategory("ordinary");
+      setJournalTypeId("");
+      setVoucherTypeId("");
       setDescription("");
       setLines([
         { ...EMPTY_LINE, side: "debit" },
@@ -203,8 +192,8 @@ export function JournalDialog({
   const handleSubmit = async () => {
     setError(null);
 
-    if (!postedDate || !fiscalPeriodCode) {
-      setError("計上日と会計期間は必須です");
+    if (!postedDate) {
+      setError("計上日は必須です");
       return;
     }
 
@@ -232,22 +221,19 @@ export function JournalDialog({
       }));
 
       if (editCode) {
-        // Update (new revision)
         await api.put(`/journals/${editCode}`, {
           posted_date: new Date(postedDate).toISOString(),
-          journal_type: journalType,
-          slip_category: slipCategory,
+          journal_type_id: Number(journalTypeId),
+          voucher_type_id: Number(voucherTypeId),
           description: description || undefined,
           lines: linePayload,
         });
       } else {
-        // Create
         await api.post("/journals", {
           idempotency_code: `web:${crypto.randomUUID()}`,
-          fiscal_period_code: fiscalPeriodCode,
           posted_date: new Date(postedDate).toISOString(),
-          journal_type: journalType,
-          slip_category: slipCategory,
+          journal_type_id: Number(journalTypeId),
+          voucher_type_id: Number(voucherTypeId),
           description: description || undefined,
           lines: linePayload,
         });
@@ -287,53 +273,27 @@ export function JournalDialog({
                 onChange={(e) => setPostedDate(e.target.value)}
               />
             </div>
-            {!editCode && (
-              <div className="space-y-2">
-                <Label>会計期間</Label>
-                <Select
-                  value={fiscalPeriodCode}
-                  onValueChange={setFiscalPeriodCode}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="選択" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {fiscalPeriods.map((fp) => (
-                      <SelectItem key={fp.code} value={fp.code}>
-                        {fp.code}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
             <div className="space-y-2">
               <Label>種別</Label>
-              <Select value={journalType} onValueChange={setJournalType}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="normal">通常</SelectItem>
-                  <SelectItem value="closing">決算</SelectItem>
-                  <SelectItem value="prior_adj">前期調整</SelectItem>
-                  <SelectItem value="auto">自動</SelectItem>
-                </SelectContent>
-              </Select>
+              <MasterCombobox
+                options={jts.comboOptions}
+                value={journalTypeId}
+                onValueChange={setJournalTypeId}
+                placeholder="仕訳種別"
+                onCreate={jts.create}
+                onRename={jts.rename}
+              />
             </div>
             <div className="space-y-2">
               <Label>伝票区分</Label>
-              <Select value={slipCategory} onValueChange={setSlipCategory}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ordinary">振替</SelectItem>
-                  <SelectItem value="transfer">転送</SelectItem>
-                  <SelectItem value="receipt">入金</SelectItem>
-                  <SelectItem value="payment">出金</SelectItem>
-                </SelectContent>
-              </Select>
+              <MasterCombobox
+                options={vts.comboOptions}
+                value={voucherTypeId}
+                onValueChange={setVoucherTypeId}
+                placeholder="伝票種別"
+                onCreate={vts.create}
+                onRename={vts.rename}
+              />
             </div>
           </div>
 

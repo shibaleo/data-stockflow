@@ -64,8 +64,8 @@ export interface RevisionHashInput {
   prev_revision_hash: string;
   journal_key: number;
   revision: number;
-  journal_type: string;
-  slip_category: string;
+  journal_type_key: number;
+  voucher_type_key: number;
   adjustment_flag: string;
   description: string | null;
   lines_hash: string;
@@ -76,8 +76,8 @@ export function computeRevisionHash(input: RevisionHashInput): string {
     input.prev_revision_hash,
     String(input.journal_key),
     String(input.revision),
-    input.journal_type,
-    input.slip_category,
+    String(input.journal_type_key),
+    String(input.voucher_type_key),
     input.adjustment_flag,
     input.description ?? "",
     input.lines_hash

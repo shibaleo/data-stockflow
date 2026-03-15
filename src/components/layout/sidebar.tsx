@@ -12,6 +12,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   PenLine,
+  Shield,
   Tag,
   Users,
 } from "lucide-react";
@@ -29,6 +30,7 @@ const navItems = [
   { href: "/tags", label: "タグ", icon: Tag },
   { href: "/fiscal-periods", label: "期間", icon: Calendar },
   { href: "/books", label: "帳簿", icon: BookOpen },
+  { href: "/users", label: "ユーザー", icon: Shield },
   { href: "/api-doc", label: "API", icon: FileCode2 },
 ];
 

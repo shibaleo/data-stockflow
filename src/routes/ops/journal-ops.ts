@@ -88,15 +88,7 @@ app.openapi(reverse, async (c) => {
   if (!current.is_active)
     return c.json({ error: "Cannot reverse an inactive journal" }, 422);
 
-  // 2. journal_type + role check (closing/prior_adj require admin)
-  if (
-    ["closing", "prior_adj"].includes(current.journal_type) &&
-    c.get("userRole") === "user"
-  ) {
-    return c.json({ error: "Insufficient role to reverse this journal type" }, 422);
-  }
-
-  // 3. Get original lines
+  // 2. Get original lines
   const { rows: linesRaw } = await db.execute(
     sql`SELECT * FROM ${sql.raw(`"${S}".journal_line`)}
     WHERE journal_key = ${journalKey} AND journal_revision = ${current.revision}
@@ -133,8 +125,8 @@ app.openapi(reverse, async (c) => {
       prev_revision_hash: GENESIS_PREV_HASH,
       journal_key: 0, // will be updated after insert
       revision: 1,
-      journal_type: current.journal_type,
-      slip_category: current.slip_category,
+      journal_type_key: current.journal_type_key,
+      voucher_type_key: current.voucher_type_key,
       adjustment_flag: current.adjustment_flag,
       description: description ?? null,
       lines_hash: linesHash,
@@ -145,8 +137,8 @@ app.openapi(reverse, async (c) => {
       tenant_key: tenantKey,
       voucher_key: current.voucher_key,
       book_key: current.book_key,
-      journal_type: current.journal_type,
-      slip_category: current.slip_category,
+      journal_type_key: current.journal_type_key,
+      voucher_type_key: current.voucher_type_key,
       adjustment_flag: current.adjustment_flag,
       description,
       created_by: userKey,
@@ -227,8 +219,8 @@ app.openapi(reverse, async (c) => {
   return c.json({
     data: {
       id: result.key, voucher_id: result.voucher_key, book_id: result.book_key, revision: 1,
-      is_active: true, journal_type: result.journal_type,
-      slip_category: result.slip_category, adjustment_flag: result.adjustment_flag,
+      is_active: true, journal_type_id: result.journal_type_key,
+      voucher_type_id: result.voucher_type_key, adjustment_flag: result.adjustment_flag,
       description: result.description,
       created_at: result.created_at instanceof Date ? result.created_at.toISOString() : String(result.created_at),
       lines: responseLines, tags: responseTags,
