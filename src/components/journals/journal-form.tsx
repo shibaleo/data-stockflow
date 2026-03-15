@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/select";
 import { MasterCombobox, type ComboOption } from "./master-combobox";
 import { api } from "@/lib/api-client";
+import { formatAmount } from "@/lib/format";
 
 // ── Master data types (v2: numeric ids) ──
 
@@ -57,13 +58,13 @@ interface FiscalPeriod {
 
 interface VoucherDetail {
   id: number;
-  book_id: number;
   fiscal_period_id: number;
   voucher_code: string | null;
   posted_date: string;
   description: string | null;
   journals: {
     id: number;
+    book_id: number;
     revision: number;
     journal_type: string;
     slip_category: string;
@@ -197,7 +198,6 @@ export function JournalForm({ editId, onSuccess, onCancel }: Props) {
       .get<{ data: VoucherDetail }>(`/vouchers/${editId}`)
       .then((res) => {
         const v = res.data;
-        setBookId(String(v.book_id));
         setPostedDate(v.posted_date.slice(0, 10));
         setFiscalPeriodId(String(v.fiscal_period_id));
         setHeaderDescription(v.description || "");
@@ -205,6 +205,7 @@ export function JournalForm({ editId, onSuccess, onCancel }: Props) {
         // Use first journal for type/category
         const j = v.journals[0];
         if (j) {
+          setBookId(String(j.book_id));
           setJournalType(j.journal_type);
           setSlipCategory(j.slip_category);
 
@@ -246,11 +247,8 @@ export function JournalForm({ editId, onSuccess, onCancel }: Props) {
     setRows((prev) => prev.filter((_, i) => i !== index));
 
   // ── Unit helpers ──
-  const fmtUnit = (v: number, symbol: string, position: string) => {
-    const formatted = v.toLocaleString();
-    if (!symbol) return formatted;
-    return position === "right" ? `${formatted} ${symbol}` : `${symbol} ${formatted}`;
-  };
+  const fmtUnit = (v: number, symbol: string, position: string) =>
+    formatAmount(v, symbol, position, "0");
 
   // ── Balance calculation ──
   const debitTotal = rows.reduce((s, r) => s + (parseFloat(r.debit_amount) || 0), 0);
@@ -284,7 +282,7 @@ export function JournalForm({ editId, onSuccess, onCancel }: Props) {
     }
 
     const lines: {
-      line_group: number;
+      sort_order: number;
       side: string;
       account_id: number;
       amount: number;
@@ -300,7 +298,7 @@ export function JournalForm({ editId, onSuccess, onCancel }: Props) {
 
       if (hasDebit) {
         lines.push({
-          line_group: group,
+          sort_order: group,
           side: "debit",
           account_id: Number(row.debit_account_id),
           amount: parseFloat(row.debit_amount),
@@ -311,7 +309,7 @@ export function JournalForm({ editId, onSuccess, onCancel }: Props) {
       }
       if (hasCredit) {
         lines.push({
-          line_group: group,
+          sort_order: group,
           side: "credit",
           account_id: Number(row.credit_account_id),
           amount: parseFloat(row.credit_amount),
@@ -345,12 +343,12 @@ export function JournalForm({ editId, onSuccess, onCancel }: Props) {
       } else {
         await api.post("/vouchers", {
           idempotency_key: `web:${crypto.randomUUID()}`,
-          book_id: Number(bookId),
           fiscal_period_id: Number(fiscalPeriodId),
           posted_date: new Date(postedDate).toISOString(),
           description: headerDescription || undefined,
           journals: [
             {
+              book_id: Number(bookId),
               journal_type: journalType,
               slip_category: slipCategory,
               description: headerDescription || undefined,

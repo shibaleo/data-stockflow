@@ -60,14 +60,13 @@ const TYPE_COLOR: Record<string, string> = {
   source: "bg-cyan-900/30 text-cyan-400 border-cyan-800/50",
 };
 
-type TagSortKey = "code" | "name" | "tag_type" | "is_active" | "revision";
+type TagSortKey = "code" | "name" | "tag_type" | "is_active";
 
 const COLUMNS: [TagSortKey, string][] = [
   ["code", "コード"],
   ["name", "名前"],
   ["tag_type", "種別"],
   ["is_active", "状態"],
-  ["revision", "Rev"],
 ];
 
 export default function TagsPage() {
@@ -239,7 +238,6 @@ export default function TagsPage() {
                       <Badge className="bg-red-900/30 text-red-400 border-red-800/50">無効</Badge>
                     )}
                   </td>
-                  <td className="py-3 pr-4 text-muted-foreground">{t.revision}</td>
                   <td className="py-3">
                     <div className="flex gap-1">
                       {t.is_active ? (
@@ -318,7 +316,7 @@ function TagDialog({
     setLoading(true);
     try {
       if (editId) {
-        await api.put(`/tags/${editId}`, { name: name.trim(), tag_type: tagType });
+        await api.put(`/tags/${editId}`, { code: code.trim(), name: name.trim(), tag_type: tagType });
       } else {
         await api.post("/tags", { code: code.trim(), name: name.trim(), tag_type: tagType });
       }
@@ -336,13 +334,13 @@ function TagDialog({
         <DialogHeader>
           <DialogTitle>{editId ? "タグの編集" : "タグの新規作成"}</DialogTitle>
           <DialogDescription>
-            {editId ? "タグを更新します（新しいリビジョンが作成されます）" : "新しいタグを作成します"}
+            {editId ? "タグを更新します" : "新しいタグを作成します"}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-2">
             <Label>コード</Label>
-            <Input value={code} onChange={(e) => setCode(e.target.value)} placeholder="例: GROCERIES" className="font-mono" disabled={!!editId} />
+            <Input value={code} onChange={(e) => setCode(e.target.value)} placeholder="例: GROCERIES" className="font-mono" />
           </div>
           <div className="space-y-2">
             <Label>名前</Label>

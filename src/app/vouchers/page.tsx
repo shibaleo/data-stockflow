@@ -4,10 +4,8 @@ import { useState, useEffect, useCallback } from "react";
 import { Plus, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { BookSelector } from "@/components/shared/book-selector";
 import { JournalTable, type VoucherRow } from "@/components/journals/journal-table";
 import { JournalForm } from "@/components/journals/journal-form";
-import { useBooks } from "@/hooks/use-books";
 import { api, ApiError } from "@/lib/api-client";
 
 type ViewMode = "list" | "form";
@@ -18,17 +16,11 @@ export default function VouchersPage() {
   const [view, setView] = useState<ViewMode>("list");
   const [editId, setEditId] = useState<number | null>(null);
 
-  const { books, selectedBookId, setSelectedBookId } = useBooks();
-
   const fetchVouchers = useCallback(async () => {
     setLoading(true);
     try {
       const res = await api.get<{ data: VoucherRow[] }>("/vouchers");
-      let data = res.data;
-      if (selectedBookId !== "__all__" && selectedBookId) {
-        data = data.filter((v) => v.book_id === Number(selectedBookId));
-      }
-      setVouchers(data);
+      setVouchers(res.data);
     } catch (e) {
       const msg =
         e instanceof ApiError ? e.body.error : "伝票の取得に失敗しました";
@@ -36,7 +28,7 @@ export default function VouchersPage() {
     } finally {
       setLoading(false);
     }
-  }, [selectedBookId]);
+  }, []);
 
   useEffect(() => {
     fetchVouchers();
@@ -89,15 +81,7 @@ export default function VouchersPage() {
   return (
     <div className="p-4 md:p-6">
       <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-4">
-          <h2 className="text-xl font-semibold">取引</h2>
-          <BookSelector
-            books={books}
-            selectedBookId={selectedBookId || "__all__"}
-            onValueChange={setSelectedBookId}
-            allowAll
-          />
-        </div>
+        <h2 className="text-xl font-semibold">取引</h2>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={fetchVouchers}>
             <RefreshCw className="h-4 w-4" />

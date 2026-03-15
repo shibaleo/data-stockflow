@@ -18,10 +18,10 @@ registerCrudHandlers<CurrentRole>(app, routes, {
   buildCreate: (body) => ({ code: body.code, name: body.name }),
   hashCreate: (body) => ({ code: body.code, name: body.name }),
   buildUpdate: (body, cur) => ({
-    code: cur.code, name: body.name ?? cur.name,
+    code: body.code ?? cur.code, name: body.name ?? cur.name,
     is_active: body.is_active ?? cur.is_active,
   }),
-  hashUpdate: (body, cur) => ({ code: cur.code, name: body.name ?? cur.name }),
+  hashUpdate: (body, cur) => ({ code: body.code ?? cur.code, name: body.name ?? cur.name }),
   buildDeactivate: (cur) => ({ code: cur.code, name: cur.name }),
   hashDeactivate: (cur) => ({ code: cur.code, name: cur.name }),
   writeRoles: ["platform"],

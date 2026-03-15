@@ -1,5 +1,7 @@
 # Development
 .mcp.json
+.claude/
+.tmp_req.json
 
 # Logs
 logs

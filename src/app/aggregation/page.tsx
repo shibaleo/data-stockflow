@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { BookSelector } from "@/components/shared/book-selector";
 import { useBooks } from "@/hooks/use-books";
 import { api, ApiError } from "@/lib/api-client";
+import { formatAmount } from "@/lib/format";
 
 // ── Types ──
 
@@ -37,15 +38,6 @@ type Tab = "bs" | "pl";
 type ViewMode = "tree" | "t-account";
 
 // ── Helpers ──
-
-function formatAmount(amount: number, symbol = "", position: "left" | "right" = "left"): string {
-  if (amount === 0) return "-";
-  const abs = Math.abs(amount);
-  const formatted = abs.toLocaleString("ja-JP");
-  const sep = symbol ? " " : "";
-  const value = position === "right" ? `${formatted}${sep}${symbol}` : `${symbol}${sep}${formatted}`;
-  return amount < 0 ? `△${value}` : value;
-}
 
 interface TreeNode {
   id: number;
@@ -162,7 +154,7 @@ export default function ReportsPage() {
       formatAmount(
         amount,
         selectedBook?.unit_symbol ?? "",
-        (selectedBook?.unit_position === "right" ? "right" : "left"),
+        selectedBook?.unit_position ?? "left",
       ),
     [selectedBook],
   );

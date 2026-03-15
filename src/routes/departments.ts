@@ -23,13 +23,13 @@ registerCrudHandlers<CurrentDepartment>(app, routes, {
   }),
   hashCreate: (body) => ({ code: body.code, name: body.name }),
   buildUpdate: (body, cur, c) => ({
-    tenant_key: c.get("tenantKey"), code: cur.code,
+    tenant_key: c.get("tenantKey"), code: body.code ?? cur.code,
     name: body.name ?? cur.name,
     department_type: body.department_type !== undefined ? body.department_type : cur.department_type,
     parent_department_key: body.parent_department_id !== undefined ? body.parent_department_id : cur.parent_department_key,
     is_active: body.is_active ?? cur.is_active, created_by: c.get("userKey"),
   }),
-  hashUpdate: (body, cur) => ({ code: cur.code, name: body.name ?? cur.name }),
+  hashUpdate: (body, cur) => ({ code: body.code ?? cur.code, name: body.name ?? cur.name }),
   buildDeactivate: (cur, c) => ({
     tenant_key: c.get("tenantKey"), code: cur.code,
     name: cur.name, department_type: cur.department_type,

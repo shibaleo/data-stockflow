@@ -24,14 +24,14 @@ registerCrudHandlers<CurrentBook>(app, routes, {
   }),
   hashCreate: (body) => ({ code: body.code, name: body.name, unit: body.unit }),
   buildUpdate: (body, cur, c) => ({
-    tenant_key: c.get("tenantKey"), code: cur.code,
+    tenant_key: c.get("tenantKey"), code: body.code ?? cur.code,
     name: body.name ?? cur.name, unit: body.unit ?? cur.unit,
     unit_symbol: body.unit_symbol ?? cur.unit_symbol,
     unit_position: body.unit_position ?? cur.unit_position,
     type_labels: body.type_labels ?? (cur.type_labels as object),
     is_active: body.is_active ?? cur.is_active, created_by: c.get("userKey"),
   }),
-  hashUpdate: (body, cur) => ({ code: cur.code, name: body.name ?? cur.name, unit: body.unit ?? cur.unit }),
+  hashUpdate: (body, cur) => ({ code: body.code ?? cur.code, name: body.name ?? cur.name, unit: body.unit ?? cur.unit }),
   buildDeactivate: (cur, c) => ({
     tenant_key: c.get("tenantKey"), code: cur.code,
     name: cur.name, unit: cur.unit, unit_symbol: cur.unit_symbol,

@@ -243,15 +243,15 @@ app.openapi(revisionChainRoute, async (c) => {
 
     // Verify lines_hash
     const { rows: lineRows } = await db.execute(sql`
-      SELECT line_group, side, account_key, department_key, counterparty_key,
+      SELECT sort_order, side, account_key, department_key, counterparty_key,
         amount, description
       FROM ${sql.raw(`"${S}".journal_line`)}
       WHERE journal_key = ${journalKey} AND journal_revision = ${r.revision}
-      ORDER BY line_group, side
+      ORDER BY sort_order, side
     `);
     const linesInput: LineHashInput[] = (lineRows as JournalLineRow[]).map(
       (l) => ({
-        line_group: l.line_group,
+        sort_order: l.sort_order,
         side: l.side,
         account_key: l.account_key,
         department_key: l.department_key,

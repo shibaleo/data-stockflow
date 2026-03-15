@@ -100,7 +100,7 @@ app.openapi(reverse, async (c) => {
   const { rows: linesRaw } = await db.execute(
     sql`SELECT * FROM ${sql.raw(`"${S}".journal_line`)}
     WHERE journal_key = ${journalKey} AND journal_revision = ${current.revision}
-    ORDER BY line_group, side`
+    ORDER BY sort_order, side`
   );
   const lines = linesRaw as JournalLineRow[];
   if (lines.length === 0)
@@ -120,7 +120,7 @@ app.openapi(reverse, async (c) => {
   const result = await db.transaction(async (tx: typeof db) => {
     // Reversed line inputs for hash
     const reversedLineInputs: LineHashInput[] = lines.map((l) => ({
-      line_group: l.line_group,
+      sort_order: l.sort_order,
       side: l.side === "debit" ? "credit" : "debit",
       account_key: l.account_key,
       department_key: l.department_key,
@@ -144,6 +144,7 @@ app.openapi(reverse, async (c) => {
     const [j] = await tx.insert(journal).values({
       tenant_key: tenantKey,
       voucher_key: current.voucher_key,
+      book_key: current.book_key,
       journal_type: current.journal_type,
       slip_category: current.slip_category,
       adjustment_flag: current.adjustment_flag,
@@ -160,7 +161,7 @@ app.openapi(reverse, async (c) => {
         journal_key: j.key,
         journal_revision: 1,
         tenant_key: tenantKey,
-        line_group: l.line_group,
+        sort_order: l.sort_order,
         side: l.side === "debit" ? "credit" : "debit",
         account_key: l.account_key,
         department_key: l.department_key,
@@ -199,7 +200,7 @@ app.openapi(reverse, async (c) => {
     db.execute(sql`
       SELECT * FROM ${sql.raw(`"${S}".journal_line`)}
       WHERE journal_key = ${result.key} AND journal_revision = 1
-      ORDER BY line_group, side
+      ORDER BY sort_order, side
     `),
     db.execute(sql`
       SELECT * FROM ${sql.raw(`"${S}".journal_tag`)}
@@ -209,7 +210,7 @@ app.openapi(reverse, async (c) => {
 
   const responseLines = (linesResult.rows as JournalLineRow[]).map((l) => ({
     uuid: l.uuid,
-    line_group: l.line_group,
+    sort_order: l.sort_order,
     side: l.side,
     account_id: l.account_key,
     department_id: l.department_key,
@@ -225,7 +226,7 @@ app.openapi(reverse, async (c) => {
 
   return c.json({
     data: {
-      id: result.key, voucher_id: result.voucher_key, revision: 1,
+      id: result.key, voucher_id: result.voucher_key, book_id: result.book_key, revision: 1,
       is_active: true, journal_type: result.journal_type,
       slip_category: result.slip_category, adjustment_flag: result.adjustment_flag,
       description: result.description,

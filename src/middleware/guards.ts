@@ -22,10 +22,20 @@ export const requireAuth = () =>
     await next();
   });
 
+// Role hierarchy: platform > audit > admin > user
+const ROLE_LEVEL: Record<string, number> = {
+  platform: 100,
+  audit: 50,
+  admin: 30,
+  user: 10,
+};
+
 export const requireRole = (...roles: UserRole[]) =>
   createMiddleware<{ Variables: AppVariables }>(async (c, next) => {
     const userRole = c.get("userRole");
-    if (!roles.includes(userRole)) {
+    const userLevel = ROLE_LEVEL[userRole] ?? 0;
+    const minLevel = Math.min(...roles.map((r) => ROLE_LEVEL[r] ?? 0));
+    if (userLevel < minLevel && !roles.includes(userRole)) {
       throw new HTTPException(403, {
         message: `Required role: ${roles.join(" | ")}`,
       });

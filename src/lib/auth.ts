@@ -91,8 +91,8 @@ async function findOrCreateUser(
   }
 
   // Auto-create on first login
-  const defaultTenantKey = Number(process.env.DEFAULT_TENANT_KEY || "1");
-  // Default role = 'user' (key=4 from bootstrap)
+  const defaultTenantKey = Number(process.env.DEFAULT_TENANT_KEY || "100000000000");
+  // Default role = 'user' (looked up from DB, fallback to bootstrap key)
   const { rows: roleRows } = await db.execute(sql`
     SELECT key FROM ${sql.raw(`"${S}".current_role`)}
     WHERE code = 'user'
@@ -100,7 +100,7 @@ async function findOrCreateUser(
   `);
   const userRoleKey = roleRows.length > 0
     ? (roleRows[0] as { key: number }).key
-    : 4;
+    : 100000000003;
 
   const { rows: created } = await db.execute(sql`
     INSERT INTO ${sql.raw(`"${S}"."user"`)} (

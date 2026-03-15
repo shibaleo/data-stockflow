@@ -94,8 +94,6 @@ export interface CurrentCounterparty extends BaseEntity {
   code: string;
   name: string;
   is_active: boolean;
-  qualified_invoice_number: string | null;
-  is_qualified_issuer: boolean;
 }
 
 // ── トランザクション系 ──
@@ -104,7 +102,6 @@ export interface VoucherRow extends BaseEntity {
   created_by: number;
   tenant_key: number;
   idempotency_key: string;
-  book_key: number;
   fiscal_period_key: number;
   voucher_code: string | null;
   posted_date: Date;
@@ -119,6 +116,7 @@ export interface CurrentJournal extends BaseEntity {
   created_by: number;
   tenant_key: number;
   voucher_key: number;
+  book_key: number;
   is_active: boolean;
   journal_type: string;
   slip_category: string;
@@ -131,7 +129,7 @@ export interface JournalLineRow {
   journal_key: number;
   journal_revision: number;
   tenant_key: number;
-  line_group: number;
+  sort_order: number;
   side: string;
   account_key: number;
   department_key: number | null;

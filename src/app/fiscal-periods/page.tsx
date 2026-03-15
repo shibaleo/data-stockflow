@@ -53,13 +53,12 @@ const STATUS_STYLE: Record<string, string> = {
   finalized: "bg-blue-900/30 text-blue-400 border-blue-800/50",
 };
 
-type FPSortKey = "code" | "start_date" | "status" | "revision";
+type FPSortKey = "code" | "start_date" | "status";
 
 const COLUMNS: [FPSortKey, string][] = [
   ["code", "コード"],
   ["start_date", "期間"],
   ["status", "ステータス"],
-  ["revision", "Rev"],
 ];
 
 export default function FiscalPeriodsPage() {
@@ -145,7 +144,6 @@ export default function FiscalPeriodsPage() {
                   <td className="py-3 pr-4">
                     <Badge className={STATUS_STYLE[p.status] || ""}>{STATUS_LABEL[p.status] || p.status}</Badge>
                   </td>
-                  <td className="py-3 pr-4 text-muted-foreground">{p.revision}</td>
                   <td className="py-3">
                     <Button variant="ghost" size="icon" onClick={() => handleEdit(p.id)}>
                       <Pencil className="h-4 w-4" />
@@ -226,6 +224,7 @@ function FiscalPeriodDialog({
     try {
       if (editId) {
         await api.put(`/books/${bookId}/fiscal-periods/${editId}`, {
+          code: code.trim(),
           start_date: new Date(startDate).toISOString(),
           end_date: new Date(endDate).toISOString(),
           status,
@@ -252,13 +251,13 @@ function FiscalPeriodDialog({
         <DialogHeader>
           <DialogTitle>{editId ? "会計期間の編集" : "会計期間の新規作成"}</DialogTitle>
           <DialogDescription>
-            {editId ? "会計期間を更新します（新しいリビジョンが作成されます）" : "新しい会計期間を作成します"}
+            {editId ? "会計期間を更新します" : "新しい会計期間を作成します"}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-2">
             <Label>コード</Label>
-            <Input value={code} onChange={(e) => setCode(e.target.value)} placeholder="例: 2026-01" className="font-mono" disabled={!!editId} />
+            <Input value={code} onChange={(e) => setCode(e.target.value)} placeholder="例: 2026-01" className="font-mono" />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">

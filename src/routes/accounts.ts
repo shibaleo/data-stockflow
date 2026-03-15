@@ -23,12 +23,12 @@ registerCrudHandlers<CurrentAccount>(app, routes, {
   }),
   hashCreate: (body) => ({ code: body.code, name: body.name, account_type: body.account_type }),
   buildUpdate: (body, cur, c) => ({
-    book_key: c.get("bookKey"), code: cur.code,
+    book_key: c.get("bookKey"), code: body.code ?? cur.code,
     name: body.name ?? cur.name, account_type: body.account_type ?? cur.account_type,
     parent_account_key: body.parent_account_id !== undefined ? body.parent_account_id : cur.parent_account_key,
     is_active: body.is_active ?? cur.is_active, created_by: c.get("userKey"),
   }),
-  hashUpdate: (body, cur) => ({ code: cur.code, name: body.name ?? cur.name, account_type: body.account_type ?? cur.account_type }),
+  hashUpdate: (body, cur) => ({ code: body.code ?? cur.code, name: body.name ?? cur.name, account_type: body.account_type ?? cur.account_type }),
   buildDeactivate: (cur, c) => ({
     book_key: c.get("bookKey"), code: cur.code,
     name: cur.name, account_type: cur.account_type,

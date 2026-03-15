@@ -24,7 +24,7 @@ app.use("*", requireTenant(), requireAuth());
 
 const mapVoucher = createMapper<VoucherRow>(
   ["tenant_key", "sequence_no", "prev_header_hash", "header_hash"],
-  ["book_key", "fiscal_period_key"],
+  ["fiscal_period_key"],
 );
 
 // ── Route definitions ──
@@ -94,7 +94,7 @@ app.openapi(get, async (c) => {
       db.execute(sql`
         SELECT * FROM ${sql.raw(`"${S}".journal_line`)}
         WHERE journal_key = ${j.key} AND journal_revision = ${j.revision}
-        ORDER BY line_group, side
+        ORDER BY sort_order, side
       `),
       db.execute(sql`
         SELECT * FROM ${sql.raw(`"${S}".journal_tag`)}
@@ -103,7 +103,7 @@ app.openapi(get, async (c) => {
     ]);
     const lines = (linesResult.rows as JournalLineRow[]).map((l) => ({
       uuid: l.uuid,
-      line_group: l.line_group,
+      sort_order: l.sort_order,
       side: l.side,
       account_id: l.account_key,
       department_id: l.department_key,
@@ -117,7 +117,7 @@ app.openapi(get, async (c) => {
       created_at: t.created_at instanceof Date ? t.created_at.toISOString() : String(t.created_at),
     }));
     return {
-      id: j.key, voucher_id: j.voucher_key, revision: j.revision,
+      id: j.key, voucher_id: j.voucher_key, book_id: j.book_key, revision: j.revision,
       is_active: j.is_active, journal_type: j.journal_type,
       slip_category: j.slip_category, adjustment_flag: j.adjustment_flag,
       description: j.description,
@@ -174,7 +174,7 @@ app.openapi(create, async (c) => {
     // Insert voucher
     const [v] = await tx.insert(voucher).values({
       tenant_key: tenantKey, idempotency_key: body.idempotency_key,
-      book_key: body.book_id, fiscal_period_key: body.fiscal_period_id,
+      fiscal_period_key: body.fiscal_period_id,
       voucher_code: body.voucher_code ?? null,
       posted_date: new Date(body.posted_date),
       description: body.description ?? null, source_system: body.source_system ?? null,
@@ -193,7 +193,7 @@ app.openapi(create, async (c) => {
       }));
 
       const linesHashInputs: LineHashInput[] = signedLines.map((l) => ({
-        line_group: l.line_group, side: l.side, account_key: l.account_id,
+        sort_order: l.sort_order, side: l.side, account_key: l.account_id,
         department_key: l.department_id, counterparty_key: l.counterparty_id,
         amount: l.amount, description: l.description,
       }));
@@ -207,7 +207,7 @@ app.openapi(create, async (c) => {
       });
 
       const [j] = await tx.insert(journal).values({
-        tenant_key: tenantKey, voucher_key: v.key,
+        tenant_key: tenantKey, voucher_key: v.key, book_key: jInput.book_id,
         journal_type: jInput.journal_type ?? "normal",
         slip_category: jInput.slip_category ?? "ordinary",
         adjustment_flag: jInput.adjustment_flag ?? "none",
@@ -220,7 +220,7 @@ app.openapi(create, async (c) => {
       await tx.insert(journalLine).values(
         signedLines.map((l) => ({
           journal_key: j.key, journal_revision: 1, tenant_key: tenantKey,
-          line_group: l.line_group, side: l.side,
+          sort_order: l.sort_order, side: l.side,
           account_key: l.account_id,
           department_key: l.department_id ?? null,
           counterparty_key: l.counterparty_id ?? null,
@@ -250,14 +250,14 @@ app.openapi(create, async (c) => {
   const voucherResponse = mapVoucher(result.voucher as unknown as VoucherRow);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const journalsResponse = result.journals.map((j: any) => ({
-    id: j.journal.key, voucher_id: result.voucher.key, revision: 1,
+    id: j.journal.key, voucher_id: result.voucher.key, book_id: j.journal.book_key, revision: 1,
     is_active: true,
     journal_type: j.journal.journal_type, slip_category: j.journal.slip_category,
     adjustment_flag: j.journal.adjustment_flag, description: j.journal.description,
     created_at: j.journal.created_at instanceof Date ? j.journal.created_at.toISOString() : String(j.journal.created_at),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     lines: j.lines.map((l: any) => ({
-      uuid: "", line_group: l.line_group, side: l.side,
+      uuid: "", sort_order: l.sort_order, side: l.side,
       account_id: l.account_id, department_id: l.department_id ?? null,
       counterparty_id: l.counterparty_id ?? null,
       amount: String(Math.abs(parseFloat(l.amount))),

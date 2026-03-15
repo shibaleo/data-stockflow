@@ -7,11 +7,13 @@ import {
   BarChart3,
   BookOpen,
   Calendar,
-  Library,
+  FileCode2,
+  List,
   PanelLeftClose,
   PanelLeftOpen,
   PenLine,
   Tag,
+  Users,
 } from "lucide-react";
 import { UserButton, useUser } from "@clerk/nextjs";
 import { cn } from "@/lib/utils";
@@ -22,10 +24,12 @@ const COLLAPSED_WIDTH = 56;
 const navItems = [
   { href: "/vouchers", label: "取引", icon: PenLine },
   { href: "/aggregation", label: "集計", icon: BarChart3 },
-  { href: "/accounts", label: "科目", icon: BookOpen },
+  { href: "/accounts", label: "科目", icon: List },
+  { href: "/counterparties", label: "取引先", icon: Users },
   { href: "/tags", label: "タグ", icon: Tag },
   { href: "/fiscal-periods", label: "期間", icon: Calendar },
-  { href: "/books", label: "帳簿", icon: Library },
+  { href: "/books", label: "帳簿", icon: BookOpen },
+  { href: "/api-doc", label: "API", icon: FileCode2 },
 ];
 
 export function SidebarNav({

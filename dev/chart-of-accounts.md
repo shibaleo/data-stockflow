@@ -106,15 +106,15 @@ DB再構築前のスナップショット（2026-03-14）
 ```
 01 食料 [asset]
   candy キャンディ
-    ramune 超大粒ラムネ
+    ramune-cr 超大粒ラムネ
   drink 飲み物
-    monster-ruby-red Monster Ruby Red
-    monster-ultra Monster Ultra
-    probiotic-ジャンボハーフ ジャンボハーフ
+    monster-rr Monster Ruby Red
+    monster-ut Monster Ultra
+    probiotic-jh ジャンボハーフ
   meat 肉
-    meat-chiken サラダチキン九州産鶏肉スモーク
+    chicken-scs サラダチキン九州産鶏肉スモーク
   rice 米
-    rice-ふっくら粒立ちごはん ふっくら粒立ちごはん
+    rice-ftg ふっくら粒立ちごはん
 
 04 stocking [revenue]
 05 consumption [expense]

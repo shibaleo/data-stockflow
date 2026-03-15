@@ -23,6 +23,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { api, ApiError } from "@/lib/api-client";
+import { formatUnitPreview } from "@/lib/format";
 
 interface BookRow {
   id: number;
@@ -132,7 +133,7 @@ export default function BooksPage() {
       }
 
       if (editId) {
-        const payload: Record<string, unknown> = { name, unit, unit_symbol: unitSymbol, unit_position: unitPosition };
+        const payload: Record<string, unknown> = { code, name, unit, unit_symbol: unitSymbol, unit_position: unitPosition };
         if (Object.keys(labels).length > 0) payload.type_labels = labels;
         await api.put(`/books/${editId}`, payload);
         toast.success("帳簿を更新しました");
@@ -203,9 +204,7 @@ export default function BooksPage() {
                         <Badge variant="secondary">{book.unit}</Badge>
                         {book.unit_symbol && (
                           <span className="text-xs text-muted-foreground ml-1">
-                            {book.unit_position === "right"
-                              ? `100${book.unit_symbol}`
-                              : `${book.unit_symbol}100`}
+                            {formatUnitPreview(book.unit_symbol, book.unit_position)}
                           </span>
                         )}
                       </td>
@@ -301,7 +300,6 @@ export default function BooksPage() {
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
                 placeholder="例: jpy-ledger"
-                disabled={!!editId}
               />
             </div>
 
@@ -379,7 +377,7 @@ export default function BooksPage() {
             <Button variant="outline" onClick={() => setDialogOpen(false)}>
               キャンセル
             </Button>
-            <Button onClick={handleSubmit} disabled={!name || !unit || (!editId && !code)}>
+            <Button onClick={handleSubmit} disabled={!code || !name || !unit}>
               {editId ? "更新" : "作成"}
             </Button>
           </DialogFooter>

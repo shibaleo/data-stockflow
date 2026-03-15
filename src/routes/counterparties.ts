@@ -17,23 +17,18 @@ registerCrudHandlers<CurrentCounterparty>(app, routes, {
   scope: (c) => ({ tenant_key: c.get("tenantKey") }),
   buildCreate: (body, c) => ({
     tenant_key: c.get("tenantKey"), code: body.code, name: body.name,
-    qualified_invoice_number: body.qualified_invoice_number ?? null,
-    is_qualified_issuer: body.is_qualified_issuer ?? false,
     created_by: c.get("userKey"),
   }),
   hashCreate: (body) => ({ code: body.code, name: body.name }),
   buildUpdate: (body, cur, c) => ({
-    tenant_key: c.get("tenantKey"), code: cur.code,
+    tenant_key: c.get("tenantKey"), code: body.code ?? cur.code,
     name: body.name ?? cur.name,
-    qualified_invoice_number: body.qualified_invoice_number !== undefined ? body.qualified_invoice_number : cur.qualified_invoice_number,
-    is_qualified_issuer: body.is_qualified_issuer ?? cur.is_qualified_issuer,
     is_active: body.is_active ?? cur.is_active, created_by: c.get("userKey"),
   }),
-  hashUpdate: (body, cur) => ({ code: cur.code, name: body.name ?? cur.name }),
+  hashUpdate: (body, cur) => ({ code: body.code ?? cur.code, name: body.name ?? cur.name }),
   buildDeactivate: (cur, c) => ({
     tenant_key: c.get("tenantKey"), code: cur.code,
-    name: cur.name, qualified_invoice_number: cur.qualified_invoice_number,
-    is_qualified_issuer: cur.is_qualified_issuer, created_by: c.get("userKey"),
+    name: cur.name, created_by: c.get("userKey"),
   }),
   hashDeactivate: (cur) => ({ code: cur.code, name: cur.name }),
 });

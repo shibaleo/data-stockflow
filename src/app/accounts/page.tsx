@@ -436,7 +436,6 @@ function AccountPropertyPanel({
 
       <div className="space-y-3 text-sm">
         <PropertyRow label="コード" value={account.code} mono />
-        <PropertyRow label="ID" value={String(account.id)} mono />
         <PropertyRow label="分類">
           <Badge variant="secondary">{TYPE_LABEL[account.account_type] || account.account_type}</Badge>
         </PropertyRow>
@@ -447,7 +446,6 @@ function AccountPropertyPanel({
             <Badge className="bg-red-900/30 text-red-400 border-red-800/50">無効</Badge>
           )}
         </PropertyRow>
-        <PropertyRow label="リビジョン" value={String(account.revision)} mono />
         <PropertyRow label="親科目">
           {parent ? (
             <span className="text-xs">
@@ -607,7 +605,7 @@ function AccountDialog({
           </DialogTitle>
           <DialogDescription>
             {editId
-              ? "勘定科目を更新します（新しいリビジョンが作成されます）"
+              ? "勘定科目を更新します"
               : "新しい勘定科目を作成します"}
           </DialogDescription>
         </DialogHeader>

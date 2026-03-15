@@ -52,7 +52,7 @@ async function buildJournalDetail(j: CurrentJournal) {
     db.execute(sql`
       SELECT * FROM ${sql.raw(`"${S}".journal_line`)}
       WHERE journal_key = ${j.key} AND journal_revision = ${j.revision}
-      ORDER BY line_group, side
+      ORDER BY sort_order, side
     `),
     db.execute(sql`
       SELECT * FROM ${sql.raw(`"${S}".journal_tag`)}
@@ -61,7 +61,7 @@ async function buildJournalDetail(j: CurrentJournal) {
   ]);
   const lines = (linesResult.rows as JournalLineRow[]).map((l) => ({
     uuid: l.uuid,
-    line_group: l.line_group,
+    sort_order: l.sort_order,
     side: l.side,
     account_id: l.account_key,
     department_id: l.department_key,
@@ -75,7 +75,7 @@ async function buildJournalDetail(j: CurrentJournal) {
     created_at: t.created_at instanceof Date ? t.created_at.toISOString() : String(t.created_at),
   }));
   return {
-    id: j.key, voucher_id: j.voucher_key, revision: j.revision,
+    id: j.key, voucher_id: j.voucher_key, book_id: j.book_key, revision: j.revision,
     is_active: j.is_active, journal_type: j.journal_type,
     slip_category: j.slip_category, adjustment_flag: j.adjustment_flag,
     description: j.description,
@@ -197,7 +197,7 @@ app.openapi(updateRoute, async (c) => {
     const resolvedActive = body.is_active ?? current.is_active;
 
     const linesHashInputs: LineHashInput[] = signedLines.map((l) => ({
-      line_group: l.line_group, side: l.side, account_key: l.account_id,
+      sort_order: l.sort_order, side: l.side, account_key: l.account_id,
       department_key: l.department_id, counterparty_key: l.counterparty_id,
       amount: l.amount, description: l.description,
     }));
@@ -209,9 +209,11 @@ app.openapi(updateRoute, async (c) => {
       description: resolvedDesc ?? null, lines_hash: linesHash,
     });
 
+    const resolvedBookKey = body.book_id ?? current.book_key;
+
     const [j] = await tx.insert(journal).values({
       key: journalKey, revision: maxRev + 1,
-      tenant_key: tenantKey, voucher_key: voucherKey,
+      tenant_key: tenantKey, voucher_key: voucherKey, book_key: resolvedBookKey,
       is_active: resolvedActive, journal_type: resolvedType,
       slip_category: resolvedSlip, adjustment_flag: resolvedAdj,
       description: resolvedDesc, created_by: userKey,
@@ -222,7 +224,7 @@ app.openapi(updateRoute, async (c) => {
     await tx.insert(journalLine).values(
       signedLines.map((l) => ({
         journal_key: journalKey, journal_revision: maxRev + 1, tenant_key: tenantKey,
-        line_group: l.line_group, side: l.side,
+        sort_order: l.sort_order, side: l.side,
         account_key: l.account_id,
         department_key: l.department_id ?? null,
         counterparty_key: l.counterparty_id ?? null,
@@ -275,7 +277,7 @@ app.openapi(deleteRoute, async (c) => {
 
     await tx.insert(journal).values({
       key: journalKey, revision: maxRev + 1,
-      tenant_key: tenantKey, voucher_key: voucherKey,
+      tenant_key: tenantKey, voucher_key: voucherKey, book_key: current.book_key,
       is_active: false, journal_type: current.journal_type,
       slip_category: current.slip_category, adjustment_flag: current.adjustment_flag,
       description: current.description, created_by: userKey,
@@ -298,7 +300,7 @@ app.openapi(historyRoute, async (c) => {
   const journals = rows as CurrentJournal[];
   return c.json({
     data: journals.map((j) => ({
-      id: j.key, voucher_id: j.voucher_key, revision: j.revision,
+      id: j.key, voucher_id: j.voucher_key, book_id: j.book_key, revision: j.revision,
       is_active: j.is_active, journal_type: j.journal_type,
       slip_category: j.slip_category, adjustment_flag: j.adjustment_flag,
       description: j.description,

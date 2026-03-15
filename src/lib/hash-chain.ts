@@ -25,7 +25,7 @@ export function computeEntityHash(fields: Record<string, unknown>): string {
 // ── Lines hash (journal lines) ──
 
 export interface LineHashInput {
-  line_group: number;
+  sort_order: number;
   side: string;
   account_key: number;
   department_key?: number | null;
@@ -38,14 +38,14 @@ export function computeLinesHash(lines: LineHashInput[]): string {
   if (lines.length === 0) return sha256("EMPTY_LINES");
 
   const sorted = [...lines].sort((a, b) => {
-    if (a.line_group !== b.line_group) return a.line_group - b.line_group;
+    if (a.sort_order !== b.sort_order) return a.sort_order - b.sort_order;
     if (a.side !== b.side) return a.side.localeCompare(b.side);
     return Number(a.amount) - Number(b.amount);
   });
 
   const parts = sorted.map((l) =>
     [
-      String(l.line_group),
+      String(l.sort_order),
       l.side,
       String(l.account_key),
       l.department_key != null ? String(l.department_key) : "",

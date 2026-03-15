@@ -64,6 +64,7 @@ export const createRoleSchema = z.object({
 });
 
 export const updateRoleSchema = z.object({
+  code: zSanitized(z.string().min(1).max(100)).optional(),
   name: zSanitized(z.string().min(1).max(200)).optional(),
   is_active: z.boolean().optional(),
 });
@@ -94,11 +95,15 @@ export const updateUserSchema = z.object({
 // Book
 // ============================================================
 
+const ACCOUNT_TYPES = ["asset", "liability", "equity", "revenue", "expense"] as const;
+
 const typeLabelsSchema = z
-  .record(
-    z.enum(["asset", "liability", "equity", "revenue", "expense"]),
-    z.string().max(50)
-  )
+  .record(z.string(), z.string().max(50))
+  .transform((obj) => {
+    const result: Record<string, string> = {};
+    for (const t of ACCOUNT_TYPES) result[t] = obj[t] ?? "";
+    return result;
+  })
   .openapi({ example: { asset: "在庫", revenue: "入荷" } });
 
 const typeLabelsResponseSchema = z.record(z.string(), z.string()).openapi({
@@ -128,6 +133,7 @@ export const createBookSchema = z.object({
 });
 
 export const updateBookSchema = z.object({
+  code: zSanitized(z.string().min(1).max(100)).optional(),
   name: zSanitized(z.string().min(1).max(200)).optional(),
   unit: zSanitized(z.string().min(1).max(50)).optional(),
   unit_symbol: zSanitized(z.string().max(20)).optional(),
@@ -167,6 +173,7 @@ export const createAccountSchema = z.object({
 });
 
 export const updateAccountSchema = z.object({
+  code: zSanitized(z.string().min(1).max(100)).optional(),
   name: zSanitized(z.string().min(1).max(200)).optional(),
   account_type: z
     .enum(["asset", "liability", "equity", "revenue", "expense"])
@@ -201,6 +208,7 @@ export const createFiscalPeriodSchema = z.object({
 });
 
 export const updateFiscalPeriodSchema = z.object({
+  code: zSanitized(z.string().min(1).max(100)).optional(),
   start_date: z.string().datetime().optional(),
   end_date: z.string().datetime().optional(),
   status: z.enum(["open", "closed", "finalized"]).optional(),
@@ -228,6 +236,7 @@ export const createTagSchema = z.object({
 });
 
 export const updateTagSchema = z.object({
+  code: zSanitized(z.string().min(1).max(100)).optional(),
   name: zSanitized(z.string().min(1).max(200)).optional(),
   tag_type: zSanitized(z.string().min(1).max(100)).optional(),
   is_active: z.boolean().optional(),
@@ -256,6 +265,7 @@ export const createDepartmentSchema = z.object({
 });
 
 export const updateDepartmentSchema = z.object({
+  code: zSanitized(z.string().min(1).max(100)).optional(),
   name: zSanitized(z.string().min(1).max(200)).optional(),
   parent_department_id: z.number().int().positive().nullable().optional(),
   department_type: z.string().nullable().optional(),
@@ -271,8 +281,6 @@ export const counterpartyResponseSchema = z.object({
   code: z.string(),
   name: z.string(),
   is_active: z.boolean(),
-  qualified_invoice_number: z.string().nullable(),
-  is_qualified_issuer: z.boolean(),
   revision: z.number(),
   created_at: z.string(),
 });
@@ -280,14 +288,11 @@ export const counterpartyResponseSchema = z.object({
 export const createCounterpartySchema = z.object({
   code: zSanitized(z.string().min(1).max(50)),
   name: zSanitized(z.string().min(1).max(200)),
-  qualified_invoice_number: z.string().optional(),
-  is_qualified_issuer: z.boolean().default(false),
 });
 
 export const updateCounterpartySchema = z.object({
+  code: zSanitized(z.string().min(1).max(100)).optional(),
   name: zSanitized(z.string().min(1).max(200)).optional(),
-  qualified_invoice_number: z.string().nullable().optional(),
-  is_qualified_issuer: z.boolean().optional(),
   is_active: z.boolean().optional(),
 });
 
@@ -297,7 +302,6 @@ export const updateCounterpartySchema = z.object({
 
 export const voucherResponseSchema = z.object({
   id: z.number(),
-  book_id: z.number(),
   fiscal_period_id: z.number(),
   idempotency_key: z.string(),
   voucher_code: z.string().nullable(),
@@ -313,7 +317,7 @@ export const voucherResponseSchema = z.object({
 
 export const journalLineResponseSchema = z.object({
   uuid: z.string(),
-  line_group: z.number(),
+  sort_order: z.number(),
   side: z.string(),
   account_id: z.number(),
   department_id: z.number().nullable(),
@@ -331,6 +335,7 @@ export const journalTagResponseSchema = z.object({
 export const journalResponseSchema = z.object({
   id: z.number(),
   voucher_id: z.number(),
+  book_id: z.number(),
   revision: z.number(),
   is_active: z.boolean(),
   journal_type: z.string(),
@@ -346,7 +351,7 @@ export const journalDetailResponseSchema = journalResponseSchema.extend({
 });
 
 export const journalLineSchema = z.object({
-  line_group: z.number().int().min(1),
+  sort_order: z.number().int().min(1),
   side: z.enum(["debit", "credit"]),
   account_id: z.number().int().positive(),
   department_id: z.number().int().positive().optional(),
@@ -357,7 +362,6 @@ export const journalLineSchema = z.object({
 
 export const createVoucherSchema = z.object({
   idempotency_key: zSanitized(z.string().min(1)),
-  book_id: z.number().int().positive(),
   fiscal_period_id: z.number().int().positive(),
   voucher_code: z.string().optional(),
   posted_date: z.string().datetime(),
@@ -366,6 +370,7 @@ export const createVoucherSchema = z.object({
   journals: z
     .array(
       z.object({
+        book_id: z.number().int().positive(),
         journal_type: z
           .enum(["normal", "closing", "prior_adj", "auto"])
           .default("normal"),
@@ -388,6 +393,7 @@ export const voucherDetailResponseSchema = voucherResponseSchema.extend({
 });
 
 export const updateJournalSchema = z.object({
+  book_id: z.number().int().positive().optional(),
   journal_type: z
     .enum(["normal", "closing", "prior_adj", "auto"])
     .optional(),

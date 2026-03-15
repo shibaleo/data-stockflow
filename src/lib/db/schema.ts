@@ -317,10 +317,6 @@ export const counterparty = s.table(
     code: text("code").notNull(),
     name: text("name").notNull(),
     is_active: boolean("is_active").default(true).notNull(),
-    qualified_invoice_number: text("qualified_invoice_number"),
-    is_qualified_issuer: boolean("is_qualified_issuer")
-      .default(false)
-      .notNull(),
   },
   (t) => [
     primaryKey({ columns: [t.key, t.revision] }),
@@ -356,7 +352,6 @@ export const voucher = s.table(
     created_by: bigint("created_by", { mode: "number" }).notNull(),
     tenant_key: bigint("tenant_key", { mode: "number" }).notNull(),
     idempotency_key: text("idempotency_key").notNull().unique(),
-    book_key: bigint("book_key", { mode: "number" }).notNull(),
     fiscal_period_key: bigint("fiscal_period_key", { mode: "number" }).notNull(),
     voucher_code: text("voucher_code"),
     posted_date: timestamp("posted_date", { withTimezone: true }).notNull(),
@@ -394,6 +389,7 @@ export const journal = s.table(
     created_by: bigint("created_by", { mode: "number" }).notNull(),
     tenant_key: bigint("tenant_key", { mode: "number" }).notNull(),
     voucher_key: bigint("voucher_key", { mode: "number" }).notNull(),
+    book_key: bigint("book_key", { mode: "number" }).notNull(),
     is_active: boolean("is_active").default(true).notNull(),
     journal_type: text("journal_type").default("normal").notNull(),
     slip_category: text("slip_category").default("ordinary").notNull(),
@@ -410,7 +406,7 @@ export const journalLine = s.table(
     journal_key: bigint("journal_key", { mode: "number" }).notNull(),
     journal_revision: integer("journal_revision").notNull(),
     tenant_key: bigint("tenant_key", { mode: "number" }).notNull(),
-    line_group: integer("line_group").notNull(),
+    sort_order: integer("sort_order").notNull(),
     side: text("side").notNull(),
     account_key: bigint("account_key", { mode: "number" }).notNull(),
     department_key: bigint("department_key", { mode: "number" }),

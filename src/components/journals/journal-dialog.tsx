@@ -224,7 +224,7 @@ export function JournalDialog({
     setLoading(true);
     try {
       const linePayload = lines.map((l, i) => ({
-        line_group: Math.floor(i / 2) + 1,
+        sort_order: Math.floor(i / 2) + 1,
         side: l.side,
         account_code: l.account_code,
         amount: parseFloat(l.amount),
