@@ -368,7 +368,12 @@ export function MasterDialog({
     try {
       const payload: Record<string, unknown> = { code: code.trim(), name: name.trim() };
       if (config.parentKey) {
-        payload[config.parentKey] = parentId !== "__none__" ? Number(parentId) : null;
+        if (parentId !== "__none__") {
+          payload[config.parentKey] = Number(parentId);
+        } else if (editId) {
+          // 更新時のみ null を送る（親を外す）。新規作成時はフィールド省略
+          payload[config.parentKey] = null;
+        }
       }
       for (const field of allExtraFields) {
         const apiKey = field.apiKey ?? field.key;

@@ -129,6 +129,44 @@ function emptySection(bookId: string, defaultJournalTypeId = "", defaultProjectI
 }
 
 
+// ── AmountInput (blur時に3桁区切り、focus時に生数値) ──
+
+function formatWithCommas(v: string): string {
+  const n = parseFloat(v);
+  if (isNaN(n) || v === "") return v;
+  return n.toLocaleString("ja-JP");
+}
+
+function stripCommas(v: string): string {
+  return v.replace(/,/g, "");
+}
+
+const AmountInput = memo(function AmountInput({
+  amount,
+  onAmountChange,
+}: {
+  amount: string;
+  onAmountChange: (v: string) => void;
+}) {
+  const [focused, setFocused] = useState(false);
+  const display = focused ? amount : formatWithCommas(amount);
+
+  return (
+    <div className="w-36 shrink-0 flex items-center justify-end">
+      <textarea
+        inputMode="decimal"
+        value={display}
+        onChange={(e) => onAmountChange(stripCommas(e.target.value))}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        className="w-full h-9 resize-none border-0 bg-transparent text-sm font-mono text-right px-2 py-2 outline-none focus:bg-accent/30"
+        placeholder="数量"
+        rows={1}
+      />
+    </div>
+  );
+});
+
 // ── SideCell (memoized to prevent re-mount on parent re-render) ──
 
 interface SideCellProps {
@@ -140,7 +178,6 @@ interface SideCellProps {
   acctOptions: ComboOption[];
   deptOptions: ComboOption[];
   cpOptions: ComboOption[];
-  selectedAcctCode: string;
   onAcctChange: (v: string) => void;
   onAmountChange: (v: string) => void;
   onDeptChange: (v: string) => void;
@@ -162,7 +199,6 @@ const SideCell = memo(function SideCell({
   acctOptions,
   deptOptions,
   cpOptions,
-  selectedAcctCode,
   onAcctChange,
   onAmountChange,
   onDeptChange,
@@ -180,14 +216,9 @@ const SideCell = memo(function SideCell({
   );
   return (
     <div className="divide-y divide-border">
-      {/* 段1: 勘定科目コード (暗色) | 金額 (2段分) */}
+      {/* 段1: 勘定科目 | 金額 */}
       <div className="flex">
-        <div className="flex-1 min-w-0 border-r border-border divide-y divide-border">
-          {/* 勘定科目コード */}
-          <div className="h-7 flex items-center px-2 text-[10px] text-muted-foreground font-mono truncate">
-            {selectedAcctCode}
-          </div>
-          {/* 段2: 勘定科目名 */}
+        <div className="flex-1 min-w-0 border-r border-border">
           <MasterCombobox
             options={acctOptions}
             value={acctId}
@@ -195,21 +226,12 @@ const SideCell = memo(function SideCell({
             placeholder="勘定科目"
             onCreate={onCreateAcct ? handleCreateAcct : undefined}
             onRename={onRenameAcct}
+            className="h-9 text-sm"
           />
         </div>
-        {/* 金額 (2段分の高さ、大きめ文字、右寄せ) */}
-        <div className="w-36 shrink-0 flex items-center justify-end pr-2">
-          <Input
-            type="text"
-            inputMode="decimal"
-            value={amount}
-            onChange={(e) => onAmountChange(e.target.value)}
-            className="h-full border-0 bg-transparent text-base font-mono text-right shadow-none focus-visible:ring-0"
-            placeholder="数量"
-          />
-        </div>
+        <AmountInput amount={amount} onAmountChange={onAmountChange} />
       </div>
-      {/* 段3: 部門 | 取引先 (横並び) */}
+      {/* 段2: 部門 | 取引先 */}
       <div className="flex items-center">
         <div className="flex-1 min-w-0 border-r border-border">
           <MasterCombobox
@@ -921,7 +943,7 @@ export function JournalForm({ editId, onSuccess, onCancel }: Props) {
                           acctOptions={bookAccountOptions(sec.bookId)}
                           deptOptions={depts.comboOptions}
                           cpOptions={cps.comboOptions}
-                          selectedAcctCode={accounts.find((a) => String(a.id) === row.debit_account_id)?.code ?? ""}
+
                           onAcctChange={(v) => updateRow(ji, ri, "debit_account_id", v)}
                           onAmountChange={(v) => updateRow(ji, ri, "debit_amount", v)}
                           onDeptChange={(v) => updateRow(ji, ri, "debit_department_id", v)}
@@ -944,7 +966,7 @@ export function JournalForm({ editId, onSuccess, onCancel }: Props) {
                           acctOptions={bookAccountOptions(sec.bookId)}
                           deptOptions={depts.comboOptions}
                           cpOptions={cps.comboOptions}
-                          selectedAcctCode={accounts.find((a) => String(a.id) === row.credit_account_id)?.code ?? ""}
+
                           onAcctChange={(v) => updateRow(ji, ri, "credit_account_id", v)}
                           onAmountChange={(v) => updateRow(ji, ri, "credit_amount", v)}
                           onDeptChange={(v) => updateRow(ji, ri, "credit_department_id", v)}

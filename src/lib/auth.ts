@@ -1,6 +1,7 @@
 import * as jose from "jose";
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
+import { verifyApiKey } from "@/lib/api-keys";
 import type { UserRole } from "@/middleware/context";
 
 const S = "data_stockflow";
@@ -193,6 +194,11 @@ export async function authenticate(
 
   for (const token of [bearerToken, cookieToken]) {
     if (!token) continue;
+
+    // API Key (sf_ prefix) — DB lookup + hash verification
+    if (token.startsWith("sf_")) {
+      return verifyApiKey(token);
+    }
 
     // Try Clerk JWKS → DB lookup
     const clerkUserId = await verifyClerkToken(token);

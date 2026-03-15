@@ -7,6 +7,8 @@ import { requireTenant, requireAuth, requireRole } from "@/middleware/guards";
 import { recordAudit } from "@/lib/audit";
 import { computeMasterHashes } from "@/lib/entity-hash";
 import { createMapper, defineCrudRoutes } from "@/lib/crud-factory";
+import { signToken } from "@/lib/auth";
+import { createApiKey, listApiKeys, revokeApiKey } from "@/lib/api-keys";
 import type { CurrentUser } from "@/lib/types";
 
 const app = createApp();
@@ -65,6 +67,53 @@ app.openapi(routes.update, async (c) => {
 app.openapi(routes.history, async (c) => {
   const rows = await listHistory<CurrentUser>("history_user", Number(c.req.param("userId")));
   return c.json({ data: rows.map(mapUser) }, 200);
+});
+
+// ============================================================
+// API Key management (tenant-scoped, own keys only)
+// ============================================================
+
+/** GET /users/me/api-keys */
+app.get("/me/api-keys", async (c) => {
+  const userKey = c.get("userKey");
+  if (!userKey) return c.json({ error: "Authentication required" }, 401);
+  const keys = await listApiKeys(userKey);
+  return c.json({ data: keys }, 200);
+});
+
+/** POST /users/me/api-keys */
+app.post("/me/api-keys", async (c) => {
+  const userKey = c.get("userKey");
+  const tenantKey = c.get("tenantKey");
+  const role = c.get("userRole");
+  if (!userKey || !tenantKey) return c.json({ error: "Authentication required" }, 401);
+
+  const body = await c.req.json<{ name: string; expires_in_days?: number }>();
+  if (!body.name?.trim()) return c.json({ error: "name is required" }, 400);
+
+  const expiresAt = body.expires_in_days
+    ? new Date(Date.now() + body.expires_in_days * 86400_000)
+    : null;
+
+  const { rawKey, record } = await createApiKey({
+    userKey, tenantKey, role, name: body.name.trim(), expiresAt,
+  });
+
+  recordAudit(c, { action: "create", entityType: "api_key", entityKey: 0, detail: `name=${record.name}` });
+  return c.json({ data: { ...record, raw_key: rawKey } }, 201);
+});
+
+/** DELETE /users/me/api-keys/:keyId */
+app.delete("/me/api-keys/:keyId", async (c) => {
+  const userKey = c.get("userKey");
+  if (!userKey) return c.json({ error: "Authentication required" }, 401);
+
+  const keyId = c.req.param("keyId");
+  const deleted = await revokeApiKey(keyId, userKey);
+  if (!deleted) return c.json({ error: "Not found" }, 404);
+
+  recordAudit(c, { action: "delete", entityType: "api_key", entityKey: 0, detail: `uuid=${keyId}` });
+  return c.json({ message: "API key revoked" }, 200);
 });
 
 export default app;

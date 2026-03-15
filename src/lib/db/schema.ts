@@ -556,6 +556,32 @@ export const journalTag = s.table(
 );
 
 // ============================================================
+// API Key
+// ============================================================
+
+export const apiKey = s.table(
+  "api_key",
+  {
+    uuid: uuid("uuid").defaultRandom().primaryKey(),
+    user_key: bigint("user_key", { mode: "number" }).notNull(),
+    tenant_key: bigint("tenant_key", { mode: "number" }).notNull(),
+    name: text("name").notNull(),
+    key_prefix: text("key_prefix").notNull(),
+    key_hash: text("key_hash").notNull(),
+    role: text("role").notNull(),
+    expires_at: timestamp("expires_at", { withTimezone: true }),
+    last_used_at: timestamp("last_used_at", { withTimezone: true }),
+    created_at: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    index("idx_api_key_user").on(t.user_key),
+    index("idx_api_key_prefix").on(t.key_prefix),
+  ]
+);
+
+// ============================================================
 // 監査系
 // ============================================================
 

@@ -6,6 +6,7 @@ import type { AppVariables } from "@/middleware/context";
 export type AuditAction =
   | "create"
   | "update"
+  | "delete"
   | "deactivate"
   | "restore"
   | "reverse"
@@ -25,7 +26,8 @@ export type AuditEntityType =
   | "user"
   | "voucher_type"
   | "journal_type"
-  | "project";
+  | "project"
+  | "api_key";
 
 interface AuditEntry {
   action: AuditAction;

@@ -337,8 +337,8 @@ export default function BooksPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="left">左（{unitSymbol}100）</SelectItem>
-                    <SelectItem value="right">右（100{unitSymbol}）</SelectItem>
+                    <SelectItem value="left">左（{formatUnitPreview(unitSymbol, "left")}）</SelectItem>
+                    <SelectItem value="right">右（{formatUnitPreview(unitSymbol, "right")}）</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
