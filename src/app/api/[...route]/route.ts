@@ -7,26 +7,23 @@ export const runtime = "nodejs";
 const honoHandler = handle(app);
 
 /**
- * Check if request already carries an API key (sf_) or dev JWT token.
- * In that case, skip Clerk auth and pass directly to Hono.
+ * Check if request carries an API key via X-Api-Key header.
+ * proxy.ts moves sf_ tokens from Authorization → X-Api-Key
+ * before Clerk middleware processes the request.
  */
-function hasNonClerkToken(req: Request): boolean {
-  const header = req.headers.get("authorization");
-  if (!header?.startsWith("Bearer ")) return false;
-  const token = header.slice(7);
-  // sf_ = API key, dev HS256 tokens also skip Clerk
-  return token.startsWith("sf_");
+function hasApiKey(req: Request): boolean {
+  return !!req.headers.get("x-api-key")?.startsWith("sf_");
 }
 
 /**
- * Inject Clerk session token as Bearer header before passing to Hono.
- * Clerk's proxy sets auth context on the Next.js request,
- * but Hono reads Bearer tokens — this bridges the two.
+ * Route handler that bridges Clerk auth and Hono.
  *
- * If the request already has an sf_ API key, skip Clerk entirely.
+ * - sf_ API key requests: proxy.ts strips Authorization and sets X-Api-Key,
+ *   so we pass directly to Hono (auth.ts reads X-Api-Key).
+ * - Browser requests: Clerk session → inject Bearer token → Hono.
  */
 async function withClerkAuth(req: Request) {
-  if (hasNonClerkToken(req)) {
+  if (hasApiKey(req)) {
     return honoHandler(req);
   }
 

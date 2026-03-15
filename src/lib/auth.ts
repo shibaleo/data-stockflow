@@ -169,6 +169,10 @@ async function verifyDevToken(token: string): Promise<AuthResult | null> {
 // ============================================================
 
 function extractBearerToken(req: Request): string | null {
+  // X-Api-Key: set by proxy.ts when sf_ token is moved from Authorization
+  const apiKey = req.headers.get("x-api-key");
+  if (apiKey) return apiKey;
+
   const header =
     req.headers.get("authorization") || req.headers.get("Authorization");
   if (!header?.startsWith("Bearer ")) return null;
