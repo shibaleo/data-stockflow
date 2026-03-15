@@ -5,6 +5,7 @@ import { listCurrent, getCurrent, getMaxRevision, listHistory } from "@/lib/appe
 import { userResponseSchema, createUserSchema, updateUserSchema } from "@/lib/validators";
 import { requireTenant, requireAuth, requireRole } from "@/middleware/guards";
 import { recordAudit } from "@/lib/audit";
+import { recordEvent } from "@/lib/event-log";
 import { computeMasterHashes } from "@/lib/entity-hash";
 import { createMapper, defineCrudRoutes } from "@/lib/crud-factory";
 import { createApiKey, listApiKeys, revokeApiKey } from "@/lib/api-keys";
@@ -19,7 +20,8 @@ const mapUser = createMapper<CurrentUser>([], ["tenant_key", "role_key"]);
 const routes = defineCrudRoutes("Users", "userId", userResponseSchema, createUserSchema, updateUserSchema);
 
 app.openapi(routes.list, async (c) => {
-  const rows = await listCurrent<CurrentUser>("current_user", { tenant_key: c.get("tenantKey") });
+  const scope = c.get("userRole") === "platform" ? null : { tenant_key: c.get("tenantKey") };
+  const rows = await listCurrent<CurrentUser>("current_user", scope);
   return c.json({ data: rows.map(mapUser) }, 200);
 });
 
@@ -31,7 +33,10 @@ app.get("/me", async (c) => {
 });
 
 app.openapi(routes.get, async (c) => {
-  const row = await getCurrent<CurrentUser>("current_user", { tenant_key: c.get("tenantKey"), key: Number(c.req.param("userId")) });
+  const filter = c.get("userRole") === "platform"
+    ? { key: Number(c.req.param("userId")) }
+    : { tenant_key: c.get("tenantKey"), key: Number(c.req.param("userId")) };
+  const row = await getCurrent<CurrentUser>("current_user", filter);
   if (!row) return c.json({ error: "Not found" }, 404);
   return c.json({ data: mapUser(row) }, 200);
 });
@@ -53,6 +58,11 @@ app.openapi(routes.create, async (c) => {
     role_key: body.role_id as number, code, name, ...hashes,
   }).returning();
   recordAudit(c, { action: "create", entityType: "user", entityKey: created.key });
+  recordEvent(c, {
+    action: "create", entityType: "user", entityKey: created.key,
+    entityName: name,
+    summary: `ユーザー「${name}」を作成しました`,
+  });
   return c.json({ data: mapUser(created as unknown as CurrentUser) }, 201);
 });
 
@@ -81,6 +91,11 @@ app.openapi(routes.update, async (c) => {
     is_active: current.is_active, ...hashes,
   }).returning();
   recordAudit(c, { action: "update", entityType: "user", entityKey: userKey, revision: maxRev + 1 });
+  recordEvent(c, {
+    action: "update", entityType: "user", entityKey: userKey,
+    entityName: newName,
+    summary: `ユーザー「${newName}」を更新しました`,
+  });
   return c.json({ data: mapUser(updated as unknown as CurrentUser) }, 200);
 });
 
@@ -110,6 +125,11 @@ app.openapi(routes.del, async (c) => {
     is_active: false, ...hashes,
   });
   recordAudit(c, { action: "deactivate", entityType: "user", entityKey: userKey, revision: maxRev + 1 });
+  recordEvent(c, {
+    action: "deactivate", entityType: "user", entityKey: userKey,
+    entityName: current.name,
+    summary: `ユーザー「${current.name}」を無効化しました`,
+  });
   return c.json({ message: "Deactivated" }, 200);
 });
 
@@ -149,6 +169,11 @@ app.post("/me/api-keys", async (c) => {
   });
 
   recordAudit(c, { action: "create", entityType: "api_key", entityKey: 0, detail: `name=${record.name}` });
+  recordEvent(c, {
+    action: "create", entityType: "api_key", entityKey: 0,
+    entityName: record.name,
+    summary: `APIキー「${record.name}」を作成しました`,
+  });
   return c.json({ data: { ...record, raw_key: rawKey } }, 201);
 });
 
@@ -162,6 +187,10 @@ app.delete("/me/api-keys/:keyId", async (c) => {
   if (!deleted) return c.json({ error: "Not found" }, 404);
 
   recordAudit(c, { action: "delete", entityType: "api_key", entityKey: 0, detail: `uuid=${keyId}` });
+  recordEvent(c, {
+    action: "delete", entityType: "api_key", entityKey: 0,
+    summary: `APIキーを削除しました`,
+  });
   return c.json({ message: "API key revoked" }, 200);
 });
 

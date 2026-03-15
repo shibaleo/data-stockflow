@@ -584,11 +584,11 @@ export const apiKey = s.table(
 );
 
 // ============================================================
-// 監査系
+// ログ系
 // ============================================================
 
-export const auditLog = s.table(
-  "audit_log",
+export const systemLog = s.table(
+  "system_log",
   {
     uuid: uuid("uuid").defaultRandom().primaryKey(),
     tenant_key: bigint("tenant_key", { mode: "number" }),
@@ -605,7 +605,32 @@ export const auditLog = s.table(
       .notNull(),
   },
   (t) => [
-    index("idx_audit_log_tenant_created").on(t.tenant_key, t.created_at),
-    index("idx_audit_log_entity").on(t.entity_type, t.entity_key),
+    index("idx_system_log_tenant_created").on(t.tenant_key, t.created_at),
+    index("idx_system_log_entity").on(t.entity_type, t.entity_key),
+  ]
+);
+
+export const eventLog = s.table(
+  "event_log",
+  {
+    uuid: uuid("uuid").defaultRandom().primaryKey(),
+    tenant_key: bigint("tenant_key", { mode: "number" }),
+    user_key: bigint("user_key", { mode: "number" }).notNull(),
+    user_name: text("user_name").notNull(),
+    user_role: text("user_role").notNull(),
+    action: text("action").notNull(),
+    entity_type: text("entity_type").notNull(),
+    entity_key: bigint("entity_key", { mode: "number" }).notNull(),
+    entity_name: text("entity_name"),
+    summary: text("summary").notNull(),
+    changes: jsonb("changes"),
+    source_ip: text("source_ip"),
+    created_at: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    index("idx_event_log_tenant_created").on(t.tenant_key, t.created_at),
+    index("idx_event_log_entity").on(t.entity_type, t.entity_key),
   ]
 );

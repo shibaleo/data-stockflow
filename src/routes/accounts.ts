@@ -12,7 +12,7 @@ const routes = defineCrudRoutes("Accounts", "accountId", accountResponseSchema, 
 
 registerCrudHandlers<CurrentAccount>(app, routes, {
   table: account, tableName: "account", viewName: "current_account", historyView: "history_account",
-  entityType: "account", idParam: "accountId",
+  entityType: "account", entityLabel: "科目", idParam: "accountId",
   mapRow: createMapper<CurrentAccount>([], ["book_key", "parent_account_key"]),
   scope: (c) => ({ book_key: c.get("bookKey") }),
   buildCreate: (body, c) => ({

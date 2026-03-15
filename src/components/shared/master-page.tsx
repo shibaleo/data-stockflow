@@ -51,6 +51,10 @@ export interface ExtraField {
   options?: { value: string; label: string }[];
   format?: (value: unknown) => string;
   apiKey?: string;
+  /** Whether to wrap in a Badge in tree view (default: true) */
+  badge?: boolean;
+  /** Dynamic className for badge based on value */
+  badgeClassName?: (value: unknown) => string;
 }
 
 export interface GroupConfig {
@@ -182,10 +186,16 @@ export function MasterTreeSection({
                     )}
                     {extraFields?.map((field) => {
                       const val = node.data[field.key];
-                      if (!val) return null;
+                      if (val == null) return null;
+                      const text = field.format ? field.format(val) : String(val);
+                      if (!text) return null;
+                      if (field.badge === false) {
+                        return <span key={field.key} className="ml-2 text-xs text-muted-foreground">{text}</span>;
+                      }
+                      const badgeCls = field.badgeClassName ? field.badgeClassName(val) : "";
                       return (
-                        <Badge key={field.key} variant="outline" className="ml-2 text-xs py-0">
-                          {field.format ? field.format(val) : String(val)}
+                        <Badge key={field.key} variant="outline" className={`ml-2 text-xs py-0 ${badgeCls}`}>
+                          {text}
                         </Badge>
                       );
                     })}
@@ -235,7 +245,7 @@ export function MasterItemDialog({
   const [extras, setExtras] = useState<Record<string, string>>({});
 
   const parentKey = config.parentKey ?? "parent_id";
-  const allExtraFields = [...(config.dialogExtraFields ?? []), ...(config.extraFields ?? [])];
+  const allExtraFields = config.dialogExtraFields ?? config.extraFields ?? [];
   const createOnlyFields = config.createOnlyFields ?? [];
 
   // Pre-fill form on open
@@ -277,6 +287,7 @@ export function MasterItemDialog({
         const apiKey = field.apiKey ?? field.key;
         const val = extras[field.key];
         if (field.type === "date" && val) { payload[apiKey] = new Date(val).toISOString(); }
+        else if (field.type === "select" && val && /^\d+$/.test(val)) { payload[apiKey] = Number(val); }
         else if (val) { payload[apiKey] = val; }
       }
       if (item) {

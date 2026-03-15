@@ -186,9 +186,9 @@ export interface JournalTagRow {
   created_at: Date;
 }
 
-// ── 監査系 ──
+// ── システムログ ──
 
-export interface AuditLogRow {
+export interface SystemLogRow {
   uuid: string;
   tenant_key: number | null;
   user_key: number;
@@ -198,6 +198,24 @@ export interface AuditLogRow {
   entity_key: number;
   revision: number | null;
   detail: string | null;
+  source_ip: string | null;
+  created_at: Date;
+}
+
+// ── イベントログ ──
+
+export interface EventLogRow {
+  uuid: string;
+  tenant_key: number | null;
+  user_key: number;
+  user_name: string;
+  user_role: string;
+  action: string;
+  entity_type: string;
+  entity_key: number;
+  entity_name: string | null;
+  summary: string;
+  changes: unknown | null;
   source_ip: string | null;
   created_at: Date;
 }

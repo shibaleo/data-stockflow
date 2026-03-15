@@ -12,7 +12,7 @@ const routes = defineCrudRoutes("JournalTypes", "journalTypeId", journalTypeResp
 
 registerCrudHandlers<CurrentJournalType>(app, routes, {
   table: journalType, tableName: "journal_type", viewName: "current_journal_type", historyView: "history_journal_type",
-  entityType: "journal_type", idParam: "journalTypeId",
+  entityType: "journal_type", entityLabel: "仕訳タイプ", idParam: "journalTypeId",
   mapRow: createMapper<CurrentJournalType>(["book_key"], ["parent_journal_type_key"]),
   scope: (c) => ({ book_key: c.get("bookKey") }),
   buildCreate: (body, c) => ({

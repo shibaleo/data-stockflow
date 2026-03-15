@@ -20,6 +20,7 @@ import journals from "@/routes/journals";
 import journalOps from "@/routes/ops/journal-ops";
 import periodOps from "@/routes/ops/period-ops";
 import auditLogs from "@/routes/ops/audit-logs";
+import eventLogs from "@/routes/ops/event-logs";
 import integrity from "@/routes/ops/integrity";
 import voucherTypes from "@/routes/voucher-types";
 import journalTypes from "@/routes/journal-types";
@@ -84,6 +85,7 @@ app.route("/books/:bookId/periods", periodOps);
 
 // Audit & integrity
 app.route("/audit-logs", auditLogs);
+app.route("/event-logs", eventLogs);
 app.route("/integrity", integrity);
 
 // OpenAPI spec

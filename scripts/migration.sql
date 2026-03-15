@@ -373,8 +373,8 @@ CREATE TABLE data_stockflow.api_key (
 CREATE INDEX idx_api_key_user ON data_stockflow.api_key (user_key);
 CREATE INDEX idx_api_key_prefix ON data_stockflow.api_key (key_prefix);
 
--- ---- audit_log ----
-CREATE TABLE data_stockflow.audit_log (
+-- ---- system_log (renamed from audit_log) ----
+CREATE TABLE data_stockflow.system_log (
   uuid             UUID NOT NULL DEFAULT gen_random_uuid(),
   tenant_key       BIGINT,
   user_key         BIGINT NOT NULL,
@@ -389,11 +389,35 @@ CREATE TABLE data_stockflow.audit_log (
   PRIMARY KEY (uuid)
 );
 
-CREATE INDEX idx_audit_log_tenant_created
-  ON data_stockflow.audit_log (tenant_key, created_at);
+CREATE INDEX idx_system_log_tenant_created
+  ON data_stockflow.system_log (tenant_key, created_at);
 
-CREATE INDEX idx_audit_log_entity
-  ON data_stockflow.audit_log (entity_type, entity_key);
+CREATE INDEX idx_system_log_entity
+  ON data_stockflow.system_log (entity_type, entity_key);
+
+-- ---- event_log (business-level activity log) ----
+CREATE TABLE data_stockflow.event_log (
+  uuid             UUID NOT NULL DEFAULT gen_random_uuid(),
+  tenant_key       BIGINT,
+  user_key         BIGINT NOT NULL,
+  user_name        TEXT NOT NULL,
+  user_role        TEXT NOT NULL,
+  action           TEXT NOT NULL,
+  entity_type      TEXT NOT NULL,
+  entity_key       BIGINT NOT NULL,
+  entity_name      TEXT,
+  summary          TEXT NOT NULL,
+  changes          JSONB,
+  source_ip        TEXT,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (uuid)
+);
+
+CREATE INDEX idx_event_log_tenant_created
+  ON data_stockflow.event_log (tenant_key, created_at);
+
+CREATE INDEX idx_event_log_entity
+  ON data_stockflow.event_log (entity_type, entity_key);
 
 -- ============================================================
 -- VIEWS: current_* (latest valid revision)

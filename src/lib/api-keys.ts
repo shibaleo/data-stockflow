@@ -1,9 +1,11 @@
 import * as jose from "jose";
 import { db } from "@/lib/db";
 import { apiKey } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import type { AuthResult } from "@/lib/auth";
 import type { UserRole } from "@/middleware/context";
+
+const S = "data_stockflow";
 
 const PREFIX = "sf_";
 const ROLES: readonly string[] = ["platform", "audit", "admin", "user"];
@@ -106,11 +108,21 @@ export async function verifyApiKey(
     .then(() => {})
     .catch(() => {});
 
+  // Fetch user name for event log context
+  let userName = "api-key";
+  try {
+    const { rows: userRows } = await db.execute(sql`
+      SELECT name FROM ${sql.raw(`"${S}".current_user`)} WHERE key = ${userKey} LIMIT 1
+    `);
+    if (userRows.length > 0) userName = (userRows[0] as { name: string }).name;
+  } catch { /* fallback to "api-key" */ }
+
   return {
     userKey,
     tenantKey,
     role: role as UserRole,
     roleCode: role,
+    userName,
   };
 }
 

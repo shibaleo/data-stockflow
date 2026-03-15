@@ -33,12 +33,6 @@ interface ApiKeyRow {
   created_at: string;
 }
 
-const ROLE_COLOR: Record<string, string> = {
-  platform: "bg-purple-900/30 text-purple-400 border-purple-800/50",
-  audit: "bg-amber-900/30 text-amber-400 border-amber-800/50",
-  admin: "bg-blue-900/30 text-blue-400 border-blue-800/50",
-  user: "bg-green-900/30 text-green-400 border-green-800/50",
-};
 
 const EXPIRY_OPTIONS = [
   { label: "30日", value: "30" },
@@ -64,13 +58,8 @@ export default function UsersPage() {
   const [deletingKeyId, setDeletingKeyId] = useState<string | null>(null);
 
   useEffect(() => {
-    Promise.all([
-      api.get<{ data: RoleRow[] }>("/roles"),
-      api.get<{ data: { id: number } }>("/users/me"),
-    ]).then(([rolesRes, meRes]) => {
-      setRoles(rolesRes.data);
-      setMeId(meRes.data.id);
-    });
+    api.get<{ data: RoleRow[] }>("/roles").then((res) => setRoles(res.data)).catch(() => {});
+    api.get<{ data: { id: number } }>("/users/me").then((res) => setMeId(res.data.id)).catch(() => {});
   }, []);
 
   const fetchApiKeys = useCallback(async () => {
@@ -86,8 +75,6 @@ export default function UsersPage() {
 
   // ── Role helpers ──
 
-  const getRoleCode = (roleId: unknown) => roles.find((r) => r.id === Number(roleId))?.code ?? "";
-  const getRoleName = (roleId: unknown) => roles.find((r) => r.id === Number(roleId))?.name ?? String(roleId);
 
   // ── API Key handlers ──
 
@@ -151,35 +138,39 @@ export default function UsersPage() {
           dialogExtraFields: [
             {
               key: "role_id", label: "ロール", type: "select", apiKey: "role_id",
-              options: roles.filter((r) => !["platform", "audit"].includes(r.code))
+              options: roles.filter((r) => r.code !== "platform")
                 .map((r) => ({ value: String(r.id), label: r.name })),
             },
           ],
           extraFields: [
+            { key: "email", label: "メール", type: "text", badge: false },
             {
               key: "role_id", label: "ロール", type: "text",
-              format: (v) => getRoleName(v),
+              format: (v) => roles.find((r) => String(r.id) === String(v))?.name ?? String(v),
+              badgeClassName: (v) => {
+                const code = roles.find((r) => String(r.id) === String(v))?.code;
+                switch (code) {
+                  case "admin": return "bg-blue-900/30 text-blue-400 border-blue-800/50";
+                  case "user": return "bg-green-900/30 text-green-400 border-green-800/50";
+                  case "platform": return "bg-purple-900/30 text-purple-400 border-purple-800/50";
+                  case "audit": return "bg-red-900/30 text-red-400 border-red-800/50";
+                  default: return "";
+                }
+              },
             },
           ],
         }}
         canDelete={(item) => item.id !== meId}
-        detailExtra={(item) => {
-          const roleCode = getRoleCode(item.role_id);
-          return (
-            <>
-              <PropRow label="メール" value={String(item.email ?? "")} />
-              <PropRow label="ロール">
-                <Badge className={ROLE_COLOR[roleCode] || ""}>{getRoleName(item.role_id)}</Badge>
+        detailExtra={(item) => (
+          <>
+            <PropRow label="メール" value={String(item.email ?? "")} />
+            {item.id === meId && (
+              <PropRow label="">
+                <Badge variant="outline" className="text-xs">自分</Badge>
               </PropRow>
-              <PropRow label="外部ID" value={String(item.external_id ?? "未連携")} />
-              {item.id === meId && (
-                <PropRow label="">
-                  <Badge variant="outline" className="text-xs">自分</Badge>
-                </PropRow>
-              )}
-            </>
-          );
-        }}
+            )}
+          </>
+        )}
         afterContent={
           <section className="mt-8">
             <div className="flex items-center justify-between mb-4">
@@ -221,7 +212,7 @@ export default function UsersPage() {
                         <td className="py-2 px-3 font-medium">{k.name}</td>
                         <td className="py-2 px-3 font-mono text-xs">{k.key_prefix}...</td>
                         <td className="py-2 px-3">
-                          <Badge className={ROLE_COLOR[k.role] || ""}>{k.role}</Badge>
+                          <Badge variant="outline">{k.role}</Badge>
                         </td>
                         <td className="py-2 px-3 text-xs text-muted-foreground">
                           {k.expires_at ? new Date(k.expires_at).toLocaleDateString("ja-JP") : "無期限"}

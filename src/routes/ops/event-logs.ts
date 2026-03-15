@@ -5,8 +5,8 @@ import { sql } from "drizzle-orm";
 import {
   errorSchema,
   paginatedSchema,
-  systemLogResponseSchema,
-  systemLogQuerySchema,
+  eventLogResponseSchema,
+  eventLogQuerySchema,
 } from "@/lib/validators";
 import { requireTenant, requireAuth, requireRole } from "@/middleware/guards";
 
@@ -19,18 +19,18 @@ app.use("*", requireTenant(), requireAuth());
 const list = createRoute({
   method: "get",
   path: "/",
-  tags: ["System Logs"],
-  summary: "Query system logs",
+  tags: ["Event Logs"],
+  summary: "Query event logs",
   description:
-    "Returns system log entries filtered by entity, action, or user. " +
+    "Returns business-level event log entries. " +
     "Available to admin and audit roles.",
-  request: { query: systemLogQuerySchema },
+  request: { query: eventLogQuerySchema },
   responses: {
     200: {
       description: "Success",
       content: {
         "application/json": {
-          schema: paginatedSchema(systemLogResponseSchema),
+          schema: paginatedSchema(eventLogResponseSchema),
         },
       },
     },
@@ -40,6 +40,22 @@ const list = createRoute({
     },
   },
 });
+
+interface EventLogRow {
+  uuid: string;
+  tenant_key: number | null;
+  user_key: number;
+  user_name: string;
+  user_role: string;
+  action: string;
+  entity_type: string;
+  entity_key: number;
+  entity_name: string | null;
+  summary: string;
+  changes: unknown | null;
+  source_ip: string | null;
+  created_at: Date;
+}
 
 app.use(list.getRoutingPath(), requireRole("admin", "audit"));
 app.openapi(list, async (c) => {
@@ -53,10 +69,6 @@ app.openapi(list, async (c) => {
     conditions.push(sql`entity_type = ${query.entity_type}`);
   }
 
-  if (query.entity_id) {
-    conditions.push(sql`entity_key = ${Number(query.entity_id)}`);
-  }
-
   if (query.action) {
     conditions.push(sql`action = ${query.action}`);
   }
@@ -66,7 +78,7 @@ app.openapi(list, async (c) => {
       const decoded = JSON.parse(Buffer.from(query.cursor, "base64url").toString());
       if (decoded.created_at && decoded.uuid) {
         conditions.push(
-          sql`(created_at, uuid) < (${decoded.created_at}::timestamptz, ${decoded.uuid}::uuid)`
+          sql`(created_at, uuid) < (${decoded.created_at}::timestamptz, ${decoded.uuid}::uuid)`,
         );
       }
     } catch {
@@ -76,38 +88,28 @@ app.openapi(list, async (c) => {
 
   const whereClause = sql.join(conditions, sql` AND `);
 
-  interface SystemLogRow {
-    uuid: string;
-    tenant_key: number | null;
-    user_key: number;
-    user_role: string;
-    action: string;
-    entity_type: string;
-    entity_key: number;
-    revision: number | null;
-    detail: string | null;
-    source_ip: string | null;
-    created_at: Date;
-  }
-
   const { rows: rawRows } = await db.execute(sql`
-    SELECT * FROM ${sql.raw(`"${S}".system_log`)}
+    SELECT * FROM ${sql.raw(`"${S}".event_log`)}
     WHERE ${whereClause}
     ORDER BY created_at DESC, uuid DESC
     LIMIT ${limit}
   `);
-  const rows = rawRows as unknown as SystemLogRow[];
+  const rows = rawRows as unknown as EventLogRow[];
 
   const data = rows.map((r) => ({
     uuid: r.uuid,
     tenant_id: r.tenant_key,
-    user_id: r.user_key,
+    user_name: r.user_name,
     user_role: r.user_role,
     action: r.action,
     entity_type: r.entity_type,
-    entity_id: r.entity_key,
-    revision: r.revision,
-    detail: r.detail,
+    entity_name: r.entity_name,
+    summary: r.summary,
+    changes: r.changes
+      ? (r.changes as { field: string; from?: unknown; to?: unknown }[]).map((ch) => ({
+          field: ch.field, from: ch.from ?? null, to: ch.to ?? null,
+        }))
+      : null,
     source_ip: r.source_ip,
     created_at: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
   }));
@@ -121,7 +123,7 @@ app.openapi(list, async (c) => {
                 ? rows[rows.length - 1].created_at.toISOString()
                 : String(rows[rows.length - 1].created_at),
             uuid: rows[rows.length - 1].uuid,
-          })
+          }),
         ).toString("base64url")
       : null;
 

@@ -22,25 +22,18 @@ export const requireAuth = () =>
     await next();
   });
 
-// Role hierarchy: platform > audit > admin > user
-const ROLE_LEVEL: Record<string, number> = {
-  platform: 100,
-  audit: 50,
-  admin: 30,
-  user: 10,
-};
-
+// platform role always has full access.
+// Other roles must be explicitly listed in requireRole().
 export const requireRole = (...roles: UserRole[]) =>
   createMiddleware<{ Variables: AppVariables }>(async (c, next) => {
     const userRole = c.get("userRole");
-    const userLevel = ROLE_LEVEL[userRole] ?? 0;
-    const minLevel = Math.min(...roles.map((r) => ROLE_LEVEL[r] ?? 0));
-    if (userLevel < minLevel && !roles.includes(userRole)) {
-      throw new HTTPException(403, {
-        message: `Required role: ${roles.join(" | ")}`,
-      });
+    if (userRole === "platform" || roles.includes(userRole)) {
+      await next();
+      return;
     }
-    await next();
+    throw new HTTPException(403, {
+      message: `Required role: ${roles.join(" | ")}`,
+    });
   });
 
 /**

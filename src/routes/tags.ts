@@ -12,7 +12,7 @@ const routes = defineCrudRoutes("Tags", "tagId", tagResponseSchema, createTagSch
 
 registerCrudHandlers<CurrentTag>(app, routes, {
   table: tag, tableName: "tag", viewName: "current_tag", historyView: "history_tag",
-  entityType: "tag", idParam: "tagId",
+  entityType: "tag", entityLabel: "タグ", idParam: "tagId",
   mapRow: createMapper<CurrentTag>(["tenant_key"], ["parent_tag_key"]),
   scope: (c) => ({ tenant_key: c.get("tenantKey") }),
   buildCreate: (body, c) => ({

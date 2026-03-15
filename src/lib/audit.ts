@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { auditLog } from "@/lib/db/schema";
+import { systemLog } from "@/lib/db/schema";
 import type { Context } from "hono";
 import type { AppVariables } from "@/middleware/context";
 
@@ -53,7 +53,7 @@ export function recordAudit(
     c.req.header("x-real-ip") ||
     null;
 
-  db.insert(auditLog)
+  db.insert(systemLog)
     .values({
       tenant_key: tenantKey,
       user_key: userKey,

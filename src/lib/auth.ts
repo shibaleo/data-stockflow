@@ -11,6 +11,7 @@ export interface AuthResult {
   tenantKey: number;
   role: UserRole;
   roleCode: string;
+  userName: string;
 }
 
 const ROLES: readonly string[] = [
@@ -53,6 +54,67 @@ interface ClerkIdentity {
   email: string | null;
 }
 
+// ── In-memory caches (process-level, cleared on redeploy) ──
+
+/** Clerk userId → email, TTL 10 min */
+const emailCache = new Map<string, { email: string | null; expiresAt: number }>();
+const EMAIL_CACHE_TTL = 10 * 60 * 1000;
+
+/** AuthResult cache keyed by Clerk userId, TTL 5 min */
+const authCache = new Map<string, { result: AuthResult; expiresAt: number }>();
+const AUTH_CACHE_TTL = 5 * 60 * 1000;
+
+function getCachedEmail(userId: string): string | null | undefined {
+  const entry = emailCache.get(userId);
+  if (!entry) return undefined;
+  if (Date.now() > entry.expiresAt) { emailCache.delete(userId); return undefined; }
+  return entry.email;
+}
+
+function setCachedEmail(userId: string, email: string | null) {
+  emailCache.set(userId, { email, expiresAt: Date.now() + EMAIL_CACHE_TTL });
+}
+
+function getCachedAuth(userId: string): AuthResult | undefined {
+  const entry = authCache.get(userId);
+  if (!entry) return undefined;
+  if (Date.now() > entry.expiresAt) { authCache.delete(userId); return undefined; }
+  return entry.result;
+}
+
+function setCachedAuth(userId: string, result: AuthResult) {
+  authCache.set(userId, { result, expiresAt: Date.now() + AUTH_CACHE_TTL });
+}
+
+async function fetchClerkEmail(userId: string): Promise<string | null> {
+  const cached = getCachedEmail(userId);
+  if (cached !== undefined) return cached;
+
+  const clerkSecretKey = process.env.CLERK_SECRET_KEY;
+  if (!clerkSecretKey) return null;
+
+  try {
+    const res = await fetch(`https://api.clerk.com/v1/users/${userId}`, {
+      headers: { Authorization: `Bearer ${clerkSecretKey}` },
+    });
+    if (res.ok) {
+      const userData = await res.json() as {
+        email_addresses?: Array<{ email_address: string; id: string }>;
+        primary_email_address_id?: string;
+      };
+      const primary = userData.email_addresses?.find(
+        (e) => e.id === userData.primary_email_address_id
+      );
+      const email = primary?.email_address ?? userData.email_addresses?.[0]?.email_address ?? null;
+      setCachedEmail(userId, email);
+      return email;
+    }
+  } catch {
+    // Clerk API unreachable — continue without email
+  }
+  return null;
+}
+
 async function verifyClerkToken(token: string): Promise<ClerkIdentity | null> {
   const jwks = getClerkJWKS();
   if (!jwks) return null;
@@ -61,36 +123,14 @@ async function verifyClerkToken(token: string): Promise<ClerkIdentity | null> {
     const userId = payload.sub as string;
     if (!userId) return null;
 
-    // Fetch email from Clerk Backend API
-    const clerkSecretKey = process.env.CLERK_SECRET_KEY;
-    let email: string | null = null;
-    if (clerkSecretKey) {
-      try {
-        const res = await fetch(`https://api.clerk.com/v1/users/${userId}`, {
-          headers: { Authorization: `Bearer ${clerkSecretKey}` },
-        });
-        if (res.ok) {
-          const userData = await res.json() as {
-            email_addresses?: Array<{ email_address: string; id: string }>;
-            primary_email_address_id?: string;
-          };
-          const primary = userData.email_addresses?.find(
-            (e) => e.id === userData.primary_email_address_id
-          );
-          email = primary?.email_address ?? userData.email_addresses?.[0]?.email_address ?? null;
-        }
-      } catch {
-        // Clerk API unreachable — continue without email
-      }
-    }
-
+    const email = await fetchClerkEmail(userId);
     return { userId, email };
   } catch {
     return null;
   }
 }
 
-type UserRow = { key: number; tenant_key: number; role_key: number; role_code: string };
+type UserRow = { key: number; tenant_key: number; role_key: number; role_code: string; name: string };
 
 function toAuthResult(row: UserRow): AuthResult | null {
   if (!ROLES.includes(row.role_code)) return null;
@@ -99,6 +139,7 @@ function toAuthResult(row: UserRow): AuthResult | null {
     tenantKey: row.tenant_key,
     role: row.role_code as UserRole,
     roleCode: row.role_code,
+    userName: row.name,
   };
 }
 
@@ -114,7 +155,7 @@ async function findUser(
 ): Promise<AuthResult | null> {
   // 1. Try external_id (Clerk User ID)
   const { rows: byExtId } = await db.execute(sql`
-    SELECT u.key, u.tenant_key, u.role_key, r.code as role_code
+    SELECT u.key, u.tenant_key, u.role_key, u.name, r.code as role_code
     FROM ${sql.raw(`"${S}".current_user`)} u
     JOIN ${sql.raw(`"${S}".current_role`)} r ON r.key = u.role_key
     WHERE u.external_id = ${identity.userId}
@@ -174,6 +215,7 @@ async function verifyDevToken(token: string): Promise<AuthResult | null> {
     const userKey = Number(payload.sub);
     const tenantKey = Number(payload.tenant_key);
     const roleCode = payload.role as string | undefined;
+    const userName = (payload.name as string | undefined) ?? "dev";
     if (!userKey || !tenantKey || !roleCode) return null;
     if (!ROLES.includes(roleCode)) return null;
     return {
@@ -181,6 +223,7 @@ async function verifyDevToken(token: string): Promise<AuthResult | null> {
       tenantKey,
       role: roleCode as UserRole,
       roleCode,
+      userName,
     };
   } catch {
     return null;
@@ -227,10 +270,14 @@ export async function authenticate(
       return verifyApiKey(token);
     }
 
-    // Try Clerk JWKS → DB lookup by external_id or email
+    // Try Clerk JWKS → cache or DB lookup
     const clerkIdentity = await verifyClerkToken(token);
     if (clerkIdentity) {
-      return findUser(clerkIdentity);
+      const cached = getCachedAuth(clerkIdentity.userId);
+      if (cached) return cached;
+      const result = await findUser(clerkIdentity);
+      if (result) setCachedAuth(clerkIdentity.userId, result);
+      return result;
     }
 
     // Fallback: dev HS256 token

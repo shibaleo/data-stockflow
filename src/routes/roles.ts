@@ -12,7 +12,7 @@ const routes = defineCrudRoutes("Roles", "roleId", roleResponseSchema, createRol
 
 registerCrudHandlers<CurrentRole>(app, routes, {
   table: role, tableName: "role", viewName: "current_role", historyView: "history_role",
-  entityType: "role", idParam: "roleId",
+  entityType: "role", entityLabel: "ロール", idParam: "roleId",
   mapRow: createMapper<CurrentRole>(),
   scope: () => null,
   buildCreate: (body) => ({ code: body.code, name: body.name }),

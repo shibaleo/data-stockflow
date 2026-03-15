@@ -12,7 +12,7 @@ const routes = defineCrudRoutes("Projects", "projectId", projectResponseSchema, 
 
 registerCrudHandlers<CurrentProject>(app, routes, {
   table: project, tableName: "project", viewName: "current_project", historyView: "history_project",
-  entityType: "project", idParam: "projectId",
+  entityType: "project", entityLabel: "プロジェクト", idParam: "projectId",
   mapRow: createMapper<CurrentProject>(["tenant_key"], ["parent_project_key", "department_key"]),
   scope: (c) => ({ tenant_key: c.get("tenantKey") }),
   buildCreate: (body, c) => ({

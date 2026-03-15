@@ -19,6 +19,7 @@ import {
 } from "@/lib/validators";
 import { requireTenant, requireAuth, requireRole } from "@/middleware/guards";
 import { recordAudit } from "@/lib/audit";
+import { recordEvent } from "@/lib/event-log";
 import { getMaxRevision } from "@/lib/append-only";
 import {
   computeRevisionHash,
@@ -252,6 +253,13 @@ app.openapi(updateRoute, async (c) => {
 
   const action = body.is_active === false ? "deactivate" as const : "update" as const;
   recordAudit(c, { action, entityType: "journal", entityKey: journalKey, revision: maxRev + 1 });
+  recordEvent(c, {
+    action, entityType: "journal", entityKey: journalKey,
+    entityName: current.description ?? undefined,
+    summary: action === "deactivate"
+      ? `仕訳 #${journalKey} を無効化しました`
+      : `仕訳 #${journalKey} を更新しました`,
+  });
 
   // Re-fetch for full response
   const updated = await getJournalForVoucher(voucherKey, journalKey);
@@ -295,6 +303,11 @@ app.openapi(deleteRoute, async (c) => {
   });
 
   recordAudit(c, { action: "deactivate", entityType: "journal", entityKey: journalKey, revision: maxRev + 1 });
+  recordEvent(c, {
+    action: "deactivate", entityType: "journal", entityKey: journalKey,
+    entityName: current.description ?? undefined,
+    summary: `仕訳 #${journalKey} を無効化しました`,
+  });
   return c.json({ message: "Deactivated" }, 200);
 });
 

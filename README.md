@@ -118,6 +118,43 @@ curl -H "Authorization: Bearer $PLATFORM_API_KEY" http://localhost:3000/api/v1/b
 | admin | マスタ管理 + 仕訳操作 |
 | user | 仕訳操作 |
 
+## API ファースト設計
+
+本システムは **API ファースト** で設計されています。
+
+- **OpenAPI 仕様駆動**: 全エンドポイントを `@hono/zod-openapi` で定義。リクエスト・レスポンスのバリデーションとドキュメント生成を型安全に一元管理
+- **UI は API のクライアント**: フロントエンド (Next.js) は `/api/v1/*` を RESTful に呼び出すだけ。ビジネスロジックは API 層に集約
+- **複数クライアント対応**: ブラウザ UI、curl、CI スクリプト、外部システムのいずれも同一 API を利用
+- **認証の統一**: Clerk セッション (ブラウザ) と `sf_` API Key (スクリプト/CI) を単一の `authenticate()` で処理
+- **Scalar API Reference**: `/api/v1/reference` でインタラクティブな API ドキュメントを提供
+
+## 監査・ログ設計
+
+### 二層ログアーキテクチャ
+
+| ログ | テーブル | 用途 | エンドポイント |
+|---|---|---|---|
+| **システムログ** | `system_log` | システム操作の記録 (entity_type, entity_key, revision) | `GET /api/v1/audit-logs` |
+| **イベントログ** | `event_log` | ビジネスレベルの活動記録 (誰が何をしたか) | `GET /api/v1/event-logs` |
+
+### システムログ (`system_log`)
+- 全 CUD 操作を fire-and-forget で記録
+- entity_type / entity_key / revision で操作対象を特定
+- 開発者・運用者向けのトレーサビリティ
+
+### イベントログ (`event_log`)
+- **ユーザー名のスナップショット**: 後からユーザー名が変更されても記録が残る
+- **人間可読な要約**: `summary` フィールド (例: `科目「現金」を作成しました`)
+- **対象エンティティ名**: `entity_name` で操作対象を直感的に特定
+- **変更差分**: `changes` (JSONB) にフィールド単位の変更 `[{ field, from, to }]` を記録
+- 監査役・管理者が「誰がいつ何をしたか」を時系列で確認可能
+
+### データ改ざん防止
+- **Append-only**: 全マスタ・トランザクションは INSERT のみ。UPDATE / DELETE なし
+- **リビジョンチェーン**: 各エンティティの revision_hash で改ざん検知
+- **ヘッダーチェーン**: 伝票の header_hash で連番の改ざんを検知
+- **完全性検証**: `GET /api/v1/integrity` でハッシュチェーンの整合性を検証
+
 ## 設計ドキュメント
 
 - [docs/002_requirements.md](docs/002_requirements.md) — 要件定義

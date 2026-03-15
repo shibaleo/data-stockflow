@@ -12,7 +12,7 @@ const routes = defineCrudRoutes("Counterparties", "counterpartyId", counterparty
 
 registerCrudHandlers<CurrentCounterparty>(app, routes, {
   table: counterparty, tableName: "counterparty", viewName: "current_counterparty", historyView: "history_counterparty",
-  entityType: "counterparty", idParam: "counterpartyId",
+  entityType: "counterparty", entityLabel: "取引先", idParam: "counterpartyId",
   mapRow: createMapper<CurrentCounterparty>(["tenant_key"], ["parent_counterparty_key"]),
   scope: (c) => ({ tenant_key: c.get("tenantKey") }),
   buildCreate: (body, c) => ({

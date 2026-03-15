@@ -534,10 +534,10 @@ export const updateJournalSchema = z.object({
 });
 
 // ============================================================
-// Audit Log
+// System Log (renamed from audit_log)
 // ============================================================
 
-export const auditLogResponseSchema = z.object({
+export const systemLogResponseSchema = z.object({
   uuid: z.string(),
   tenant_id: z.number().nullable(),
   user_id: z.number(),
@@ -551,9 +551,38 @@ export const auditLogResponseSchema = z.object({
   created_at: z.string(),
 });
 
-export const auditLogQuerySchema = z.object({
+export const systemLogQuerySchema = z.object({
   entity_type: z.string().optional(),
   entity_id: z.string().optional(),
+  action: z.string().optional(),
+  limit: z.string().optional().openapi({ example: "50" }),
+  cursor: z.string().optional(),
+});
+
+// ============================================================
+// Event Log (business-level activity log)
+// ============================================================
+
+export const eventLogResponseSchema = z.object({
+  uuid: z.string(),
+  tenant_id: z.number().nullable(),
+  user_name: z.string(),
+  user_role: z.string(),
+  action: z.string(),
+  entity_type: z.string(),
+  entity_name: z.string().nullable(),
+  summary: z.string(),
+  changes: z.array(z.object({
+    field: z.string(),
+    from: z.unknown().nullable(),
+    to: z.unknown().nullable(),
+  })).nullable(),
+  source_ip: z.string().nullable(),
+  created_at: z.string(),
+});
+
+export const eventLogQuerySchema = z.object({
+  entity_type: z.string().optional(),
   action: z.string().optional(),
   limit: z.string().optional().openapi({ example: "50" }),
   cursor: z.string().optional(),

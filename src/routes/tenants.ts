@@ -7,6 +7,7 @@ import { createMapper, defineCrudRoutes, registerCrudHandlers } from "@/lib/crud
 import { listCurrent, getCurrent } from "@/lib/append-only";
 import { computeMasterHashes } from "@/lib/entity-hash";
 import { recordAudit } from "@/lib/audit";
+import { recordEvent } from "@/lib/event-log";
 import { createRoute, z } from "@hono/zod-openapi";
 import type { CurrentTenant, CurrentUser } from "@/lib/types";
 
@@ -17,7 +18,7 @@ const routes = defineCrudRoutes("Tenants", "tenantId", tenantResponseSchema, cre
 
 registerCrudHandlers<CurrentTenant>(app, routes, {
   table: tenant, tableName: "tenant", viewName: "current_tenant", historyView: "history_tenant",
-  entityType: "tenant", idParam: "tenantId",
+  entityType: "tenant", entityLabel: "テナント", idParam: "tenantId",
   mapRow: createMapper<CurrentTenant>(),
   scope: () => null,
   buildCreate: (body) => ({ name: body.name }),
@@ -104,6 +105,11 @@ app.openapi(createTenantUser, async (c) => {
   }).returning();
 
   recordAudit(c, { action: "create", entityType: "user", entityKey: created.key });
+  recordEvent(c, {
+    action: "create", entityType: "user", entityKey: created.key,
+    entityName: name,
+    summary: `ユーザー「${name}」を作成しました`,
+  });
   return c.json({ data: mapUser(created as unknown as CurrentUser) }, 201);
 });
 

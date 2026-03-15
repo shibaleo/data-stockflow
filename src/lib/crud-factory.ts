@@ -12,6 +12,7 @@ import { listCurrent, getCurrent, getMaxRevision, listHistory } from "@/lib/appe
 import { errorSchema, messageSchema, dataSchema } from "@/lib/validators";
 import { requireRole } from "@/middleware/guards";
 import { recordAudit, type AuditEntityType } from "@/lib/audit";
+import { recordEvent, computeChanges } from "@/lib/event-log";
 import { computeMasterHashes } from "@/lib/entity-hash";
 import type { Context } from "hono";
 import type { AppVariables, UserRole } from "@/middleware/context";
@@ -128,6 +129,7 @@ interface CrudConfig<T extends BaseRow> {
   viewName: string;
   historyView: string;
   entityType: AuditEntityType;
+  entityLabel: string; // e.g. "帳簿", "科目", "タグ"
   idParam: string;
   mapRow: (row: T) => Record<string, unknown>;
   scope: (c: Ctx) => { tenant_key: number } | { book_key: number } | null;
@@ -146,7 +148,7 @@ export function registerCrudHandlers<T extends BaseRow>(
   config: CrudConfig<T>,
 ) {
   const {
-    table, tableName, viewName, historyView, entityType,
+    table, tableName, viewName, historyView, entityType, entityLabel,
     idParam, mapRow, scope,
     buildCreate, hashCreate,
     buildUpdate, hashUpdate,
@@ -157,14 +159,16 @@ export function registerCrudHandlers<T extends BaseRow>(
   const writeGuard = requireRole(...writeRoles);
 
   const getKey = (c: Ctx) => Number(c.req.param(idParam));
+  // platform role bypasses tenant/book scope filter
+  const resolveScope = (c: Ctx) => c.get("userRole") === "platform" ? null : scope(c);
   const getFilter = (c: Ctx, entityKey: number) => {
-    const s = scope(c);
+    const s = resolveScope(c);
     return s ? { ...s, key: entityKey } : { key: entityKey };
   };
 
   // LIST
   app.openapi(routes.list, async (c) => {
-    const rows = await listCurrent<T>(viewName, scope(c));
+    const rows = await listCurrent<T>(viewName, resolveScope(c));
     return c.json({ data: rows.map(mapRow) }, 200);
   });
 
@@ -182,6 +186,12 @@ export function registerCrudHandlers<T extends BaseRow>(
     const hashes = computeMasterHashes(hashCreate(body), null);
     const [created] = await db.insert(table).values({ ...buildCreate(body, c), ...hashes }).returning();
     recordAudit(c, { action: "create", entityType, entityKey: created.key });
+    const name = (body.name as string) ?? (body.code as string) ?? "";
+    recordEvent(c, {
+      action: "create", entityType, entityKey: created.key,
+      entityName: name,
+      summary: `${entityLabel}「${name}」を作成しました`,
+    });
     return c.json({ data: mapRow(created as unknown as T) }, 201);
   });
 
@@ -199,6 +209,16 @@ export function registerCrudHandlers<T extends BaseRow>(
     }).returning();
     const action = (body.is_active === false) ? "deactivate" as const : "update" as const;
     recordAudit(c, { action, entityType, entityKey, revision: maxRev + 1 });
+    const currentName = (current as T & { name?: string }).name ?? "";
+    const changes = computeChanges(mapRow(current), body);
+    recordEvent(c, {
+      action, entityType, entityKey,
+      entityName: currentName,
+      summary: action === "deactivate"
+        ? `${entityLabel}「${currentName}」を無効化しました`
+        : `${entityLabel}「${currentName}」を更新しました`,
+      changes: changes.length > 0 ? changes : undefined,
+    });
     return c.json({ data: mapRow(updated as unknown as T) }, 200);
   });
 
@@ -217,6 +237,12 @@ export function registerCrudHandlers<T extends BaseRow>(
       key: entityKey, revision: maxRev + 1, ...buildDeactivate(current, c), is_active: false, ...hashes,
     });
     recordAudit(c, { action: "deactivate", entityType, entityKey, revision: maxRev + 1 });
+    const currentName = (current as T & { name?: string }).name ?? "";
+    recordEvent(c, {
+      action: "deactivate", entityType, entityKey,
+      entityName: currentName,
+      summary: `${entityLabel}「${currentName}」を無効化しました`,
+    });
     return c.json({ message: "Deactivated" }, 200);
   });
 

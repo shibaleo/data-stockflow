@@ -12,7 +12,7 @@ const routes = defineCrudRoutes("FiscalPeriods", "periodId", fiscalPeriodRespons
 
 registerCrudHandlers<CurrentFiscalPeriod>(app, routes, {
   table: fiscalPeriod, tableName: "fiscal_period", viewName: "current_fiscal_period", historyView: "history_fiscal_period",
-  entityType: "fiscal_period", idParam: "periodId",
+  entityType: "fiscal_period", entityLabel: "会計期間", idParam: "periodId",
   mapRow: createMapper<CurrentFiscalPeriod>([], ["book_key", "parent_period_key"]),
   scope: (c) => ({ book_key: c.get("bookKey") }),
   buildCreate: (body, c) => ({

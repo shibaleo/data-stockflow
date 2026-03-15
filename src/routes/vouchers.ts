@@ -6,6 +6,7 @@ import { voucher, journal, journalLine, journalTag } from "@/lib/db/schema";
 import { errorSchema, dataSchema, voucherResponseSchema, voucherDetailResponseSchema, createVoucherSchema } from "@/lib/validators";
 import { requireTenant, requireAuth, requireRole } from "@/middleware/guards";
 import { recordAudit } from "@/lib/audit";
+import { recordEvent } from "@/lib/event-log";
 import { createMapper } from "@/lib/crud-factory";
 import {
   acquireNextHeaderSequence,
@@ -266,6 +267,11 @@ app.openapi(create, async (c) => {
   });
 
   recordAudit(c, { action: "create", entityType: "voucher", entityKey: result.voucher.key });
+  recordEvent(c, {
+    action: "create", entityType: "voucher", entityKey: result.voucher.key,
+    entityName: body.voucher_code ?? undefined,
+    summary: `伝票を作成しました（仕訳${body.journals.length}件）`,
+  });
 
   // Build response
   const voucherResponse = mapVoucher(result.voucher as unknown as VoucherRow);

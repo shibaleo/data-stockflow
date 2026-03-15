@@ -12,7 +12,7 @@ const routes = defineCrudRoutes("VoucherTypes", "voucherTypeId", voucherTypeResp
 
 registerCrudHandlers<CurrentVoucherType>(app, routes, {
   table: voucherType, tableName: "voucher_type", viewName: "current_voucher_type", historyView: "history_voucher_type",
-  entityType: "voucher_type", idParam: "voucherTypeId",
+  entityType: "voucher_type", entityLabel: "伝票タイプ", idParam: "voucherTypeId",
   mapRow: createMapper<CurrentVoucherType>(["tenant_key"], ["parent_voucher_type_key"]),
   scope: (c) => ({ tenant_key: c.get("tenantKey") }),
   buildCreate: (body, c) => ({

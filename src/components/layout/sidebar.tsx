@@ -10,6 +10,7 @@ import {
   Calendar,
   FileCode2,
   FolderKanban,
+  ScrollText,
   Layers,
   List,
   PanelLeftClose,
@@ -49,6 +50,7 @@ const navItems: NavItem[] = [
   { href: "/fiscal-periods", label: "期間", icon: Calendar, separator: true },
   { href: "/books", label: "帳簿", icon: BookOpen },
   { href: "/users", label: "ユーザー", icon: Shield },
+  { href: "/audit-logs", label: "監査ログ", icon: ScrollText },
   { href: "/api-doc", label: "API", icon: FileCode2 },
 ];
 

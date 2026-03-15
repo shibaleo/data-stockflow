@@ -18,6 +18,7 @@ import { requireAuth, requireRole, requireBook } from "@/middleware/guards";
 import { computeMasterHashes } from "@/lib/entity-hash";
 import type { CurrentFiscalPeriod } from "@/lib/types";
 import { recordAudit } from "@/lib/audit";
+import { recordEvent } from "@/lib/event-log";
 import { createMapper } from "@/lib/crud-factory";
 
 const app = createApp();
@@ -73,6 +74,11 @@ app.openapi(close, async (c) => {
   }).returning();
 
   recordAudit(c, { action: "close", entityType: "fiscal_period", entityKey: periodKey, revision: maxRev + 1 });
+  recordEvent(c, {
+    action: "close", entityType: "fiscal_period", entityKey: periodKey,
+    entityName: current.code,
+    summary: `会計期間「${current.code}」を締めました`,
+  });
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return c.json({ data: mapFp(updated as unknown as CurrentFiscalPeriod) } as any, 200);
 });
@@ -122,6 +128,11 @@ app.openapi(reopen, async (c) => {
   }).returning();
 
   recordAudit(c, { action: "reopen", entityType: "fiscal_period", entityKey: periodKey, revision: maxRev + 1 });
+  recordEvent(c, {
+    action: "reopen", entityType: "fiscal_period", entityKey: periodKey,
+    entityName: current.code,
+    summary: `会計期間「${current.code}」を再開しました`,
+  });
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return c.json({ data: mapFp(updated as unknown as CurrentFiscalPeriod) } as any, 200);
 });

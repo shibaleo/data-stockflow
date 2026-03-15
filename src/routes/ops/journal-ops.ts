@@ -23,6 +23,7 @@ import type {
   JournalTagRow,
 } from "@/lib/types";
 import { recordAudit } from "@/lib/audit";
+import { recordEvent } from "@/lib/event-log";
 import {
   computeRevisionHash,
   computeLinesHash,
@@ -187,6 +188,11 @@ app.openapi(reverse, async (c) => {
     entityKey: result.key,
     revision: 1,
     detail: { original_journal_key: journalKey },
+  });
+  recordEvent(c, {
+    action: "reverse", entityType: "journal", entityKey: result.key,
+    entityName: description,
+    summary: `仕訳 #${journalKey} の逆仕訳を作成しました`,
   });
 
   // Build response
