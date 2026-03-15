@@ -34,6 +34,7 @@ export interface CurrentUser extends BaseEntity {
   external_id: string | null;
   tenant_key: number;
   role_key: number;
+  is_active: boolean;
 }
 
 // ── マスタ系 ──

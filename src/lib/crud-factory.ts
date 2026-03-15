@@ -89,7 +89,10 @@ export function defineCrudRoutes(
     create: createRoute({
       method: "post" as const, path: "/", tags: [tag], summary: `Create ${singular}`,
       request: { body: jc(createSchema) },
-      responses: { 201: { description: "Created", ...jc(dataSchema(responseSchema)) } },
+      responses: {
+        201: { description: "Created", ...jc(dataSchema(responseSchema)) },
+        409: { description: "Conflict", ...jc(errorSchema) },
+      },
     }),
     update: createRoute({
       method: "put" as const, path: `/{${idParam}}`, tags: [tag], summary: `Update ${singular}`,

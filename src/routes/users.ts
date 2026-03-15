@@ -13,7 +13,7 @@ import type { CurrentUser } from "@/lib/types";
 const app = createApp();
 app.use("*", requireTenant(), requireAuth());
 
-// Users don't have is_active / delete — only list, get, create, update, history
+// Users support list, get, create, update, deactivate, history
 const mapUser = createMapper<CurrentUser>([], ["tenant_key", "role_key"]);
 
 const routes = defineCrudRoutes("Users", "userId", userResponseSchema, createUserSchema, updateUserSchema);
@@ -42,6 +42,11 @@ app.openapi(routes.create, async (c) => {
   const email = body.email as string;
   const code = body.code as string;
   const name = body.name as string;
+
+  // Check email uniqueness
+  const existing = await getCurrent<CurrentUser>("current_user", { email });
+  if (existing) return c.json({ error: "Email already registered" }, 409);
+
   const hashes = computeMasterHashes({ email, role_key: String(body.role_id), code, name }, null);
   const [created] = await db.insert(user).values({
     email, tenant_key: c.get("tenantKey"),
@@ -72,10 +77,40 @@ app.openapi(routes.update, async (c) => {
     key: userKey, revision: maxRev + 1,
     email: current.email, external_id: current.external_id,
     tenant_key: c.get("tenantKey"),
-    role_key: newRoleKey, code: newCode, name: newName, ...hashes,
+    role_key: newRoleKey, code: newCode, name: newName,
+    is_active: current.is_active, ...hashes,
   }).returning();
   recordAudit(c, { action: "update", entityType: "user", entityKey: userKey, revision: maxRev + 1 });
   return c.json({ data: mapUser(updated as unknown as CurrentUser) }, 200);
+});
+
+app.use(routes.del.getRoutingPath(), requireRole("admin"));
+app.openapi(routes.del, async (c) => {
+  const userKey = Number(c.req.param("userId"));
+
+  // Cannot deactivate yourself
+  if (userKey === c.get("userKey")) {
+    return c.json({ error: "Cannot deactivate yourself" }, 422);
+  }
+
+  const current = await getCurrent<CurrentUser>("current_user", { tenant_key: c.get("tenantKey"), key: userKey });
+  if (!current) return c.json({ error: "Not found" }, 404);
+  if (current.is_active === false) return c.json({ error: "Already deactivated" }, 422);
+
+  const maxRev = await getMaxRevision("user", userKey);
+  const hashes = computeMasterHashes(
+    { email: current.email, role_key: String(current.role_key), code: current.code, name: current.name },
+    current.revision_hash,
+  );
+  await db.insert(user).values({
+    key: userKey, revision: maxRev + 1,
+    email: current.email, external_id: current.external_id,
+    tenant_key: c.get("tenantKey"),
+    role_key: current.role_key, code: current.code, name: current.name,
+    is_active: false, ...hashes,
+  });
+  recordAudit(c, { action: "deactivate", entityType: "user", entityKey: userKey, revision: maxRev + 1 });
+  return c.json({ message: "Deactivated" }, 200);
 });
 
 app.openapi(routes.history, async (c) => {

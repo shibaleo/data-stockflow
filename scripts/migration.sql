@@ -75,6 +75,7 @@ CREATE TABLE data_stockflow."user" (
   external_id      TEXT,
   tenant_key       BIGINT NOT NULL,
   role_key         BIGINT NOT NULL,
+  is_active        BOOLEAN NOT NULL DEFAULT true,
   PRIMARY KEY (key, revision),
   UNIQUE (tenant_key, code, revision)
 );

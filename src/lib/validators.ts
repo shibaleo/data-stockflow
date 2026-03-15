@@ -102,6 +102,7 @@ export const userResponseSchema = z.object({
   name: z.string(),
   tenant_id: z.number(),
   role_id: z.number(),
+  is_active: z.boolean(),
   revision: z.number(),
   created_at: z.string(),
 });

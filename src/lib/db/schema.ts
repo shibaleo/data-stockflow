@@ -113,6 +113,7 @@ export const user = s.table(
     external_id: text("external_id"),
     tenant_key: bigint("tenant_key", { mode: "number" }).notNull(),
     role_key: bigint("role_key", { mode: "number" }).notNull(),
+    is_active: boolean("is_active").default(true).notNull(),
   },
   (t) => [
     primaryKey({ columns: [t.key, t.revision] }),
