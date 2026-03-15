@@ -119,8 +119,10 @@ app.openapi(get, async (c) => {
     return {
       id: j.key, voucher_id: j.voucher_key, book_id: j.book_key, revision: j.revision,
       is_active: j.is_active, journal_type_id: j.journal_type_key,
-      voucher_type_id: j.voucher_type_key, adjustment_flag: j.adjustment_flag,
+      voucher_type_id: j.voucher_type_key, project_id: j.project_key,
+      adjustment_flag: j.adjustment_flag,
       description: j.description,
+      metadata: (j.metadata ?? {}) as Record<string, string>,
       created_at: j.created_at instanceof Date ? j.created_at.toISOString() : String(j.created_at),
       lines, tags,
     };
@@ -227,8 +229,10 @@ app.openapi(create, async (c) => {
         tenant_key: tenantKey, voucher_key: v.key, book_key: jInput.book_id,
         journal_type_key: jInput.journal_type_id,
         voucher_type_key: jInput.voucher_type_id,
+        project_key: jInput.project_id,
         adjustment_flag: jInput.adjustment_flag ?? "none",
         description: jInput.description ?? null,
+        metadata: jInput.metadata ?? {},
         created_by: userKey, lines_hash: linesHash,
         prev_revision_hash: GENESIS_PREV_HASH, revision_hash: revisionHash,
       }).returning();
@@ -239,8 +243,8 @@ app.openapi(create, async (c) => {
           journal_key: j.key, journal_revision: 1, tenant_key: tenantKey,
           sort_order: l.sort_order, side: l.side,
           account_key: l.account_id,
-          department_key: l.department_id ?? null,
-          counterparty_key: l.counterparty_id ?? null,
+          department_key: l.department_id,
+          counterparty_key: l.counterparty_id,
           amount: l.amount, description: l.description ?? null,
         })),
       );
@@ -270,13 +274,15 @@ app.openapi(create, async (c) => {
     id: j.journal.key, voucher_id: result.voucher.key, book_id: j.journal.book_key, revision: 1,
     is_active: true,
     journal_type_id: j.journal.journal_type_key, voucher_type_id: j.journal.voucher_type_key,
+    project_id: j.journal.project_key,
     adjustment_flag: j.journal.adjustment_flag, description: j.journal.description,
+    metadata: (j.journal.metadata ?? {}) as Record<string, string>,
     created_at: j.journal.created_at instanceof Date ? j.journal.created_at.toISOString() : String(j.journal.created_at),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     lines: j.lines.map((l: any) => ({
       uuid: "", sort_order: l.sort_order, side: l.side,
-      account_id: l.account_id, department_id: l.department_id ?? null,
-      counterparty_id: l.counterparty_id ?? null,
+      account_id: l.account_id, department_id: l.department_id,
+      counterparty_id: l.counterparty_id,
       amount: String(Math.abs(parseFloat(l.amount))),
       description: l.description ?? null,
     })),

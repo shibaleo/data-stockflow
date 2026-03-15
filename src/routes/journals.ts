@@ -77,8 +77,10 @@ async function buildJournalDetail(j: CurrentJournal) {
   return {
     id: j.key, voucher_id: j.voucher_key, book_id: j.book_key, revision: j.revision,
     is_active: j.is_active, journal_type_id: j.journal_type_key,
-    voucher_type_id: j.voucher_type_key, adjustment_flag: j.adjustment_flag,
+    voucher_type_id: j.voucher_type_key, project_id: j.project_key,
+    adjustment_flag: j.adjustment_flag,
     description: j.description,
+    metadata: (j.metadata ?? {}) as Record<string, string>,
     created_at: j.created_at instanceof Date ? j.created_at.toISOString() : String(j.created_at),
     lines, tags,
   };
@@ -192,8 +194,10 @@ app.openapi(updateRoute, async (c) => {
 
     const resolvedTypeKey = body.journal_type_id ?? current.journal_type_key;
     const resolvedVoucherTypeKey = body.voucher_type_id ?? current.voucher_type_key;
+    const resolvedProjectKey = body.project_id ?? current.project_key;
     const resolvedAdj = body.adjustment_flag ?? current.adjustment_flag;
     const resolvedDesc = body.description !== undefined ? body.description : current.description;
+    const resolvedMetadata = body.metadata ?? current.metadata;
     const resolvedActive = body.is_active ?? current.is_active;
 
     const linesHashInputs: LineHashInput[] = signedLines.map((l) => ({
@@ -215,8 +219,10 @@ app.openapi(updateRoute, async (c) => {
       key: journalKey, revision: maxRev + 1,
       tenant_key: tenantKey, voucher_key: voucherKey, book_key: resolvedBookKey,
       is_active: resolvedActive, journal_type_key: resolvedTypeKey,
-      voucher_type_key: resolvedVoucherTypeKey, adjustment_flag: resolvedAdj,
-      description: resolvedDesc, created_by: userKey,
+      voucher_type_key: resolvedVoucherTypeKey, project_key: resolvedProjectKey,
+      adjustment_flag: resolvedAdj,
+      description: resolvedDesc, metadata: resolvedMetadata,
+      created_by: userKey,
       lines_hash: linesHash, prev_revision_hash: prevRevisionHash,
       revision_hash: revisionHash,
     }).returning();
@@ -226,8 +232,8 @@ app.openapi(updateRoute, async (c) => {
         journal_key: journalKey, journal_revision: maxRev + 1, tenant_key: tenantKey,
         sort_order: l.sort_order, side: l.side,
         account_key: l.account_id,
-        department_key: l.department_id ?? null,
-        counterparty_key: l.counterparty_id ?? null,
+        department_key: l.department_id,
+        counterparty_key: l.counterparty_id,
         amount: l.amount, description: l.description ?? null,
       })),
     );
@@ -279,8 +285,10 @@ app.openapi(deleteRoute, async (c) => {
       key: journalKey, revision: maxRev + 1,
       tenant_key: tenantKey, voucher_key: voucherKey, book_key: current.book_key,
       is_active: false, journal_type_key: current.journal_type_key,
-      voucher_type_key: current.voucher_type_key, adjustment_flag: current.adjustment_flag,
-      description: current.description, created_by: userKey,
+      voucher_type_key: current.voucher_type_key, project_key: current.project_key,
+      adjustment_flag: current.adjustment_flag,
+      description: current.description, metadata: current.metadata,
+      created_by: userKey,
       lines_hash: linesHash, prev_revision_hash: prevRevisionHash,
       revision_hash: revisionHash,
     });
@@ -302,8 +310,10 @@ app.openapi(historyRoute, async (c) => {
     data: journals.map((j) => ({
       id: j.key, voucher_id: j.voucher_key, book_id: j.book_key, revision: j.revision,
       is_active: j.is_active, journal_type_id: j.journal_type_key,
-      voucher_type_id: j.voucher_type_key, adjustment_flag: j.adjustment_flag,
+      voucher_type_id: j.voucher_type_key, project_id: j.project_key,
+      adjustment_flag: j.adjustment_flag,
       description: j.description,
+      metadata: (j.metadata ?? {}) as Record<string, string>,
       created_at: j.created_at instanceof Date ? j.created_at.toISOString() : String(j.created_at),
     })),
   }, 200);

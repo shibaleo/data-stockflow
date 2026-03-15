@@ -231,6 +231,7 @@ export const tagResponseSchema = z.object({
   name: z.string(),
   tag_type: z.string(),
   is_active: z.boolean(),
+  parent_tag_id: z.number().nullable(),
   revision: z.number(),
   created_at: z.string(),
 });
@@ -239,12 +240,14 @@ export const createTagSchema = z.object({
   code: zSanitized(z.string().min(1).max(50)),
   name: zSanitized(z.string().min(1).max(200)),
   tag_type: zSanitized(z.string().min(1).max(100)),
+  parent_tag_id: z.number().int().positive().optional(),
 });
 
 export const updateTagSchema = z.object({
   code: zSanitized(z.string().min(1).max(100)).optional(),
   name: zSanitized(z.string().min(1).max(200)).optional(),
   tag_type: zSanitized(z.string().min(1).max(100)).optional(),
+  parent_tag_id: z.number().int().positive().nullable().optional(),
   is_active: z.boolean().optional(),
 });
 
@@ -287,6 +290,7 @@ export const counterpartyResponseSchema = z.object({
   code: z.string(),
   name: z.string(),
   is_active: z.boolean(),
+  parent_counterparty_id: z.number().nullable(),
   revision: z.number(),
   created_at: z.string(),
 });
@@ -294,11 +298,13 @@ export const counterpartyResponseSchema = z.object({
 export const createCounterpartySchema = z.object({
   code: zSanitized(z.string().min(1).max(50)),
   name: zSanitized(z.string().min(1).max(200)),
+  parent_counterparty_id: z.number().int().positive().optional(),
 });
 
 export const updateCounterpartySchema = z.object({
   code: zSanitized(z.string().min(1).max(100)).optional(),
   name: zSanitized(z.string().min(1).max(200)).optional(),
+  parent_counterparty_id: z.number().int().positive().nullable().optional(),
   is_active: z.boolean().optional(),
 });
 
@@ -311,6 +317,7 @@ export const voucherTypeResponseSchema = z.object({
   code: z.string(),
   name: z.string(),
   is_active: z.boolean(),
+  parent_voucher_type_id: z.number().nullable(),
   revision: z.number(),
   created_at: z.string(),
 });
@@ -318,11 +325,13 @@ export const voucherTypeResponseSchema = z.object({
 export const createVoucherTypeSchema = z.object({
   code: zSanitized(z.string().min(1).max(50)),
   name: zSanitized(z.string().min(1).max(200)),
+  parent_voucher_type_id: z.number().int().positive().optional(),
 });
 
 export const updateVoucherTypeSchema = z.object({
   code: zSanitized(z.string().min(1).max(100)).optional(),
   name: zSanitized(z.string().min(1).max(200)).optional(),
+  parent_voucher_type_id: z.number().int().positive().nullable().optional(),
   is_active: z.boolean().optional(),
 });
 
@@ -336,6 +345,7 @@ export const journalTypeResponseSchema = z.object({
   code: z.string(),
   name: z.string(),
   is_active: z.boolean(),
+  parent_journal_type_id: z.number().nullable(),
   revision: z.number(),
   created_at: z.string(),
 });
@@ -343,11 +353,49 @@ export const journalTypeResponseSchema = z.object({
 export const createJournalTypeSchema = z.object({
   code: zSanitized(z.string().min(1).max(50)),
   name: zSanitized(z.string().min(1).max(200)),
+  parent_journal_type_id: z.number().int().positive().optional(),
 });
 
 export const updateJournalTypeSchema = z.object({
   code: zSanitized(z.string().min(1).max(100)).optional(),
   name: zSanitized(z.string().min(1).max(200)).optional(),
+  parent_journal_type_id: z.number().int().positive().nullable().optional(),
+  is_active: z.boolean().optional(),
+});
+
+// ============================================================
+// Project
+// ============================================================
+
+export const projectResponseSchema = z.object({
+  id: z.number(),
+  code: z.string(),
+  name: z.string(),
+  department_id: z.number().nullable(),
+  start_date: z.string().nullable(),
+  end_date: z.string().nullable(),
+  is_active: z.boolean(),
+  parent_project_id: z.number().nullable(),
+  revision: z.number(),
+  created_at: z.string(),
+});
+
+export const createProjectSchema = z.object({
+  code: zSanitized(z.string().min(1).max(50)),
+  name: zSanitized(z.string().min(1).max(200)),
+  department_id: z.number().int().positive().optional(),
+  start_date: z.string().datetime().optional(),
+  end_date: z.string().datetime().optional(),
+  parent_project_id: z.number().int().positive().optional(),
+});
+
+export const updateProjectSchema = z.object({
+  code: zSanitized(z.string().min(1).max(100)).optional(),
+  name: zSanitized(z.string().min(1).max(200)).optional(),
+  department_id: z.number().int().positive().nullable().optional(),
+  start_date: z.string().datetime().nullable().optional(),
+  end_date: z.string().datetime().nullable().optional(),
+  parent_project_id: z.number().int().positive().nullable().optional(),
   is_active: z.boolean().optional(),
 });
 
@@ -375,8 +423,8 @@ export const journalLineResponseSchema = z.object({
   sort_order: z.number(),
   side: z.string(),
   account_id: z.number(),
-  department_id: z.number().nullable(),
-  counterparty_id: z.number().nullable(),
+  department_id: z.number(),
+  counterparty_id: z.number(),
   amount: z.string(),
   description: z.string().nullable(),
 });
@@ -395,8 +443,10 @@ export const journalResponseSchema = z.object({
   is_active: z.boolean(),
   journal_type_id: z.number(),
   voucher_type_id: z.number(),
+  project_id: z.number(),
   adjustment_flag: z.string(),
   description: z.string().nullable(),
+  metadata: z.record(z.string(), z.string()),
   created_at: z.string(),
 });
 
@@ -409,8 +459,8 @@ export const journalLineSchema = z.object({
   sort_order: z.number().int().min(1),
   side: z.enum(["debit", "credit"]),
   account_id: z.number().int().positive(),
-  department_id: z.number().int().positive().optional(),
-  counterparty_id: z.number().int().positive().optional(),
+  department_id: z.number().int().positive(),
+  counterparty_id: z.number().int().positive(),
   amount: z.number().positive("amount must be positive"),
   description: z.string().optional(),
 });
@@ -428,10 +478,12 @@ export const createVoucherSchema = z.object({
         book_id: z.number().int().positive(),
         journal_type_id: z.number().int().positive(),
         voucher_type_id: z.number().int().positive(),
+        project_id: z.number().int().positive(),
         adjustment_flag: z
           .enum(["none", "monthly_adj", "year_end_adj"])
           .default("none"),
         description: z.string().optional(),
+        metadata: z.record(z.string(), z.string()).optional(),
         lines: z.array(journalLineSchema).min(2),
         tags: z.array(z.number().int().positive()).optional(),
       })
@@ -447,10 +499,12 @@ export const updateJournalSchema = z.object({
   book_id: z.number().int().positive().optional(),
   journal_type_id: z.number().int().positive().optional(),
   voucher_type_id: z.number().int().positive().optional(),
+  project_id: z.number().int().positive().optional(),
   adjustment_flag: z
     .enum(["none", "monthly_adj", "year_end_adj"])
     .optional(),
   description: z.string().nullable().optional(),
+  metadata: z.record(z.string(), z.string()).optional(),
   is_active: z.boolean().optional(),
   lines: z.array(journalLineSchema).min(2),
   tags: z.array(z.number().int().positive()).optional(),

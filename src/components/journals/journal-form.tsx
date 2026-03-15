@@ -48,6 +48,8 @@ interface VoucherTypeRow extends EntityRow {}
 
 interface JournalTypeRow extends EntityRow {}
 
+interface ProjectRow extends EntityRow {}
+
 interface VoucherDetail {
   id: number;
   fiscal_period_id: number;
@@ -60,8 +62,10 @@ interface VoucherDetail {
     revision: number;
     journal_type_id: number;
     voucher_type_id: number;
+    project_id: number;
     adjustment_flag: string;
     description: string | null;
+    metadata: Record<string, string>;
     lines: {
       side: string;
       account_id: number;
@@ -105,17 +109,21 @@ const EMPTY_ROW: RowData = {
 interface JournalSection {
   bookId: string;
   journalTypeId: string;
+  projectId: string;
   description: string;
   tags: number[];
+  metadata: Record<string, string>;
   rows: RowData[];
 }
 
-function emptySection(bookId: string, defaultJournalTypeId = ""): JournalSection {
+function emptySection(bookId: string, defaultJournalTypeId = "", defaultProjectId = ""): JournalSection {
   return {
     bookId,
     journalTypeId: defaultJournalTypeId,
+    projectId: defaultProjectId,
     description: "",
     tags: [],
+    metadata: {},
     rows: [{ ...EMPTY_ROW }],
   };
 }
@@ -313,6 +321,7 @@ export function JournalForm({ editId, onSuccess, onCancel }: Props) {
   const cps = useEntityManager<Counterparty>({ endpoint: "/counterparties" });
   const tags = useEntityManager<TagRow>({ endpoint: "/tags", extraCreateFields: { tag_type: "general" } });
   const vts = useEntityManager<VoucherTypeRow>({ endpoint: "/voucher-types" });
+  const projects = useEntityManager<ProjectRow>({ endpoint: "/projects" });
 
   // Voucher-level state
   const [postedDate, setPostedDate] = useState(new Date().toISOString().slice(0, 10));
@@ -328,6 +337,12 @@ export function JournalForm({ editId, onSuccess, onCancel }: Props) {
       setVoucherTypeId(String(vts.items[0].id));
     }
   }, [vts.items, voucherTypeId]);
+
+  // Default project ID for new sections
+  const defaultProjectId = useMemo(
+    () => projects.items.length > 0 ? String(projects.items[0].id) : "",
+    [projects.items],
+  );
 
   // ── Book-scoped data loading (accounts + journal types) ──
   useEffect(() => {
@@ -410,8 +425,10 @@ export function JournalForm({ editId, onSuccess, onCancel }: Props) {
           return {
             bookId: String(j.book_id),
             journalTypeId: String(j.journal_type_id),
+            projectId: String(j.project_id),
             description: j.description || "",
             tags: j.tags.map((t) => t.tag_id),
+            metadata: j.metadata ?? {},
             rows,
           };
         });
@@ -457,7 +474,7 @@ export function JournalForm({ editId, onSuccess, onCancel }: Props) {
   const addJournal = () => {
     const defaultBookId = books.length > 0 ? String(books[0].id) : "";
     const defaultJtId = journalTypes[defaultBookId]?.[0]?.id ? String(journalTypes[defaultBookId][0].id) : "";
-    setJournals((prev) => [...prev, emptySection(defaultBookId, defaultJtId)]);
+    setJournals((prev) => [...prev, emptySection(defaultBookId, defaultJtId, defaultProjectId)]);
   };
 
   const removeJournal = (ji: number) => {
@@ -591,7 +608,9 @@ export function JournalForm({ editId, onSuccess, onCancel }: Props) {
             book_id: Number(sec.bookId),
             journal_type_id: Number(sec.journalTypeId),
             voucher_type_id: Number(voucherTypeId),
+            project_id: Number(sec.projectId) || undefined,
             description: sec.description || undefined,
+            metadata: Object.keys(sec.metadata).length > 0 ? sec.metadata : undefined,
             lines: buildLines(sec),
             tags: sec.tags.length > 0 ? sec.tags : undefined,
           });
@@ -605,7 +624,9 @@ export function JournalForm({ editId, onSuccess, onCancel }: Props) {
             book_id: Number(sec.bookId),
             journal_type_id: Number(sec.journalTypeId),
             voucher_type_id: Number(voucherTypeId),
+            project_id: Number(sec.projectId) || undefined,
             description: sec.description || undefined,
+            metadata: Object.keys(sec.metadata).length > 0 ? sec.metadata : undefined,
             lines: buildLines(sec),
             tags: sec.tags.length > 0 ? sec.tags : undefined,
           })),
@@ -757,6 +778,18 @@ export function JournalForm({ editId, onSuccess, onCancel }: Props) {
                   />
                 </div>
 
+                <div className="w-32">
+                  <MasterCombobox
+                    options={projects.comboOptions}
+                    value={sec.projectId}
+                    onValueChange={(v) => updateSection(ji, { projectId: v })}
+                    placeholder="プロジェクト"
+                    onCreate={projects.create}
+                    onRename={projects.rename}
+                    className="h-7 text-xs"
+                  />
+                </div>
+
                 {/* Tags */}
                 <div className="flex items-center gap-1 flex-wrap ml-auto">
                   {sec.tags.map((tagId) => (
@@ -795,6 +828,57 @@ export function JournalForm({ editId, onSuccess, onCancel }: Props) {
                   )}
                 </div>
               </div>
+
+              {/* Metadata key-value editor */}
+              {(Object.keys(sec.metadata).length > 0 || true) && (
+                <div className="flex flex-wrap items-center gap-2 px-4 py-1.5 bg-muted/15 border-b border-border/30">
+                  <span className="text-[10px] text-muted-foreground shrink-0">属性</span>
+                  {Object.entries(sec.metadata).map(([k, v]) => (
+                    <div key={k} className="flex items-center gap-0.5">
+                      <Input
+                        value={k}
+                        onChange={(e) => {
+                          const newMeta = { ...sec.metadata };
+                          const val = newMeta[k];
+                          delete newMeta[k];
+                          newMeta[e.target.value] = val;
+                          updateSection(ji, { metadata: newMeta });
+                        }}
+                        className="h-6 w-20 text-[10px] font-mono px-1"
+                        placeholder="key"
+                      />
+                      <span className="text-[10px] text-muted-foreground">=</span>
+                      <Input
+                        value={v}
+                        onChange={(e) => {
+                          updateSection(ji, { metadata: { ...sec.metadata, [k]: e.target.value } });
+                        }}
+                        className="h-6 w-24 text-[10px] px-1"
+                        placeholder="value"
+                      />
+                      <button
+                        onClick={() => {
+                          const newMeta = { ...sec.metadata };
+                          delete newMeta[k];
+                          updateSection(ji, { metadata: newMeta });
+                        }}
+                        className="text-muted-foreground hover:text-destructive"
+                      >
+                        <X className="size-2.5" />
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    onClick={() => {
+                      const newKey = `key${Object.keys(sec.metadata).length + 1}`;
+                      updateSection(ji, { metadata: { ...sec.metadata, [newKey]: "" } });
+                    }}
+                    className="h-6 px-1.5 rounded border border-dashed border-border text-[10px] text-muted-foreground hover:text-foreground hover:border-foreground transition-colors"
+                  >
+                    + 属性追加
+                  </button>
+                </div>
+              )}
 
               {/* Grid table */}
               <table className="w-full border-collapse text-xs" style={{ tableLayout: "fixed" }}>

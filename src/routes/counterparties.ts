@@ -13,22 +13,25 @@ const routes = defineCrudRoutes("Counterparties", "counterpartyId", counterparty
 registerCrudHandlers<CurrentCounterparty>(app, routes, {
   table: counterparty, tableName: "counterparty", viewName: "current_counterparty", historyView: "history_counterparty",
   entityType: "counterparty", idParam: "counterpartyId",
-  mapRow: createMapper<CurrentCounterparty>(["tenant_key"]),
+  mapRow: createMapper<CurrentCounterparty>(["tenant_key"], ["parent_counterparty_key"]),
   scope: (c) => ({ tenant_key: c.get("tenantKey") }),
   buildCreate: (body, c) => ({
     tenant_key: c.get("tenantKey"), code: body.code, name: body.name,
+    parent_counterparty_key: body.parent_counterparty_id ?? null,
     created_by: c.get("userKey"),
   }),
   hashCreate: (body) => ({ code: body.code, name: body.name }),
   buildUpdate: (body, cur, c) => ({
     tenant_key: c.get("tenantKey"), code: body.code ?? cur.code,
     name: body.name ?? cur.name,
+    parent_counterparty_key: body.parent_counterparty_id !== undefined ? body.parent_counterparty_id : cur.parent_counterparty_key,
     is_active: body.is_active ?? cur.is_active, created_by: c.get("userKey"),
   }),
   hashUpdate: (body, cur) => ({ code: body.code ?? cur.code, name: body.name ?? cur.name }),
   buildDeactivate: (cur, c) => ({
     tenant_key: c.get("tenantKey"), code: cur.code,
-    name: cur.name, created_by: c.get("userKey"),
+    name: cur.name, parent_counterparty_key: cur.parent_counterparty_key,
+    created_by: c.get("userKey"),
   }),
   hashDeactivate: (cur) => ({ code: cur.code, name: cur.name }),
 });

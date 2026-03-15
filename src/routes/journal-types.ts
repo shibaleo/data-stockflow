@@ -13,22 +13,26 @@ const routes = defineCrudRoutes("JournalTypes", "journalTypeId", journalTypeResp
 registerCrudHandlers<CurrentJournalType>(app, routes, {
   table: journalType, tableName: "journal_type", viewName: "current_journal_type", historyView: "history_journal_type",
   entityType: "journal_type", idParam: "journalTypeId",
-  mapRow: createMapper<CurrentJournalType>(["book_key"]),
+  mapRow: createMapper<CurrentJournalType>(["book_key"], ["parent_journal_type_key"]),
   scope: (c) => ({ book_key: c.get("bookKey") }),
   buildCreate: (body, c) => ({
     book_key: c.get("bookKey"), code: body.code, name: body.name,
+    parent_journal_type_key: body.parent_journal_type_id ?? null,
     created_by: c.get("userKey"),
   }),
   hashCreate: (body) => ({ code: body.code, name: body.name }),
   buildUpdate: (body, cur, c) => ({
     book_key: c.get("bookKey"), code: body.code ?? cur.code,
-    name: body.name ?? cur.name, is_active: body.is_active ?? cur.is_active,
+    name: body.name ?? cur.name,
+    parent_journal_type_key: body.parent_journal_type_id !== undefined ? body.parent_journal_type_id : cur.parent_journal_type_key,
+    is_active: body.is_active ?? cur.is_active,
     created_by: c.get("userKey"),
   }),
   hashUpdate: (body, cur) => ({ code: body.code ?? cur.code, name: body.name ?? cur.name }),
   buildDeactivate: (cur, c) => ({
     book_key: c.get("bookKey"), code: cur.code,
-    name: cur.name, created_by: c.get("userKey"),
+    name: cur.name, parent_journal_type_key: cur.parent_journal_type_key,
+    created_by: c.get("userKey"),
   }),
   hashDeactivate: (cur) => ({ code: cur.code, name: cur.name }),
 });

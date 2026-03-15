@@ -78,6 +78,7 @@ export interface CurrentTag extends BaseEntity {
   name: string;
   tag_type: string;
   is_active: boolean;
+  parent_tag_key: number | null;
 }
 
 export interface CurrentDepartment extends BaseEntity {
@@ -96,6 +97,7 @@ export interface CurrentCounterparty extends BaseEntity {
   code: string;
   name: string;
   is_active: boolean;
+  parent_counterparty_key: number | null;
 }
 
 export interface CurrentVoucherType extends BaseEntity {
@@ -104,6 +106,7 @@ export interface CurrentVoucherType extends BaseEntity {
   code: string;
   name: string;
   is_active: boolean;
+  parent_voucher_type_key: number | null;
 }
 
 export interface CurrentJournalType extends BaseEntity {
@@ -112,6 +115,19 @@ export interface CurrentJournalType extends BaseEntity {
   code: string;
   name: string;
   is_active: boolean;
+  parent_journal_type_key: number | null;
+}
+
+export interface CurrentProject extends BaseEntity {
+  created_by: number;
+  tenant_key: number;
+  code: string;
+  name: string;
+  department_key: number | null;
+  start_date: Date | null;
+  end_date: Date | null;
+  is_active: boolean;
+  parent_project_key: number | null;
 }
 
 // ── トランザクション系 ──
@@ -138,8 +154,10 @@ export interface CurrentJournal extends BaseEntity {
   is_active: boolean;
   journal_type_key: number;
   voucher_type_key: number;
+  project_key: number;
   adjustment_flag: string;
   description: string | null;
+  metadata: Record<string, string>;
 }
 
 export interface JournalLineRow {
@@ -150,8 +168,8 @@ export interface JournalLineRow {
   sort_order: number;
   side: string;
   account_key: number;
-  department_key: number | null;
-  counterparty_key: number | null;
+  department_key: number;
+  counterparty_key: number;
   amount: string; // Decimal from raw SQL
   description: string | null;
 }

@@ -6,13 +6,17 @@ import { usePathname } from "next/navigation";
 import {
   BarChart3,
   BookOpen,
+  Building2,
   Calendar,
   FileCode2,
+  FolderKanban,
+  Layers,
   List,
   PanelLeftClose,
   PanelLeftOpen,
   PenLine,
   Shield,
+  Stamp,
   Tag,
   Users,
 } from "lucide-react";
@@ -22,13 +26,27 @@ import { cn } from "@/lib/utils";
 const EXPANDED_WIDTH = 224;
 const COLLAPSED_WIDTH = 56;
 
-const navItems = [
+interface NavItem {
+  href: string;
+  label: string;
+  icon: typeof PenLine;
+  separator?: boolean;
+}
+
+const navItems: NavItem[] = [
+  // 日常業務
   { href: "/vouchers", label: "取引", icon: PenLine },
   { href: "/aggregation", label: "集計", icon: BarChart3 },
-  { href: "/accounts", label: "科目", icon: List },
+  // マスタ管理
+  { href: "/accounts", label: "科目", icon: List, separator: true },
+  { href: "/departments", label: "部門", icon: Building2 },
   { href: "/counterparties", label: "取引先", icon: Users },
+  { href: "/projects", label: "プロジェクト", icon: FolderKanban },
   { href: "/tags", label: "タグ", icon: Tag },
-  { href: "/fiscal-periods", label: "期間", icon: Calendar },
+  { href: "/voucher-types", label: "伝票種別", icon: Stamp },
+  { href: "/journal-types", label: "仕訳種別", icon: Layers },
+  // 設定
+  { href: "/fiscal-periods", label: "期間", icon: Calendar, separator: true },
   { href: "/books", label: "帳簿", icon: BookOpen },
   { href: "/users", label: "ユーザー", icon: Shield },
   { href: "/api-doc", label: "API", icon: FileCode2 },
@@ -45,34 +63,38 @@ export function SidebarNav({
 
   return (
     <>
-      <nav className="flex-1 space-y-1 p-2">
+      <nav className="flex-1 space-y-0.5 p-2 overflow-y-auto">
         {navItems.map((item) => {
           const active = pathname.startsWith(item.href);
           return (
-            <Link
-              key={item.href}
-              href={item.href}
-              title={item.label}
-              onClick={onNavigate}
-              className={cn(
-                "flex items-center rounded-md pl-3 py-2 text-sm font-medium transition-colors",
-                active
-                  ? "bg-sidebar-accent text-primary"
-                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+            <div key={item.href}>
+              {item.separator && (
+                <div className="my-2 border-t border-sidebar-border/50" />
               )}
-            >
-              <item.icon className="size-4 shrink-0" />
-              <span
+              <Link
+                href={item.href}
+                title={item.label}
+                onClick={onNavigate}
                 className={cn(
-                  "whitespace-nowrap transition-opacity duration-200",
-                  collapsed
-                    ? "opacity-0 w-0 overflow-hidden"
-                    : "opacity-100 ml-3"
+                  "flex items-center rounded-md pl-3 py-2 text-sm font-medium transition-colors",
+                  active
+                    ? "bg-sidebar-accent text-primary"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground"
                 )}
               >
-                {item.label}
-              </span>
-            </Link>
+                <item.icon className="size-4 shrink-0" />
+                <span
+                  className={cn(
+                    "whitespace-nowrap transition-opacity duration-200",
+                    collapsed
+                      ? "opacity-0 w-0 overflow-hidden"
+                      : "opacity-100 ml-3"
+                  )}
+                >
+                  {item.label}
+                </span>
+              </Link>
+            </div>
           );
         })}
       </nav>

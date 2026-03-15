@@ -34,6 +34,7 @@ export const voucherKeySeq = s.sequence("voucher_key_seq");
 export const journalKeySeq = s.sequence("journal_key_seq");
 export const voucherTypeKeySeq = s.sequence("voucher_type_key_seq");
 export const journalTypeKeySeq = s.sequence("journal_type_key_seq");
+export const projectKeySeq = s.sequence("project_key_seq");
 
 // ============================================================
 // 基盤系
@@ -256,6 +257,7 @@ export const tag = s.table(
     name: text("name").notNull(),
     tag_type: text("tag_type").notNull(),
     is_active: boolean("is_active").default(true).notNull(),
+    parent_tag_key: bigint("parent_tag_key", { mode: "number" }),
   },
   (t) => [
     primaryKey({ columns: [t.key, t.revision] }),
@@ -324,6 +326,7 @@ export const counterparty = s.table(
     code: text("code").notNull(),
     name: text("name").notNull(),
     is_active: boolean("is_active").default(true).notNull(),
+    parent_counterparty_key: bigint("parent_counterparty_key", { mode: "number" }),
   },
   (t) => [
     primaryKey({ columns: [t.key, t.revision] }),
@@ -357,6 +360,7 @@ export const voucherType = s.table(
     code: text("code").notNull(),
     name: text("name").notNull(),
     is_active: boolean("is_active").default(true).notNull(),
+    parent_voucher_type_key: bigint("parent_voucher_type_key", { mode: "number" }),
   },
   (t) => [
     primaryKey({ columns: [t.key, t.revision] }),
@@ -386,10 +390,48 @@ export const journalType = s.table(
     code: text("code").notNull(),
     name: text("name").notNull(),
     is_active: boolean("is_active").default(true).notNull(),
+    parent_journal_type_key: bigint("parent_journal_type_key", { mode: "number" }),
   },
   (t) => [
     primaryKey({ columns: [t.key, t.revision] }),
     uniqueIndex("journal_type_book_key_code_revision_key").on(t.book_key, t.code, t.revision),
+  ]
+);
+
+export const project = s.table(
+  "project",
+  {
+    key: bigint("key", { mode: "number" })
+      .default(sql`nextval('data_stockflow.project_key_seq')`)
+      .notNull(),
+    revision: integer("revision").default(1).notNull(),
+    created_at: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    valid_from: timestamp("valid_from", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    valid_to: timestamp("valid_to", { withTimezone: true }),
+    lines_hash: text("lines_hash").notNull(),
+    prev_revision_hash: text("prev_revision_hash").notNull(),
+    revision_hash: text("revision_hash").notNull(),
+    created_by: bigint("created_by", { mode: "number" }).notNull(),
+    tenant_key: bigint("tenant_key", { mode: "number" }).notNull(),
+    code: text("code").notNull(),
+    name: text("name").notNull(),
+    department_key: bigint("department_key", { mode: "number" }),
+    start_date: timestamp("start_date", { withTimezone: true }),
+    end_date: timestamp("end_date", { withTimezone: true }),
+    is_active: boolean("is_active").default(true).notNull(),
+    parent_project_key: bigint("parent_project_key", { mode: "number" }),
+  },
+  (t) => [
+    primaryKey({ columns: [t.key, t.revision] }),
+    uniqueIndex("project_tenant_key_code_revision_key").on(
+      t.tenant_key,
+      t.code,
+      t.revision
+    ),
   ]
 );
 
@@ -458,8 +500,13 @@ export const journal = s.table(
     is_active: boolean("is_active").default(true).notNull(),
     journal_type_key: bigint("journal_type_key", { mode: "number" }).notNull(),
     voucher_type_key: bigint("voucher_type_key", { mode: "number" }).notNull(),
+    project_key: bigint("project_key", { mode: "number" }).notNull(),
     adjustment_flag: text("adjustment_flag").default("none").notNull(),
     description: text("description"),
+    metadata: jsonb("metadata")
+      .$type<Record<string, string>>()
+      .default({})
+      .notNull(),
   },
   (t) => [primaryKey({ columns: [t.key, t.revision] })]
 );
@@ -474,8 +521,8 @@ export const journalLine = s.table(
     sort_order: integer("sort_order").notNull(),
     side: text("side").notNull(),
     account_key: bigint("account_key", { mode: "number" }).notNull(),
-    department_key: bigint("department_key", { mode: "number" }),
-    counterparty_key: bigint("counterparty_key", { mode: "number" }),
+    department_key: bigint("department_key", { mode: "number" }).notNull(),
+    counterparty_key: bigint("counterparty_key", { mode: "number" }).notNull(),
     amount: decimal("amount", { precision: 15, scale: 0 }).notNull(),
     description: text("description"),
   },

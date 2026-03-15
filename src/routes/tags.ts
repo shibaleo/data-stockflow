@@ -13,22 +13,25 @@ const routes = defineCrudRoutes("Tags", "tagId", tagResponseSchema, createTagSch
 registerCrudHandlers<CurrentTag>(app, routes, {
   table: tag, tableName: "tag", viewName: "current_tag", historyView: "history_tag",
   entityType: "tag", idParam: "tagId",
-  mapRow: createMapper<CurrentTag>(["tenant_key"]),
+  mapRow: createMapper<CurrentTag>(["tenant_key"], ["parent_tag_key"]),
   scope: (c) => ({ tenant_key: c.get("tenantKey") }),
   buildCreate: (body, c) => ({
     tenant_key: c.get("tenantKey"), code: body.code, name: body.name,
-    tag_type: body.tag_type, created_by: c.get("userKey"),
+    tag_type: body.tag_type, parent_tag_key: body.parent_tag_id ?? null,
+    created_by: c.get("userKey"),
   }),
   hashCreate: (body) => ({ code: body.code, name: body.name, tag_type: body.tag_type }),
   buildUpdate: (body, cur, c) => ({
     tenant_key: c.get("tenantKey"), code: body.code ?? cur.code,
     name: body.name ?? cur.name, tag_type: body.tag_type ?? cur.tag_type,
+    parent_tag_key: body.parent_tag_id !== undefined ? body.parent_tag_id : cur.parent_tag_key,
     is_active: body.is_active ?? cur.is_active, created_by: c.get("userKey"),
   }),
   hashUpdate: (body, cur) => ({ code: body.code ?? cur.code, name: body.name ?? cur.name, tag_type: body.tag_type ?? cur.tag_type }),
   buildDeactivate: (cur, c) => ({
     tenant_key: c.get("tenantKey"), code: cur.code,
-    name: cur.name, tag_type: cur.tag_type, created_by: c.get("userKey"),
+    name: cur.name, tag_type: cur.tag_type, parent_tag_key: cur.parent_tag_key,
+    created_by: c.get("userKey"),
   }),
   hashDeactivate: (cur) => ({ code: cur.code, name: cur.name, tag_type: cur.tag_type }),
 });
