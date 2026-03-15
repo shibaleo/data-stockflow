@@ -52,13 +52,13 @@ BASE_URL=http://localhost:3000
 ### 3. DB マイグレーション
 
 ```bash
-psql $DATABASE_URL < dev/migration.sql
+psql $DATABASE_URL < scripts/migration.sql
 ```
 
 ### 4. Bootstrap (初回のみ)
 
 ```bash
-npx tsx dev/bootstrap.ts
+npx tsx scripts/bootstrap.ts
 ```
 
 生成された `sf_...` キーを `.env` の `PLATFORM_API_KEY` に設定。
@@ -72,8 +72,8 @@ pnpm dev
 ### 6. シードデータ投入 (任意)
 
 ```bash
-node dev/seed-accounting.mjs   # 勘定科目
-node dev/seed-grocery.mjs      # 食料品帳簿 (デモ)
+node scripts/seed-accounting.mjs   # 勘定科目
+node scripts/seed-grocery.mjs      # 食料品帳簿 (デモ)
 ```
 
 ## API
@@ -123,20 +123,17 @@ curl -H "Authorization: Bearer $PLATFORM_API_KEY" http://localhost:3000/api/v1/b
 - [docs/002_requirements.md](docs/002_requirements.md) — 要件定義
 - [docs/003_basic_design.md](docs/003_basic_design.md) — 基本設計
 - [docs/schema-v2.md](docs/schema-v2.md) — スキーマ v2 仕様
-- [docs/chart-of-accounts.md](docs/chart-of-accounts.md) — 勘定科目体系
-- [docs/006_zaim_migration_exploration.md](docs/006_zaim_migration_exploration.md) — Zaim 移行設計
-- [docs/007_initial_balance_procedure.md](docs/007_initial_balance_procedure.md) — 期首残高設定手順
-- [docs/009_account_review_progress.md](docs/009_account_review_progress.md) — 勘定科目レビュー
 
 ## ディレクトリ構成
 
 ```
-dev/                    開発スクリプト
+scripts/                実行スクリプト
   bootstrap.ts          Platform API Key 生成
   migration.sql         スキーマ DDL
   seed-accounting.mjs   勘定科目シード
   seed-grocery.mjs      食料品帳簿シード
-docs/                   設計ドキュメント
+docs/                   プロジェクト設計
+dev/                    開発日記・調査メモ
 src/
   app/                  Next.js App Router (UI)
   components/           React コンポーネント
