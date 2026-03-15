@@ -1,25 +1,19 @@
 /**
  * Seed grocery book + accounts via API.
  * Usage: node dev/seed-grocery.mjs
+ *
+ * Requires PLATFORM_API_KEY in .env
  */
 
-const BASE = "http://localhost:3000/api/v1";
-const AUTH_SECRET = "inxxc/y5OL/1LJmYSP5NAe2KloSFmV6tjQRN5zZt7OA=";
+import "dotenv/config";
 
-async function getToken() {
-  const res = await fetch(`${BASE}/auth/token`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-Auth-Secret": AUTH_SECRET },
-    body: JSON.stringify({ user_id: "100000000000", tenant_id: "100000000000", role: "platform" }),
-  });
-  const data = await res.json();
-  return data.token;
-}
-
-let TOKEN;
+const BASE = process.env.BASE_URL || "http://localhost:3000";
+const API = `${BASE}/api/v1`;
+const TOKEN = process.env.PLATFORM_API_KEY;
+if (!TOKEN) { console.error("PLATFORM_API_KEY is not set"); process.exit(1); }
 
 async function api(method, path, body) {
-  const res = await fetch(`${BASE}${path}`, {
+  const res = await fetch(`${API}${path}`, {
     method,
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${TOKEN}` },
     body: body ? JSON.stringify(body) : undefined,
@@ -45,8 +39,6 @@ async function createAccount(bookId, body) {
 }
 
 async function main() {
-  TOKEN = await getToken();
-  console.log("Token acquired\n");
 
   // ── Create grocery book ──
   console.log("=== Grocery book ===");

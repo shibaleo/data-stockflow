@@ -2,25 +2,21 @@
  * Seed accounting book accounts via API (chart-of-accounts.md の accounting 部分).
  * Book "general" (一般帳簿, id=100000000000) は bootstrap で作成済み.
  * Usage: node dev/seed-accounting.mjs
+ *
+ * Requires PLATFORM_API_KEY in .env
  */
 
-const BASE = "http://localhost:3000/api/v1";
-const AUTH_SECRET = "inxxc/y5OL/1LJmYSP5NAe2KloSFmV6tjQRN5zZt7OA=";
+import "dotenv/config";
+
+const BASE = process.env.BASE_URL || "http://localhost:3000";
+const API = `${BASE}/api/v1`;
+const TOKEN = process.env.PLATFORM_API_KEY;
+if (!TOKEN) { console.error("PLATFORM_API_KEY is not set"); process.exit(1); }
+
 const BOOK_ID = 100000000000; // bootstrap general book
 
-async function getToken() {
-  const res = await fetch(`${BASE}/auth/token`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-Auth-Secret": AUTH_SECRET },
-    body: JSON.stringify({ user_id: "100000000000", tenant_id: "100000000000", role: "platform" }),
-  });
-  return (await res.json()).token;
-}
-
-let TOKEN;
-
 async function acct(body) {
-  const res = await fetch(`${BASE}/books/${BOOK_ID}/accounts`, {
+  const res = await fetch(`${API}/books/${BOOK_ID}/accounts`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${TOKEN}` },
     body: JSON.stringify(body),
@@ -32,8 +28,6 @@ async function acct(body) {
 }
 
 async function main() {
-  TOKEN = await getToken();
-  console.log("Token acquired\n");
 
   // NOTE: bootstrap で作成済みの既存勘定 (100, 101, 102, ... etc) は
   // 既に存在するのでスキップ or エラーになる.
