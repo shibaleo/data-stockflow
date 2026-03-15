@@ -82,53 +82,25 @@ node scripts/seed-grocery.mjs      # 食料品帳簿 (デモ)
 - Scalar API Reference: `/api/reference`
 - ヘルスチェック: `GET /api/v1/health`
 
-### エンドポイント一覧
+### エンティティ操作一覧
 
-#### Platform スコープ
-
-platform ロール専用。テナント・ロールの管理。
-
-| パス | 説明 |
+| エンティティ | 操作 |
 |---|---|
-| `/api/v1/tenants` | テナント CRUD |
-| `/api/v1/roles` | ロール CRUD |
-
-#### Tenant スコープ
-
-認証済みユーザーが自テナント内のリソースを操作。platform ロールは全テナントを横断可能。
-
-| パス | 説明 |
-|---|---|
-| `/api/v1/users` | ユーザー管理 |
-| `/api/v1/books` | 帳簿 CRUD |
-| `/api/v1/periods` | 期間 CRUD + close/reopen |
-| `/api/v1/tags` | タグ CRUD |
-| `/api/v1/departments` | 部門 CRUD |
-| `/api/v1/counterparties` | 取引先 CRUD |
-| `/api/v1/voucher-types` | 伝票種別 CRUD |
-| `/api/v1/projects` | プロジェクト CRUD |
-| `/api/v1/vouchers` | 伝票 CRUD (仕訳含む) |
-
-#### Book スコープ
-
-帳簿配下のリソース。`bookId` パスパラメータでテナント所有権を検証。
-
-| パス | 説明 |
-|---|---|
-| `/api/v1/books/:bookId/accounts` | 勘定科目 CRUD |
-| `/api/v1/books/:bookId/journal-types` | 仕訳種別 CRUD |
-| `/api/v1/books/:bookId/reports/balances` | 残高レポート |
-
-#### 操作・監査
-
-| パス | 説明 |
-|---|---|
-| `/api/v1/journals/:journalId/reverse` | 逆仕訳 |
-| `/api/v1/periods/:periodId/close` | 期間締め |
-| `/api/v1/periods/:periodId/reopen` | 期間再開 |
-| `/api/v1/audit-logs` | システムログ (操作記録) |
-| `/api/v1/event-logs` | イベントログ (業務活動) |
-| `/api/v1/integrity` | ハッシュチェーン検証 |
+| **Tenant** | CRUD + 無効化 (platform のみ) |
+| **User** | CRUD + 無効化 + 招待 (`/auth/invite`) |
+| **Book** | CRUD + 無効化 |
+| **Account** | CRUD + 無効化 (帳簿スコープ) |
+| **Period** | CRUD + 無効化 + close / reopen |
+| **Voucher** | 作成・一覧・詳細 |
+| **Journal** | 作成・一覧 + 逆仕訳 (reverse) |
+| **Department** | CRUD + 無効化 |
+| **Counterparty** | CRUD + 無効化 |
+| **Tag** | CRUD + 無効化 |
+| **VoucherType** | CRUD + 無効化 |
+| **JournalType** | CRUD + 無効化 (帳簿スコープ) |
+| **Project** | CRUD + 無効化 |
+| **Report** | 残高試算表・元帳 (帳簿スコープ、読み取り専用) |
+| **監査ログ** | システムログ・イベントログ・完全性検証 (読み取り専用) |
 
 ### 認証方式
 
@@ -199,6 +171,66 @@ curl -H "Authorization: Bearer $PLATFORM_API_KEY" http://localhost:3000/api/v1/b
 - **リビジョンチェーン**: 各エンティティの `revision_hash` で改ざん検知。前リビジョンのハッシュを入力に含む
 - **ヘッダーチェーン**: 伝票の `header_hash` でテナント内の連番改ざんを検知
 - **完全性検証**: `GET /api/v1/integrity` でハッシュチェーンの整合性をオンデマンド検証
+
+## ドメインモデル
+
+### エンティティ階層
+
+```
+Tenant                          テナント (組織の最上位単位)
+├── User                        ユーザー (Role で権限付与)
+├── Book                        帳簿 (通貨・単位・勘定体系を持つ独立した台帳)
+│   ├── Account                 勘定科目 (asset/liability/equity/revenue/expense)
+│   └── JournalType             仕訳種別
+├── Period                      期間 (open → closed → finalized)
+├── Voucher                     伝票 (複数の Journal をまとめるヘッダー)
+│   └── Journal                 仕訳 (1つの帳簿に対する借方・貸方のセット)
+│       ├── JournalLine         仕訳行 (科目・部門・取引先・金額)
+│       └── JournalTag          仕訳タグ (多対多)
+├── Department                  部門 (仕訳行の補助分類)
+├── Counterparty                取引先 (仕訳行の補助分類)
+├── Tag                         タグ (仕訳への自由分類)
+├── VoucherType                 伝票種別 (仕訳の業務分類)
+└── Project                     プロジェクト (仕訳の横断的な集計軸)
+```
+
+### 主要概念
+
+| 概念 | スコープ | 説明 |
+|---|---|---|
+| **Tenant** | Platform | 組織の最上位単位。全データはテナントに属する |
+| **Book** | Tenant | 独立した台帳。通貨 (`unit`)・勘定体系を持つ。1テナントに複数帳簿を持てる |
+| **Account** | Book | 勘定科目。5種類の `account_type` (asset/liability/equity/revenue/expense) を持ち、階層構造 (`parent_account_id`) に対応 |
+| **Period** | Tenant | 集計・締めの単位となる期間。帳簿横断で共通。`open` → `closed` → `finalized` のライフサイクル |
+| **Voucher** | Tenant | 伝票。1つ以上の Journal をまとめるヘッダー。`idempotency_key` で重複防止、`sequence_no` + `header_hash` でチェーン化 |
+| **Journal** | Book | 仕訳。特定の帳簿に属し、借方・貸方の JournalLine を持つ。1つの Voucher に複数の Journal (異なる帳簿) を含められる |
+| **JournalLine** | Journal | 仕訳行。`side` (debit/credit) + `amount` (常に正数) で複式記帳。科目・部門・取引先を指定 |
+
+### 複式記帳ルール
+
+- 仕訳行の `amount` は常に正数。`side` で借方 (debit) / 貸方 (credit) を区別
+- 1 Journal 内の借方合計 = 貸方合計 (バランスチェック)
+- DB 内部では debit を負数、credit を正数で保持 (集計を単純な SUM で実現)
+- `account.sign` (asset/expense = -1, liability/equity/revenue = +1) を掛けて表示用の符号を決定
+
+### 補助分類
+
+| 概念 | 用途 |
+|---|---|
+| **Department** | 仕訳行に部門を付与。組織別の集計に利用 |
+| **Counterparty** | 仕訳行に取引先を付与。取引先別の集計に利用 |
+| **Tag** | 仕訳に自由なラベルを付与 (多対多)。`tag_type` で種類を区分 |
+| **VoucherType** | 伝票の業務分類 (例: 仕入伝票、売上伝票) |
+| **JournalType** | 仕訳の種別 (帳簿ごとに定義) |
+| **Project** | 仕訳の横断的な集計軸。部門に紐づけ可能 |
+
+### 共通設計パターン
+
+- **Append-only**: 全マスタ・トランザクションは INSERT のみ。`key` + `revision` の複合主キー
+- **Bi-temporal**: `valid_from` / `valid_to` で時点指定クエリに対応
+- **階層構造**: 多くのマスタが `parent_*_id` を持ち、ツリー構造を表現
+- **論理削除**: `is_active = false` で無効化。物理削除は行わない
+- **ハッシュチェーン**: `prev_revision_hash` → `revision_hash` で改ざん検知
 
 ## API ファースト設計
 
