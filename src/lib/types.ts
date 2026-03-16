@@ -1,5 +1,5 @@
 // ============================================================
-// v2 Types — BIGINT key + revision pattern
+// v3 Types — Category system + posted_at on journal
 // ============================================================
 
 // Common fields for all append-only tables
@@ -73,14 +73,14 @@ export interface CurrentPeriod extends BaseEntity {
   parent_period_key: number | null;
 }
 
-export interface CurrentTag extends BaseEntity {
+export interface CurrentCategory extends BaseEntity {
   created_by: number;
   tenant_key: number;
+  category_type_code: string;
   code: string;
   name: string;
-  tag_type: string;
   is_active: boolean;
-  parent_tag_key: number | null;
+  parent_category_key: number | null;
 }
 
 export interface CurrentDepartment extends BaseEntity {
@@ -102,24 +102,6 @@ export interface CurrentCounterparty extends BaseEntity {
   parent_counterparty_key: number | null;
 }
 
-export interface CurrentVoucherType extends BaseEntity {
-  created_by: number;
-  tenant_key: number;
-  code: string;
-  name: string;
-  is_active: boolean;
-  parent_voucher_type_key: number | null;
-}
-
-export interface CurrentJournalType extends BaseEntity {
-  created_by: number;
-  book_key: number;
-  code: string;
-  name: string;
-  is_active: boolean;
-  parent_journal_type_key: number | null;
-}
-
 export interface CurrentProject extends BaseEntity {
   created_by: number;
   tenant_key: number;
@@ -138,9 +120,7 @@ export interface VoucherRow extends BaseEntity {
   created_by: number;
   tenant_key: number;
   idempotency_key: string;
-  period_key: number;
   voucher_code: string | null;
-  posted_date: Date;
   description: string | null;
   source_system: string | null;
   sequence_no: number;
@@ -153,9 +133,9 @@ export interface CurrentJournal extends BaseEntity {
   tenant_key: number;
   voucher_key: number;
   book_key: number;
+  period_key: number;
+  posted_at: Date;
   is_active: boolean;
-  journal_type_key: number;
-  voucher_type_key: number;
   project_key: number;
   adjustment_flag: string;
   description: string | null;
@@ -176,12 +156,13 @@ export interface JournalLineRow {
   description: string | null;
 }
 
-export interface JournalTagRow {
+export interface EntityCategoryRow {
   uuid: string;
-  journal_key: number;
-  journal_revision: number;
   tenant_key: number;
-  tag_key: number;
+  category_type_code: string;
+  entity_key: number;
+  entity_revision: number | null;
+  category_key: number;
   created_by: number;
   created_at: Date;
 }

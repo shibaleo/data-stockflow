@@ -192,8 +192,7 @@ app.openapi(revisionChainRoute, async (c) => {
   const journalKey = Number(c.req.param("journalId"));
 
   const { rows: revRows } = await db.execute(sql`
-    SELECT key, revision, journal_type_key,
-      voucher_type_key, adjustment_flag, description,
+    SELECT key, revision, adjustment_flag, description,
       lines_hash, prev_revision_hash, revision_hash
     FROM ${sql.raw(`"${S}".journal`)}
     WHERE key = ${journalKey}
@@ -203,8 +202,6 @@ app.openapi(revisionChainRoute, async (c) => {
   type RevRow = {
     key: number;
     revision: number;
-    journal_type_key: number;
-    voucher_type_key: number;
     adjustment_flag: string;
     description: string | null;
     lines_hash: string;
@@ -283,8 +280,6 @@ app.openapi(revisionChainRoute, async (c) => {
       prev_revision_hash: r.prev_revision_hash,
       journal_key: r.key,
       revision: r.revision,
-      journal_type_key: r.journal_type_key,
-      voucher_type_key: r.voucher_type_key,
       adjustment_flag: r.adjustment_flag,
       description: r.description,
       lines_hash: r.lines_hash,

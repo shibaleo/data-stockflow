@@ -7,10 +7,8 @@ import { useSort } from "@/hooks/use-sort";
 
 export interface VoucherRow {
   id: number;
-  period_id: number;
   idempotency_key: string;
   voucher_code: string | null;
-  posted_date: string;
   description: string | null;
   source_system: string | null;
   created_at: string;
@@ -22,18 +20,18 @@ interface Props {
   onDelete: (id: number) => void;
 }
 
-type VoucherSortKey = "voucher_code" | "posted_date" | "description" | "id";
+type VoucherSortKey = "voucher_code" | "created_at" | "description" | "id";
 
 const COLUMNS: [VoucherSortKey, string][] = [
   ["voucher_code", "伝票番号"],
-  ["posted_date", "計上日"],
+  ["created_at", "作成日"],
   ["description", "摘要"],
   ["id", "ID"],
 ];
 
 export function JournalTable({ vouchers, onEdit, onDelete }: Props) {
   const { sorted, sortKey, sortDir, toggleSort } = useSort<VoucherRow, VoucherSortKey>(
-    vouchers, "posted_date", "desc"
+    vouchers, "created_at", "desc"
   );
 
   if (vouchers.length === 0) {
@@ -73,7 +71,7 @@ export function JournalTable({ vouchers, onEdit, onDelete }: Props) {
                 {v.voucher_code || "-"}
               </td>
               <td className="py-3 pr-4">
-                {new Date(v.posted_date).toLocaleDateString("ja-JP")}
+                {new Date(v.created_at).toLocaleDateString("ja-JP")}
               </td>
               <td className="py-3 pr-4 max-w-[300px] truncate">
                 {v.description || "-"}

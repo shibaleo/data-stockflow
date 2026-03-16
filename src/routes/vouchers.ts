@@ -2,7 +2,7 @@ import { createApp } from "@/lib/create-app";
 import { createRoute, z } from "@hono/zod-openapi";
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
-import { voucher, journal, journalLine, journalTag } from "@/lib/db/schema";
+import { voucher, journal, journalLine, entityCategory } from "@/lib/db/schema";
 import { errorSchema, dataSchema, voucherResponseSchema, voucherDetailResponseSchema, createVoucherSchema } from "@/lib/validators";
 import { requireTenant, requireAuth, requireRole } from "@/middleware/guards";
 import { recordAudit } from "@/lib/audit";
@@ -17,7 +17,7 @@ import {
   type LineHashInput,
 } from "@/lib/hash-chain";
 import { getCurrent } from "@/lib/append-only";
-import type { CurrentPeriod, CurrentJournal, JournalLineRow, JournalTagRow, VoucherRow } from "@/lib/types";
+import type { CurrentPeriod, CurrentJournal, JournalLineRow, EntityCategoryRow, VoucherRow } from "@/lib/types";
 
 const S = "data_stockflow";
 const app = createApp();
@@ -25,7 +25,7 @@ app.use("*", requireTenant(), requireAuth());
 
 const mapVoucher = createMapper<VoucherRow>(
   ["tenant_key", "sequence_no", "prev_header_hash", "header_hash"],
-  ["period_key"],
+  [],
 );
 
 // ── Route definitions ──
@@ -89,17 +89,17 @@ app.openapi(get, async (c) => {
   `);
   const journals = jRows as CurrentJournal[];
 
-  // Get lines and tags for each journal
+  // Get lines and categories for each journal
   const journalsWithDetails = await Promise.all(journals.map(async (j) => {
-    const [linesResult, tagsResult] = await Promise.all([
+    const [linesResult, catsResult] = await Promise.all([
       db.execute(sql`
         SELECT * FROM ${sql.raw(`"${S}".journal_line`)}
         WHERE journal_key = ${j.key} AND journal_revision = ${j.revision}
         ORDER BY sort_order, side
       `),
       db.execute(sql`
-        SELECT * FROM ${sql.raw(`"${S}".journal_tag`)}
-        WHERE journal_key = ${j.key} AND journal_revision = ${j.revision}
+        SELECT * FROM ${sql.raw(`"${S}".entity_category`)}
+        WHERE entity_key = ${j.key} AND entity_revision = ${j.revision}
       `),
     ]);
     const lines = (linesResult.rows as JournalLineRow[]).map((l) => ({
@@ -112,20 +112,23 @@ app.openapi(get, async (c) => {
       amount: String(Math.abs(parseFloat(String(l.amount)))),
       description: l.description,
     }));
-    const tags = (tagsResult.rows as JournalTagRow[]).map((t) => ({
-      uuid: t.uuid,
-      tag_id: t.tag_key,
-      created_at: t.created_at instanceof Date ? t.created_at.toISOString() : String(t.created_at),
+    const categories = (catsResult.rows as EntityCategoryRow[]).map((ec) => ({
+      uuid: ec.uuid,
+      category_type_code: ec.category_type_code,
+      category_key: ec.category_key,
+      created_at: ec.created_at instanceof Date ? ec.created_at.toISOString() : String(ec.created_at),
     }));
     return {
-      id: j.key, voucher_id: j.voucher_key, book_id: j.book_key, revision: j.revision,
-      is_active: j.is_active, journal_type_id: j.journal_type_key,
-      voucher_type_id: j.voucher_type_key, project_id: j.project_key,
+      id: j.key, voucher_id: j.voucher_key, book_id: j.book_key,
+      period_id: j.period_key,
+      posted_at: j.posted_at instanceof Date ? j.posted_at.toISOString() : String(j.posted_at),
+      revision: j.revision,
+      is_active: j.is_active, project_id: j.project_key,
       adjustment_flag: j.adjustment_flag,
       description: j.description,
       metadata: (j.metadata ?? {}) as Record<string, string>,
       created_at: j.created_at instanceof Date ? j.created_at.toISOString() : String(j.created_at),
-      lines, tags,
+      lines, categories,
     };
   }));
 
@@ -139,36 +142,38 @@ app.openapi(create, async (c) => {
   const userKey = c.get("userKey");
   const body = c.req.valid("json");
 
-  // Resolve period
-  let periodKey: number;
-  if (body.period_id) {
-    const fp = await getCurrent<CurrentPeriod>("current_period", {
-      key: body.period_id,
-    });
-    if (!fp) return c.json({ error: "Period not found" }, 422);
-    if (fp.status !== "open") return c.json({ error: "Period is not open" }, 422);
-    periodKey = fp.key;
-  } else {
-    // Auto-resolve from posted_date
-    const { rows: fpRows } = await db.execute(sql`
-      SELECT key, status FROM ${sql.raw(`"${S}".current_period`)}
-      WHERE start_date <= ${new Date(body.posted_date)}::timestamptz
-        AND end_date >= ${new Date(body.posted_date)}::timestamptz
-      ORDER BY start_date DESC
-      LIMIT 1
-    `);
-    if (fpRows.length === 0) return c.json({ error: "No period found for posted_date" }, 422);
-    const fp = fpRows[0] as { key: number; status: string };
-    if (fp.status !== "open") return c.json({ error: "Period is not open" }, 422);
-    periodKey = fp.key;
-  }
-
   // Validate balance for each journal
   for (const jInput of body.journals) {
     const debit = jInput.lines.filter((l) => l.side === "debit").reduce((s, l) => s + l.amount, 0);
     const credit = jInput.lines.filter((l) => l.side === "credit").reduce((s, l) => s + l.amount, 0);
     if (debit !== credit) {
       return c.json({ error: `Lines do not balance: debit(${debit}) != credit(${credit})` }, 422);
+    }
+  }
+
+  // Resolve period for each journal
+  const resolvedPeriods: number[] = [];
+  for (const jInput of body.journals) {
+    if (jInput.period_id) {
+      const fp = await getCurrent<CurrentPeriod>("current_period", {
+        key: jInput.period_id,
+      });
+      if (!fp) return c.json({ error: "Period not found" }, 422);
+      if (fp.status !== "open") return c.json({ error: "Period is not open" }, 422);
+      resolvedPeriods.push(fp.key);
+    } else {
+      // Auto-resolve from posted_at
+      const { rows: fpRows } = await db.execute(sql`
+        SELECT key, status FROM ${sql.raw(`"${S}".current_period`)}
+        WHERE start_date <= ${new Date(jInput.posted_at)}::timestamptz
+          AND end_date >= ${new Date(jInput.posted_at)}::timestamptz
+        ORDER BY start_date DESC
+        LIMIT 1
+      `);
+      if (fpRows.length === 0) return c.json({ error: "No period found for posted_at" }, 422);
+      const fp = fpRows[0] as { key: number; status: string };
+      if (fp.status !== "open") return c.json({ error: "Period is not open" }, 422);
+      resolvedPeriods.push(fp.key);
     }
   }
 
@@ -182,21 +187,19 @@ app.openapi(create, async (c) => {
       created_at: headerCreatedAt,
     });
 
-    // Compute voucher hash for lines_hash / revision_hash
+    // Compute voucher hash
     const voucherLinesHash = computeLinesHash([]);
     const voucherRevisionHash = computeRevisionHash({
       prev_revision_hash: GENESIS_PREV_HASH, journal_key: 0,
-      revision: 1, journal_type_key: 0, voucher_type_key: 0,
-      adjustment_flag: "none", description: body.description ?? null,
+      revision: 1, adjustment_flag: "none",
+      description: body.description ?? null,
       lines_hash: voucherLinesHash,
     });
 
-    // Insert voucher
+    // Insert voucher (no posted_date, no period_key)
     const [v] = await tx.insert(voucher).values({
       tenant_key: tenantKey, idempotency_key: body.idempotency_key,
-      period_key: periodKey,
       voucher_code: body.voucher_code ?? null,
-      posted_date: new Date(body.posted_date),
       description: body.description ?? null, source_system: body.source_system ?? null,
       created_by: userKey, sequence_no: nextSequenceNo,
       prev_header_hash: prevHeaderHash, header_hash: headerHash,
@@ -206,7 +209,10 @@ app.openapi(create, async (c) => {
 
     // Insert journals
     const createdJournals = [];
-    for (const jInput of body.journals) {
+    for (let i = 0; i < body.journals.length; i++) {
+      const jInput = body.journals[i];
+      const periodKey = resolvedPeriods[i];
+
       const signedLines = jInput.lines.map((l) => ({
         ...l,
         amount: String(l.side === "debit" ? -l.amount : l.amount),
@@ -220,16 +226,13 @@ app.openapi(create, async (c) => {
       const linesHash = computeLinesHash(linesHashInputs);
       const revisionHash = computeRevisionHash({
         prev_revision_hash: GENESIS_PREV_HASH, journal_key: 0, revision: 1,
-        journal_type_key: jInput.journal_type_id,
-        voucher_type_key: jInput.voucher_type_id,
         adjustment_flag: jInput.adjustment_flag ?? "none",
         description: jInput.description ?? null, lines_hash: linesHash,
       });
 
       const [j] = await tx.insert(journal).values({
         tenant_key: tenantKey, voucher_key: v.key, book_key: jInput.book_id,
-        journal_type_key: jInput.journal_type_id,
-        voucher_type_key: jInput.voucher_type_id,
+        period_key: periodKey, posted_at: new Date(jInput.posted_at),
         project_key: jInput.project_id,
         adjustment_flag: jInput.adjustment_flag ?? "none",
         description: jInput.description ?? null,
@@ -250,12 +253,20 @@ app.openapi(create, async (c) => {
         })),
       );
 
-      // Insert tags
+      // Insert journal_type category
+      await tx.insert(entityCategory).values({
+        tenant_key: tenantKey, category_type_code: "journal_type",
+        entity_key: j.key, entity_revision: 1,
+        category_key: jInput.journal_type_id, created_by: userKey,
+      });
+
+      // Insert journal_tag categories
       if (jInput.tags?.length) {
-        await tx.insert(journalTag).values(
-          jInput.tags.map((tagKey) => ({
-            journal_key: j.key, journal_revision: 1,
-            tenant_key: tenantKey, tag_key: tagKey, created_by: userKey,
+        await tx.insert(entityCategory).values(
+          jInput.tags.map((catKey) => ({
+            tenant_key: tenantKey, category_type_code: "journal_tag" as const,
+            entity_key: j.key, entity_revision: 1,
+            category_key: catKey, created_by: userKey,
           })),
         );
       }
@@ -277,14 +288,15 @@ app.openapi(create, async (c) => {
   const voucherResponse = mapVoucher(result.voucher as unknown as VoucherRow);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const journalsResponse = result.journals.map((j: any) => ({
-    id: j.journal.key, voucher_id: result.voucher.key, book_id: j.journal.book_key, revision: 1,
+    id: j.journal.key, voucher_id: result.voucher.key, book_id: j.journal.book_key,
+    period_id: j.journal.period_key,
+    posted_at: j.journal.posted_at instanceof Date ? j.journal.posted_at.toISOString() : String(j.journal.posted_at),
+    revision: 1,
     is_active: true,
-    journal_type_id: j.journal.journal_type_key, voucher_type_id: j.journal.voucher_type_key,
     project_id: j.journal.project_key,
     adjustment_flag: j.journal.adjustment_flag, description: j.journal.description,
     metadata: (j.journal.metadata ?? {}) as Record<string, string>,
     created_at: j.journal.created_at instanceof Date ? j.journal.created_at.toISOString() : String(j.journal.created_at),
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     lines: j.lines.map((l: any) => ({
       uuid: "", sort_order: l.sort_order, side: l.side,
       account_id: l.account_id, department_id: l.department_id,
@@ -292,7 +304,7 @@ app.openapi(create, async (c) => {
       amount: String(Math.abs(parseFloat(l.amount))),
       description: l.description ?? null,
     })),
-    tags: [],
+    categories: [],
   }));
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

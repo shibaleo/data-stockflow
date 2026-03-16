@@ -244,32 +244,31 @@ export const updatePeriodSchema = z.object({
 });
 
 // ============================================================
-// Tag
+// Category (replaces tag, voucher_type, journal_type)
 // ============================================================
 
-export const tagResponseSchema = z.object({
+export const categoryResponseSchema = z.object({
   id: z.number(),
+  category_type_code: z.string(),
   code: z.string(),
   name: z.string(),
-  tag_type: z.string(),
   is_active: z.boolean(),
-  parent_tag_id: z.number().nullable(),
+  parent_category_id: z.number().nullable(),
   revision: z.number(),
   created_at: z.string(),
 });
 
-export const createTagSchema = z.object({
+export const createCategorySchema = z.object({
+  category_type_code: zSanitized(z.string().min(1).max(100)),
   code: zSanitized(z.string().min(1).max(50)),
   name: zSanitized(z.string().min(1).max(200)),
-  tag_type: zSanitized(z.string().min(1).max(100)),
-  parent_tag_id: z.number().int().positive().optional(),
+  parent_category_id: z.number().int().positive().optional(),
 });
 
-export const updateTagSchema = z.object({
+export const updateCategorySchema = z.object({
   code: zSanitized(z.string().min(1).max(100)).optional(),
   name: zSanitized(z.string().min(1).max(200)).optional(),
-  tag_type: zSanitized(z.string().min(1).max(100)).optional(),
-  parent_tag_id: z.number().int().positive().nullable().optional(),
+  parent_category_id: z.number().int().positive().nullable().optional(),
   is_active: z.boolean().optional(),
 });
 
@@ -330,60 +329,7 @@ export const updateCounterpartySchema = z.object({
   is_active: z.boolean().optional(),
 });
 
-// ============================================================
-// Voucher Type
-// ============================================================
-
-export const voucherTypeResponseSchema = z.object({
-  id: z.number(),
-  code: z.string(),
-  name: z.string(),
-  is_active: z.boolean(),
-  parent_voucher_type_id: z.number().nullable(),
-  revision: z.number(),
-  created_at: z.string(),
-});
-
-export const createVoucherTypeSchema = z.object({
-  code: zSanitized(z.string().min(1).max(50)),
-  name: zSanitized(z.string().min(1).max(200)),
-  parent_voucher_type_id: z.number().int().positive().optional(),
-});
-
-export const updateVoucherTypeSchema = z.object({
-  code: zSanitized(z.string().min(1).max(100)).optional(),
-  name: zSanitized(z.string().min(1).max(200)).optional(),
-  parent_voucher_type_id: z.number().int().positive().nullable().optional(),
-  is_active: z.boolean().optional(),
-});
-
-// ============================================================
-// Journal Type
-// ============================================================
-
-export const journalTypeResponseSchema = z.object({
-  id: z.number(),
-  book_id: z.number(),
-  code: z.string(),
-  name: z.string(),
-  is_active: z.boolean(),
-  parent_journal_type_id: z.number().nullable(),
-  revision: z.number(),
-  created_at: z.string(),
-});
-
-export const createJournalTypeSchema = z.object({
-  code: zSanitized(z.string().min(1).max(50)),
-  name: zSanitized(z.string().min(1).max(200)),
-  parent_journal_type_id: z.number().int().positive().optional(),
-});
-
-export const updateJournalTypeSchema = z.object({
-  code: zSanitized(z.string().min(1).max(100)).optional(),
-  name: zSanitized(z.string().min(1).max(200)).optional(),
-  parent_journal_type_id: z.number().int().positive().nullable().optional(),
-  is_active: z.boolean().optional(),
-});
+// (voucher_type and journal_type removed — now handled by category system)
 
 // ============================================================
 // Project
@@ -427,10 +373,8 @@ export const updateProjectSchema = z.object({
 
 export const voucherResponseSchema = z.object({
   id: z.number(),
-  period_id: z.number(),
   idempotency_key: z.string(),
   voucher_code: z.string().nullable(),
-  posted_date: z.string(),
   description: z.string().nullable(),
   source_system: z.string().nullable(),
   created_at: z.string(),
@@ -451,9 +395,10 @@ export const journalLineResponseSchema = z.object({
   description: z.string().nullable(),
 });
 
-export const journalTagResponseSchema = z.object({
+export const entityCategoryResponseSchema = z.object({
   uuid: z.string(),
-  tag_id: z.number(),
+  category_type_code: z.string(),
+  category_key: z.number(),
   created_at: z.string(),
 });
 
@@ -461,10 +406,10 @@ export const journalResponseSchema = z.object({
   id: z.number(),
   voucher_id: z.number(),
   book_id: z.number(),
+  period_id: z.number(),
+  posted_at: z.string(),
   revision: z.number(),
   is_active: z.boolean(),
-  journal_type_id: z.number(),
-  voucher_type_id: z.number(),
   project_id: z.number(),
   adjustment_flag: z.string(),
   description: z.string().nullable(),
@@ -474,7 +419,7 @@ export const journalResponseSchema = z.object({
 
 export const journalDetailResponseSchema = journalResponseSchema.extend({
   lines: z.array(journalLineResponseSchema),
-  tags: z.array(journalTagResponseSchema),
+  categories: z.array(entityCategoryResponseSchema),
 });
 
 export const journalLineSchema = z.object({
@@ -489,17 +434,16 @@ export const journalLineSchema = z.object({
 
 export const createVoucherSchema = z.object({
   idempotency_key: zSanitized(z.string().min(1)),
-  period_id: z.number().int().positive().optional(),
   voucher_code: z.string().optional(),
-  posted_date: z.string().datetime(),
   description: z.string().optional(),
   source_system: z.string().optional(),
   journals: z
     .array(
       z.object({
         book_id: z.number().int().positive(),
+        posted_at: z.string().datetime(),
+        period_id: z.number().int().positive().optional(),
         journal_type_id: z.number().int().positive(),
-        voucher_type_id: z.number().int().positive(),
         project_id: z.number().int().positive(),
         adjustment_flag: z
           .enum(["none", "monthly_adj", "year_end_adj"])
@@ -519,8 +463,9 @@ export const voucherDetailResponseSchema = voucherResponseSchema.extend({
 
 export const updateJournalSchema = z.object({
   book_id: z.number().int().positive().optional(),
+  posted_at: z.string().datetime().optional(),
+  period_id: z.number().int().positive().optional(),
   journal_type_id: z.number().int().positive().optional(),
-  voucher_type_id: z.number().int().positive().optional(),
   project_id: z.number().int().positive().optional(),
   adjustment_flag: z
     .enum(["none", "monthly_adj", "year_end_adj"])

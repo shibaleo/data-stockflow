@@ -9,7 +9,7 @@ import { createApp } from "@/lib/create-app";
 import { createRoute, z } from "@hono/zod-openapi";
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
-import { journal, journalLine, journalTag } from "@/lib/db/schema";
+import { journal, journalLine, entityCategory } from "@/lib/db/schema";
 import { getCurrent } from "@/lib/append-only";
 import {
   errorSchema,
@@ -20,7 +20,7 @@ import { requireTenant, requireAuth, requireRole } from "@/middleware/guards";
 import type {
   CurrentJournal,
   JournalLineRow,
-  JournalTagRow,
+  EntityCategoryRow,
 } from "@/lib/types";
 import { recordAudit } from "@/lib/audit";
 import { recordEvent } from "@/lib/event-log";
@@ -99,14 +99,14 @@ app.openapi(reverse, async (c) => {
   if (lines.length === 0)
     return c.json({ error: "Original journal has no lines" }, 422);
 
-  // 4. Get original tags
-  const { rows: tagsRaw } = await db.execute(
-    sql`SELECT * FROM ${sql.raw(`"${S}".journal_tag`)}
-    WHERE journal_key = ${journalKey} AND journal_revision = ${current.revision}`
+  // 3. Get original categories
+  const { rows: catsRaw } = await db.execute(
+    sql`SELECT * FROM ${sql.raw(`"${S}".entity_category`)}
+    WHERE entity_key = ${journalKey} AND entity_revision = ${current.revision}`
   );
-  const tags = tagsRaw as JournalTagRow[];
+  const cats = catsRaw as EntityCategoryRow[];
 
-  // 5. Build reversal
+  // 4. Build reversal
   const description =
     body.description ?? `Reversal of journal ${journalKey}`;
 
@@ -124,10 +124,8 @@ app.openapi(reverse, async (c) => {
     const linesHash = computeLinesHash(reversedLineInputs);
     const revisionHash = computeRevisionHash({
       prev_revision_hash: GENESIS_PREV_HASH,
-      journal_key: 0, // will be updated after insert
+      journal_key: 0,
       revision: 1,
-      journal_type_key: current.journal_type_key,
-      voucher_type_key: current.voucher_type_key,
       adjustment_flag: current.adjustment_flag,
       description: description ?? null,
       lines_hash: linesHash,
@@ -138,8 +136,8 @@ app.openapi(reverse, async (c) => {
       tenant_key: tenantKey,
       voucher_key: current.voucher_key,
       book_key: current.book_key,
-      journal_type_key: current.journal_type_key,
-      voucher_type_key: current.voucher_type_key,
+      period_key: current.period_key,
+      posted_at: current.posted_at,
       project_key: current.project_key,
       adjustment_flag: current.adjustment_flag,
       description,
@@ -166,14 +164,15 @@ app.openapi(reverse, async (c) => {
       })),
     );
 
-    // Copy tags
-    if (tags.length > 0) {
-      await tx.insert(journalTag).values(
-        tags.map((t) => ({
-          journal_key: j.key,
-          journal_revision: 1,
+    // Copy categories
+    if (cats.length > 0) {
+      await tx.insert(entityCategory).values(
+        cats.map((ec) => ({
           tenant_key: tenantKey,
-          tag_key: t.tag_key,
+          category_type_code: ec.category_type_code,
+          entity_key: j.key,
+          entity_revision: 1,
+          category_key: ec.category_key,
           created_by: userKey,
         })),
       );
@@ -196,15 +195,15 @@ app.openapi(reverse, async (c) => {
   });
 
   // Build response
-  const [linesResult, tagsResult] = await Promise.all([
+  const [linesResult, catsResult] = await Promise.all([
     db.execute(sql`
       SELECT * FROM ${sql.raw(`"${S}".journal_line`)}
       WHERE journal_key = ${result.key} AND journal_revision = 1
       ORDER BY sort_order, side
     `),
     db.execute(sql`
-      SELECT * FROM ${sql.raw(`"${S}".journal_tag`)}
-      WHERE journal_key = ${result.key} AND journal_revision = 1
+      SELECT * FROM ${sql.raw(`"${S}".entity_category`)}
+      WHERE entity_key = ${result.key} AND entity_revision = 1
     `),
   ]);
 
@@ -218,22 +217,25 @@ app.openapi(reverse, async (c) => {
     amount: String(Math.abs(parseFloat(String(l.amount)))),
     description: l.description,
   }));
-  const responseTags = (tagsResult.rows as JournalTagRow[]).map((t) => ({
-    uuid: t.uuid,
-    tag_id: t.tag_key,
-    created_at: t.created_at instanceof Date ? t.created_at.toISOString() : String(t.created_at),
+  const responseCategories = (catsResult.rows as EntityCategoryRow[]).map((ec) => ({
+    uuid: ec.uuid,
+    category_type_code: ec.category_type_code,
+    category_key: ec.category_key,
+    created_at: ec.created_at instanceof Date ? ec.created_at.toISOString() : String(ec.created_at),
   }));
 
   return c.json({
     data: {
-      id: result.key, voucher_id: result.voucher_key, book_id: result.book_key, revision: 1,
-      is_active: true, journal_type_id: result.journal_type_key,
-      voucher_type_id: result.voucher_type_key, project_id: result.project_key,
+      id: result.key, voucher_id: result.voucher_key, book_id: result.book_key,
+      period_id: result.period_key,
+      posted_at: result.posted_at instanceof Date ? result.posted_at.toISOString() : String(result.posted_at),
+      revision: 1,
+      is_active: true, project_id: result.project_key,
       adjustment_flag: result.adjustment_flag,
       description: result.description,
       metadata: (result.metadata ?? {}) as Record<string, string>,
       created_at: result.created_at instanceof Date ? result.created_at.toISOString() : String(result.created_at),
-      lines: responseLines, tags: responseTags,
+      lines: responseLines, categories: responseCategories,
     },
   }, 201);
 });

@@ -27,13 +27,11 @@ export const userKeySeq = s.sequence("user_key_seq");
 export const bookKeySeq = s.sequence("book_key_seq");
 export const accountKeySeq = s.sequence("account_key_seq");
 export const periodKeySeq = s.sequence("period_key_seq");
-export const tagKeySeq = s.sequence("tag_key_seq");
+export const categoryKeySeq = s.sequence("category_key_seq");
 export const departmentKeySeq = s.sequence("department_key_seq");
 export const counterpartyKeySeq = s.sequence("counterparty_key_seq");
 export const voucherKeySeq = s.sequence("voucher_key_seq");
 export const journalKeySeq = s.sequence("journal_key_seq");
-export const voucherTypeKeySeq = s.sequence("voucher_type_key_seq");
-export const journalTypeKeySeq = s.sequence("journal_type_key_seq");
 export const projectKeySeq = s.sequence("project_key_seq");
 
 // ============================================================
@@ -236,11 +234,20 @@ export const period = s.table(
   ]
 );
 
-export const tag = s.table(
-  "tag",
+// ---- category_type (system seed, no revision) ----
+export const categoryType = s.table("category_type", {
+  code: text("code").primaryKey(),
+  entity_type: text("entity_type").notNull(),
+  name: text("name").notNull(),
+  allow_multiple: boolean("allow_multiple").default(false).notNull(),
+});
+
+// ---- category (tenant-scoped, replaces tag/voucher_type/journal_type) ----
+export const category = s.table(
+  "category",
   {
     key: bigint("key", { mode: "number" })
-      .default(sql`nextval('data_stockflow.tag_key_seq')`)
+      .default(sql`nextval('data_stockflow.category_key_seq')`)
       .notNull(),
     revision: integer("revision").default(1).notNull(),
     created_at: timestamp("created_at", { withTimezone: true })
@@ -255,16 +262,19 @@ export const tag = s.table(
     revision_hash: text("revision_hash").notNull(),
     created_by: bigint("created_by", { mode: "number" }).notNull(),
     tenant_key: bigint("tenant_key", { mode: "number" }).notNull(),
+    category_type_code: text("category_type_code")
+      .notNull()
+      .references(() => categoryType.code),
     code: text("code").notNull(),
     name: text("name").notNull(),
-    tag_type: text("tag_type").notNull(),
     is_active: boolean("is_active").default(true).notNull(),
-    parent_tag_key: bigint("parent_tag_key", { mode: "number" }),
+    parent_category_key: bigint("parent_category_key", { mode: "number" }),
   },
   (t) => [
     primaryKey({ columns: [t.key, t.revision] }),
-    uniqueIndex("tag_tenant_key_code_revision_key").on(
+    uniqueIndex("category_tenant_type_code_revision_key").on(
       t.tenant_key,
+      t.category_type_code,
       t.code,
       t.revision
     ),
@@ -340,66 +350,6 @@ export const counterparty = s.table(
   ]
 );
 
-export const voucherType = s.table(
-  "voucher_type",
-  {
-    key: bigint("key", { mode: "number" })
-      .default(sql`nextval('data_stockflow.voucher_type_key_seq')`)
-      .notNull(),
-    revision: integer("revision").default(1).notNull(),
-    created_at: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    valid_from: timestamp("valid_from", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    valid_to: timestamp("valid_to", { withTimezone: true }),
-    lines_hash: text("lines_hash").notNull(),
-    prev_revision_hash: text("prev_revision_hash").notNull(),
-    revision_hash: text("revision_hash").notNull(),
-    created_by: bigint("created_by", { mode: "number" }).notNull(),
-    tenant_key: bigint("tenant_key", { mode: "number" }).notNull(),
-    code: text("code").notNull(),
-    name: text("name").notNull(),
-    is_active: boolean("is_active").default(true).notNull(),
-    parent_voucher_type_key: bigint("parent_voucher_type_key", { mode: "number" }),
-  },
-  (t) => [
-    primaryKey({ columns: [t.key, t.revision] }),
-    uniqueIndex("voucher_type_tenant_key_code_revision_key").on(t.tenant_key, t.code, t.revision),
-  ]
-);
-
-export const journalType = s.table(
-  "journal_type",
-  {
-    key: bigint("key", { mode: "number" })
-      .default(sql`nextval('data_stockflow.journal_type_key_seq')`)
-      .notNull(),
-    revision: integer("revision").default(1).notNull(),
-    created_at: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    valid_from: timestamp("valid_from", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    valid_to: timestamp("valid_to", { withTimezone: true }),
-    lines_hash: text("lines_hash").notNull(),
-    prev_revision_hash: text("prev_revision_hash").notNull(),
-    revision_hash: text("revision_hash").notNull(),
-    created_by: bigint("created_by", { mode: "number" }).notNull(),
-    book_key: bigint("book_key", { mode: "number" }).notNull(),
-    code: text("code").notNull(),
-    name: text("name").notNull(),
-    is_active: boolean("is_active").default(true).notNull(),
-    parent_journal_type_key: bigint("parent_journal_type_key", { mode: "number" }),
-  },
-  (t) => [
-    primaryKey({ columns: [t.key, t.revision] }),
-    uniqueIndex("journal_type_book_key_code_revision_key").on(t.book_key, t.code, t.revision),
-  ]
-);
-
 export const project = s.table(
   "project",
   {
@@ -441,6 +391,7 @@ export const project = s.table(
 // トランザクション系
 // ============================================================
 
+// voucher: ビジネスグルーピング（posted_date, period_key は journal に移動）
 export const voucher = s.table(
   "voucher",
   {
@@ -461,9 +412,7 @@ export const voucher = s.table(
     created_by: bigint("created_by", { mode: "number" }).notNull(),
     tenant_key: bigint("tenant_key", { mode: "number" }).notNull(),
     idempotency_key: text("idempotency_key").notNull().unique(),
-    period_key: bigint("period_key", { mode: "number" }).notNull(),
     voucher_code: text("voucher_code"),
-    posted_date: timestamp("posted_date", { withTimezone: true }).notNull(),
     description: text("description"),
     source_system: text("source_system"),
     sequence_no: integer("sequence_no").notNull(),
@@ -473,11 +422,12 @@ export const voucher = s.table(
   (t) => [
     primaryKey({ columns: [t.key, t.revision] }),
     uniqueIndex("uq_voucher_code")
-      .on(t.tenant_key, t.period_key, t.voucher_code)
+      .on(t.tenant_key, t.voucher_code)
       .where(sql`voucher_code IS NOT NULL`),
   ]
 );
 
+// journal: posted_at + period_key をここに持つ。type keys は category system に移行。
 export const journal = s.table(
   "journal",
   {
@@ -499,9 +449,9 @@ export const journal = s.table(
     tenant_key: bigint("tenant_key", { mode: "number" }).notNull(),
     voucher_key: bigint("voucher_key", { mode: "number" }).notNull(),
     book_key: bigint("book_key", { mode: "number" }).notNull(),
+    period_key: bigint("period_key", { mode: "number" }).notNull(),
+    posted_at: timestamp("posted_at", { withTimezone: true }).notNull(),
     is_active: boolean("is_active").default(true).notNull(),
-    journal_type_key: bigint("journal_type_key", { mode: "number" }).notNull(),
-    voucher_type_key: bigint("voucher_type_key", { mode: "number" }).notNull(),
     project_key: bigint("project_key", { mode: "number" }).notNull(),
     adjustment_flag: text("adjustment_flag").default("none").notNull(),
     description: text("description"),
@@ -536,24 +486,30 @@ export const journalLine = s.table(
   ]
 );
 
-export const journalTag = s.table(
-  "journal_tag",
+// ---- entity_category (polymorphic junction — replaces journal_tag) ----
+export const entityCategory = s.table(
+  "entity_category",
   {
     uuid: uuid("uuid").defaultRandom().primaryKey(),
-    journal_key: bigint("journal_key", { mode: "number" }).notNull(),
-    journal_revision: integer("journal_revision").notNull(),
     tenant_key: bigint("tenant_key", { mode: "number" }).notNull(),
-    tag_key: bigint("tag_key", { mode: "number" }).notNull(),
+    category_type_code: text("category_type_code")
+      .notNull()
+      .references(() => categoryType.code),
+    entity_key: bigint("entity_key", { mode: "number" }).notNull(),
+    entity_revision: integer("entity_revision"),
+    category_key: bigint("category_key", { mode: "number" }).notNull(),
     created_by: bigint("created_by", { mode: "number" }).notNull(),
     created_at: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
   },
   (t) => [
-    foreignKey({
-      columns: [t.journal_key, t.journal_revision],
-      foreignColumns: [journal.key, journal.revision],
-    }),
+    index("idx_entity_category_entity").on(
+      t.category_type_code,
+      t.entity_key,
+      t.entity_revision
+    ),
+    index("idx_entity_category_category").on(t.category_key),
   ]
 );
 

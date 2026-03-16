@@ -11,7 +11,7 @@ import roles from "@/routes/roles";
 import users from "@/routes/users";
 import books from "@/routes/books";
 import accounts from "@/routes/accounts";
-import tags from "@/routes/tags";
+import categories from "@/routes/categories";
 import departments from "@/routes/departments";
 import periods from "@/routes/periods";
 import counterparties from "@/routes/counterparties";
@@ -22,8 +22,6 @@ import periodOps from "@/routes/ops/period-ops";
 import auditLogs from "@/routes/ops/audit-logs";
 import eventLogs from "@/routes/ops/event-logs";
 import integrity from "@/routes/ops/integrity";
-import voucherTypes from "@/routes/voucher-types";
-import journalTypes from "@/routes/journal-types";
 import projects from "@/routes/projects";
 import reports from "@/routes/reports";
 
@@ -63,10 +61,9 @@ app.route("/roles", roles);
 // Tenant-scoped master routes
 app.route("/users", users);
 app.route("/books", books);
-app.route("/tags", tags);
+app.route("/categories", categories);
 app.route("/departments", departments);
 app.route("/counterparties", counterparties);
-app.route("/voucher-types", voucherTypes);
 app.route("/projects", projects);
 
 // Tenant-scoped period routes
@@ -74,7 +71,6 @@ app.route("/periods", periods);
 
 // Book-scoped master routes (requireBook middleware is inside each route)
 app.route("/books/:bookId/accounts", accounts);
-app.route("/books/:bookId/journal-types", journalTypes);
 app.route("/books/:bookId/reports", reports);
 
 // Transaction routes (tenant-scoped)
@@ -115,8 +111,8 @@ Journal lines use standard double-entry format:
 ## Resource Hierarchy
 
 - \`/tenants\`, \`/roles\` — Platform-scoped
-- \`/users\`, \`/books\`, \`/tags\`, \`/departments\`, \`/counterparties\`, \`/voucher-types\`, \`/projects\` — Tenant-scoped
-- \`/periods\`, \`/books/{bookId}/accounts\`, \`/books/{bookId}/journal-types\` — Book-scoped / Tenant-scoped
+- \`/users\`, \`/books\`, \`/categories\`, \`/departments\`, \`/counterparties\`, \`/projects\` — Tenant-scoped
+- \`/periods\`, \`/books/{bookId}/accounts\` — Book-scoped / Tenant-scoped
 - \`/vouchers\` → \`/vouchers/{voucherId}/journals\` — Transaction layer`,
   },
 });

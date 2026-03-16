@@ -2,7 +2,7 @@
  * Journal routes — nested under /vouchers/:voucherId/journals
  *
  * GET    /                    List journals for voucher
- * GET    /:journalId          Get journal with lines + tags
+ * GET    /:journalId          Get journal with lines + categories
  * PUT    /:journalId          Update journal (new revision)
  * DELETE /:journalId          Deactivate journal
  * GET    /:journalId/history  Journal revision history
@@ -11,7 +11,7 @@ import { createApp } from "@/lib/create-app";
 import { createRoute, z } from "@hono/zod-openapi";
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
-import { journal, journalLine, journalTag } from "@/lib/db/schema";
+import { journal, journalLine, entityCategory } from "@/lib/db/schema";
 import {
   errorSchema, messageSchema, dataSchema,
   journalResponseSchema, journalDetailResponseSchema,
@@ -28,7 +28,7 @@ import {
   GENESIS_PREV_HASH,
   type LineHashInput,
 } from "@/lib/hash-chain";
-import type { CurrentJournal, JournalLineRow, JournalTagRow } from "@/lib/types";
+import type { CurrentJournal, JournalLineRow, EntityCategoryRow } from "@/lib/types";
 
 const S = "data_stockflow";
 const app = createApp();
@@ -49,15 +49,15 @@ async function getJournalForVoucher(
 }
 
 async function buildJournalDetail(j: CurrentJournal) {
-  const [linesResult, tagsResult] = await Promise.all([
+  const [linesResult, catsResult] = await Promise.all([
     db.execute(sql`
       SELECT * FROM ${sql.raw(`"${S}".journal_line`)}
       WHERE journal_key = ${j.key} AND journal_revision = ${j.revision}
       ORDER BY sort_order, side
     `),
     db.execute(sql`
-      SELECT * FROM ${sql.raw(`"${S}".journal_tag`)}
-      WHERE journal_key = ${j.key} AND journal_revision = ${j.revision}
+      SELECT * FROM ${sql.raw(`"${S}".entity_category`)}
+      WHERE entity_key = ${j.key} AND entity_revision = ${j.revision}
     `),
   ]);
   const lines = (linesResult.rows as JournalLineRow[]).map((l) => ({
@@ -70,20 +70,23 @@ async function buildJournalDetail(j: CurrentJournal) {
     amount: String(Math.abs(parseFloat(String(l.amount)))),
     description: l.description,
   }));
-  const tags = (tagsResult.rows as JournalTagRow[]).map((t) => ({
-    uuid: t.uuid,
-    tag_id: t.tag_key,
-    created_at: t.created_at instanceof Date ? t.created_at.toISOString() : String(t.created_at),
+  const categories = (catsResult.rows as EntityCategoryRow[]).map((ec) => ({
+    uuid: ec.uuid,
+    category_type_code: ec.category_type_code,
+    category_key: ec.category_key,
+    created_at: ec.created_at instanceof Date ? ec.created_at.toISOString() : String(ec.created_at),
   }));
   return {
-    id: j.key, voucher_id: j.voucher_key, book_id: j.book_key, revision: j.revision,
-    is_active: j.is_active, journal_type_id: j.journal_type_key,
-    voucher_type_id: j.voucher_type_key, project_id: j.project_key,
+    id: j.key, voucher_id: j.voucher_key, book_id: j.book_key,
+    period_id: j.period_key,
+    posted_at: j.posted_at instanceof Date ? j.posted_at.toISOString() : String(j.posted_at),
+    revision: j.revision,
+    is_active: j.is_active, project_id: j.project_key,
     adjustment_flag: j.adjustment_flag,
     description: j.description,
     metadata: (j.metadata ?? {}) as Record<string, string>,
     created_at: j.created_at instanceof Date ? j.created_at.toISOString() : String(j.created_at),
-    lines, tags,
+    lines, categories,
   };
 }
 
@@ -193,13 +196,14 @@ app.openapi(updateRoute, async (c) => {
   const result = await db.transaction(async (tx: typeof db) => {
     const prevRevisionHash = await getPrevRevisionHash(tx, journalKey, maxRev + 1);
 
-    const resolvedTypeKey = body.journal_type_id ?? current.journal_type_key;
-    const resolvedVoucherTypeKey = body.voucher_type_id ?? current.voucher_type_key;
     const resolvedProjectKey = body.project_id ?? current.project_key;
     const resolvedAdj = body.adjustment_flag ?? current.adjustment_flag;
     const resolvedDesc = body.description !== undefined ? body.description : current.description;
     const resolvedMetadata = body.metadata ?? current.metadata;
     const resolvedActive = body.is_active ?? current.is_active;
+    const resolvedBookKey = body.book_id ?? current.book_key;
+    const resolvedPostedAt = body.posted_at ? new Date(body.posted_at) : current.posted_at;
+    const resolvedPeriodKey = body.period_id ?? current.period_key;
 
     const linesHashInputs: LineHashInput[] = signedLines.map((l) => ({
       sort_order: l.sort_order, side: l.side, account_key: l.account_id,
@@ -209,18 +213,15 @@ app.openapi(updateRoute, async (c) => {
     const linesHash = computeLinesHash(linesHashInputs);
     const revisionHash = computeRevisionHash({
       prev_revision_hash: prevRevisionHash, journal_key: journalKey,
-      revision: maxRev + 1, journal_type_key: resolvedTypeKey,
-      voucher_type_key: resolvedVoucherTypeKey, adjustment_flag: resolvedAdj,
+      revision: maxRev + 1, adjustment_flag: resolvedAdj,
       description: resolvedDesc ?? null, lines_hash: linesHash,
     });
-
-    const resolvedBookKey = body.book_id ?? current.book_key;
 
     const [j] = await tx.insert(journal).values({
       key: journalKey, revision: maxRev + 1,
       tenant_key: tenantKey, voucher_key: voucherKey, book_key: resolvedBookKey,
-      is_active: resolvedActive, journal_type_key: resolvedTypeKey,
-      voucher_type_key: resolvedVoucherTypeKey, project_key: resolvedProjectKey,
+      period_key: resolvedPeriodKey, posted_at: resolvedPostedAt,
+      is_active: resolvedActive, project_key: resolvedProjectKey,
       adjustment_flag: resolvedAdj,
       description: resolvedDesc, metadata: resolvedMetadata,
       created_by: userKey,
@@ -239,11 +240,38 @@ app.openapi(updateRoute, async (c) => {
       })),
     );
 
+    // journal_type category (allow_multiple=false → replace)
+    if (body.journal_type_id) {
+      await tx.insert(entityCategory).values({
+        tenant_key: tenantKey, category_type_code: "journal_type",
+        entity_key: journalKey, entity_revision: maxRev + 1,
+        category_key: body.journal_type_id, created_by: userKey,
+      });
+    } else {
+      // Carry over from previous revision
+      const { rows: prevCats } = await db.execute(sql`
+        SELECT * FROM ${sql.raw(`"${S}".entity_category`)}
+        WHERE entity_key = ${journalKey} AND entity_revision = ${maxRev}
+          AND category_type_code = 'journal_type'
+        LIMIT 1
+      `);
+      if (prevCats.length > 0) {
+        const prev = prevCats[0] as EntityCategoryRow;
+        await tx.insert(entityCategory).values({
+          tenant_key: tenantKey, category_type_code: "journal_type",
+          entity_key: journalKey, entity_revision: maxRev + 1,
+          category_key: prev.category_key, created_by: userKey,
+        });
+      }
+    }
+
+    // journal_tag categories
     if (body.tags?.length) {
-      await tx.insert(journalTag).values(
-        body.tags.map((tagKey) => ({
-          journal_key: journalKey, journal_revision: maxRev + 1,
-          tenant_key: tenantKey, tag_key: tagKey, created_by: userKey,
+      await tx.insert(entityCategory).values(
+        body.tags.map((catKey) => ({
+          tenant_key: tenantKey, category_type_code: "journal_tag" as const,
+          entity_key: journalKey, entity_revision: maxRev + 1,
+          category_key: catKey, created_by: userKey,
         })),
       );
     }
@@ -261,7 +289,6 @@ app.openapi(updateRoute, async (c) => {
       : `仕訳 #${journalKey} を更新しました`,
   });
 
-  // Re-fetch for full response
   const updated = await getJournalForVoucher(voucherKey, journalKey);
   return c.json({ data: await buildJournalDetail(updated!) }, 200);
 });
@@ -284,16 +311,15 @@ app.openapi(deleteRoute, async (c) => {
     const linesHash = computeLinesHash([]);
     const revisionHash = computeRevisionHash({
       prev_revision_hash: prevRevisionHash, journal_key: journalKey,
-      revision: maxRev + 1, journal_type_key: current.journal_type_key,
-      voucher_type_key: current.voucher_type_key, adjustment_flag: current.adjustment_flag,
+      revision: maxRev + 1, adjustment_flag: current.adjustment_flag,
       description: current.description ?? null, lines_hash: linesHash,
     });
 
     await tx.insert(journal).values({
       key: journalKey, revision: maxRev + 1,
       tenant_key: tenantKey, voucher_key: voucherKey, book_key: current.book_key,
-      is_active: false, journal_type_key: current.journal_type_key,
-      voucher_type_key: current.voucher_type_key, project_key: current.project_key,
+      period_key: current.period_key, posted_at: current.posted_at,
+      is_active: false, project_key: current.project_key,
       adjustment_flag: current.adjustment_flag,
       description: current.description, metadata: current.metadata,
       created_by: userKey,
@@ -321,9 +347,11 @@ app.openapi(historyRoute, async (c) => {
   const journals = rows as CurrentJournal[];
   return c.json({
     data: journals.map((j) => ({
-      id: j.key, voucher_id: j.voucher_key, book_id: j.book_key, revision: j.revision,
-      is_active: j.is_active, journal_type_id: j.journal_type_key,
-      voucher_type_id: j.voucher_type_key, project_id: j.project_key,
+      id: j.key, voucher_id: j.voucher_key, book_id: j.book_key,
+      period_id: j.period_key,
+      posted_at: j.posted_at instanceof Date ? j.posted_at.toISOString() : String(j.posted_at),
+      revision: j.revision,
+      is_active: j.is_active, project_id: j.project_key,
       adjustment_flag: j.adjustment_flag,
       description: j.description,
       metadata: (j.metadata ?? {}) as Record<string, string>,

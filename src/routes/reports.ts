@@ -79,7 +79,7 @@ app.openapi(balances, async (c) => {
 
   const conditions = [sql`a.book_key = ${bookKey}`, sql`a.is_active = true`];
 
-  // Filter journal lines by period range via voucher → period
+  // Filter journal lines by period range via journal.period_key → period
   const tenantKey = c.get("tenantKey");
   let periodJoin = sql``;
   const periodConditions: ReturnType<typeof sql>[] = [];
@@ -94,10 +94,8 @@ app.openapi(balances, async (c) => {
   if (periodConditions.length > 0) {
     const periodFilter = sql.join(periodConditions, sql` AND `);
     periodJoin = sql`
-      JOIN ${sql.raw(`"${S}".voucher`)} v
-        ON v.key = cj.voucher_key AND v.revision = 1
       JOIN ${sql.raw(`"${S}".current_period`)} fp
-        ON fp.key = v.period_key AND fp.tenant_key = ${tenantKey}
+        ON fp.key = cj.period_key AND fp.tenant_key = ${tenantKey}
         AND ${periodFilter}`;
   }
 

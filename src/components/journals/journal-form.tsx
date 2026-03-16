@@ -40,28 +40,22 @@ interface Department extends EntityRow {}
 
 interface Counterparty extends EntityRow {}
 
-interface TagRow extends EntityRow {
-  tag_type: string;
+interface CategoryRow extends EntityRow {
+  category_type_code: string;
 }
-
-interface VoucherTypeRow extends EntityRow {}
-
-interface JournalTypeRow extends EntityRow {}
 
 interface ProjectRow extends EntityRow {}
 
 interface VoucherDetail {
   id: number;
-  period_id: number;
   voucher_code: string | null;
-  posted_date: string;
   description: string | null;
   journals: {
     id: number;
     book_id: number;
+    period_id: number;
+    posted_at: string;
     revision: number;
-    journal_type_id: number;
-    voucher_type_id: number;
     project_id: number;
     adjustment_flag: string;
     description: string | null;
@@ -74,7 +68,7 @@ interface VoucherDetail {
       amount: string;
       description: string | null;
     }[];
-    tags: { tag_id: number }[];
+    categories: { category_type_code: string; category_key: number }[];
   }[];
 }
 
@@ -108,6 +102,7 @@ const EMPTY_ROW: RowData = {
 
 interface JournalSection {
   bookId: string;
+  postedAt: string;
   journalTypeId: string;
   projectId: string;
   description: string;
@@ -116,9 +111,10 @@ interface JournalSection {
   rows: RowData[];
 }
 
-function emptySection(bookId: string, defaultJournalTypeId = "", defaultProjectId = ""): JournalSection {
+function emptySection(bookId: string, defaultJournalTypeId = "", defaultProjectId = "", defaultDate = ""): JournalSection {
   return {
     bookId,
+    postedAt: defaultDate || new Date().toISOString().slice(0, 10),
     journalTypeId: defaultJournalTypeId,
     projectId: defaultProjectId,
     description: "",
@@ -267,7 +263,7 @@ function EditableTagBadge({
   onRename,
 }: {
   tagId: number;
-  allTags: TagRow[];
+  allTags: CategoryRow[];
   onRemove: () => void;
   onRename: (id: string, newName: string) => Promise<boolean>;
 }) {
@@ -334,31 +330,74 @@ interface Props {
 export function JournalForm({ editId, onSuccess, onCancel }: Props) {
   const [books, setBooks] = useState<BookRow[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
-  const [journalTypes, setJournalTypes] = useState<Record<string, JournalTypeRow[]>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Entity managers (auto-fetch + inline create/rename)
   const depts = useEntityManager<Department>({ endpoint: "/departments" });
   const cps = useEntityManager<Counterparty>({ endpoint: "/counterparties" });
-  const tags = useEntityManager<TagRow>({ endpoint: "/tags", extraCreateFields: { tag_type: "general" } });
-  const vts = useEntityManager<VoucherTypeRow>({ endpoint: "/voucher-types" });
+  const allCats = useEntityManager<CategoryRow>({ endpoint: "/categories" });
   const projects = useEntityManager<ProjectRow>({ endpoint: "/projects" });
 
-  // Voucher-level state
-  const [postedDate, setPostedDate] = useState(new Date().toISOString().slice(0, 10));
-  const [voucherTypeId, setVoucherTypeId] = useState("");
+  // Derived: journal types and tags from categories
+  const journalTypeItems = useMemo(
+    () => allCats.items.filter((c) => c.category_type_code === "journal_type"),
+    [allCats.items],
+  );
+  const tagItems = useMemo(
+    () => allCats.items.filter((c) => c.category_type_code === "journal_tag"),
+    [allCats.items],
+  );
+
+  const journalTypeOptions: ComboOption[] = useMemo(
+    () => journalTypeItems.map((c) => ({ value: String(c.id), label: `${c.code} ${c.name}`, displayLabel: c.name })),
+    [journalTypeItems],
+  );
+  const tagOptions: ComboOption[] = useMemo(
+    () => tagItems.map((c) => ({ value: String(c.id), label: c.name })),
+    [tagItems],
+  );
+
+  // Category create helpers
+  const createJournalType = useCallback(
+    async (name: string): Promise<string | null> => {
+      try {
+        const res = await api.post<{ data: CategoryRow }>("/categories", {
+          code: randomCode(),
+          name,
+          category_type_code: "journal_type",
+        });
+        allCats.setItems((prev) => [...prev, res.data]);
+        return String(res.data.id);
+      } catch {
+        return null;
+      }
+    },
+    [allCats],
+  );
+
+  const createTag = useCallback(
+    async (name: string): Promise<string | null> => {
+      try {
+        const res = await api.post<{ data: CategoryRow }>("/categories", {
+          code: randomCode(),
+          name,
+          category_type_code: "journal_tag",
+        });
+        allCats.setItems((prev) => [...prev, res.data]);
+        return String(res.data.id);
+      } catch {
+        return null;
+      }
+    },
+    [allCats],
+  );
+
+  // Voucher-level state (lightweight: description only)
   const [headerDescription, setHeaderDescription] = useState("");
 
   // Journal sections
   const [journals, setJournals] = useState<JournalSection[]>([]);
-
-  // Auto-select first voucher type
-  useEffect(() => {
-    if (vts.items.length > 0 && !voucherTypeId) {
-      setVoucherTypeId(String(vts.items[0].id));
-    }
-  }, [vts.items, voucherTypeId]);
 
   // Default project ID for new sections
   const defaultProjectId = useMemo(
@@ -366,7 +405,13 @@ export function JournalForm({ editId, onSuccess, onCancel }: Props) {
     [projects.items],
   );
 
-  // ── Book-scoped data loading (accounts + journal types) ──
+  // Default journal type ID for new sections
+  const defaultJournalTypeId = useMemo(
+    () => journalTypeItems.length > 0 ? String(journalTypeItems[0].id) : "",
+    [journalTypeItems],
+  );
+
+  // ── Book-scoped data loading (accounts only — journal types are now categories) ──
   useEffect(() => {
     (async () => {
       try {
@@ -374,39 +419,34 @@ export function JournalForm({ editId, onSuccess, onCancel }: Props) {
         const activeBooks = booksRes.data.filter((b) => b.is_active);
         setBooks(activeBooks);
 
-        const [accountResults, jtResults] = await Promise.all([
-          Promise.all(
-            activeBooks.map((b) =>
-              api.get<{ data: Account[] }>(`/books/${b.id}/accounts?limit=200`)
-            )
+        const accountResults = await Promise.all(
+          activeBooks.map((b) =>
+            api.get<{ data: Account[] }>(`/books/${b.id}/accounts?limit=200`)
           ),
-          Promise.all(
-            activeBooks.map((b) =>
-              api.get<{ data: JournalTypeRow[] }>(`/books/${b.id}/journal-types`)
-            )
-          ),
-        ]);
+        );
 
         const allAccounts = accountResults.flatMap((r) => r.data);
         setAccounts(Array.from(new Map(allAccounts.map((a) => [a.id, a])).values()));
 
-        const jtMap: Record<string, JournalTypeRow[]> = {};
-        activeBooks.forEach((b, i) => {
-          jtMap[String(b.id)] = jtResults[i].data.filter((jt) => jt.is_active);
-        });
-        setJournalTypes(jtMap);
-
         const defaultBookId = activeBooks.length > 0 ? String(activeBooks[0].id) : "";
-        const defaultJtId = jtMap[defaultBookId]?.[0]?.id ? String(jtMap[defaultBookId][0].id) : "";
 
         if (!editId) {
-          setJournals([emptySection(defaultBookId, defaultJtId)]);
+          setJournals([emptySection(defaultBookId)]);
         }
       } catch {
         setError("マスタデータの読み込みに失敗しました");
       }
     })();
   }, []);
+
+  // Set default journal type when categories load (for new sections)
+  useEffect(() => {
+    if (defaultJournalTypeId && !editId) {
+      setJournals((prev) =>
+        prev.map((s) => s.journalTypeId ? s : { ...s, journalTypeId: defaultJournalTypeId })
+      );
+    }
+  }, [defaultJournalTypeId, editId]);
 
   // ── Load existing voucher for edit ──
   useEffect(() => {
@@ -416,13 +456,7 @@ export function JournalForm({ editId, onSuccess, onCancel }: Props) {
       .get<{ data: VoucherDetail }>(`/vouchers/${editId}`)
       .then((res) => {
         const v = res.data;
-        setPostedDate(v.posted_date.slice(0, 10));
         setHeaderDescription(v.description || "");
-
-        // Use voucher_type_id from first journal for voucher-level
-        if (v.journals.length > 0) {
-          setVoucherTypeId(String(v.journals[0].voucher_type_id));
-        }
 
         const sections: JournalSection[] = v.journals.map((j) => {
           const debits = j.lines.filter((l) => l.side === "debit");
@@ -444,12 +478,23 @@ export function JournalForm({ editId, onSuccess, onCancel }: Props) {
               description: d?.description || c?.description || "",
             });
           }
+
+          // Extract journal_type from categories
+          const jtCat = j.categories.find((cat) => cat.category_type_code === "journal_type");
+          const journalTypeId = jtCat ? String(jtCat.category_key) : "";
+
+          // Extract tags from categories
+          const tagIds = j.categories
+            .filter((cat) => cat.category_type_code === "journal_tag")
+            .map((cat) => cat.category_key);
+
           return {
             bookId: String(j.book_id),
-            journalTypeId: String(j.journal_type_id),
+            postedAt: j.posted_at.slice(0, 10),
+            journalTypeId,
             projectId: String(j.project_id),
             description: j.description || "",
-            tags: j.tags.map((t) => t.tag_id),
+            tags: tagIds,
             metadata: j.metadata ?? {},
             rows,
           };
@@ -495,8 +540,9 @@ export function JournalForm({ editId, onSuccess, onCancel }: Props) {
 
   const addJournal = () => {
     const defaultBookId = books.length > 0 ? String(books[0].id) : "";
-    const defaultJtId = journalTypes[defaultBookId]?.[0]?.id ? String(journalTypes[defaultBookId][0].id) : "";
-    setJournals((prev) => [...prev, emptySection(defaultBookId, defaultJtId, defaultProjectId)]);
+    // Copy date from last journal section if available
+    const lastDate = journals.length > 0 ? journals[journals.length - 1].postedAt : "";
+    setJournals((prev) => [...prev, emptySection(defaultBookId, defaultJournalTypeId, defaultProjectId, lastDate)]);
   };
 
   const removeJournal = (ji: number) => {
@@ -516,12 +562,6 @@ export function JournalForm({ editId, onSuccess, onCancel }: Props) {
       prev.map((s, i) => (i === ji ? { ...s, tags: s.tags.filter((t) => t !== tagId) } : s))
     );
   }, []);
-
-  // ── Combobox options (tags show name only) ──
-  const tagOptions: ComboOption[] = useMemo(
-    () => tags.items.map((t) => ({ value: String(t.id), label: t.name })),
-    [tags.items],
-  );
 
   // ── Account create / rename (book-scoped, needs bookId arg) ──
 
@@ -588,13 +628,12 @@ export function JournalForm({ editId, onSuccess, onCancel }: Props) {
   // ── Submit ──
   const handleSubmit = async () => {
     setError(null);
-    if (!postedDate) {
-      setError("伝票日付は必須です");
-      return;
-    }
-    if (!voucherTypeId) {
-      setError("伝票種別を選択してください");
-      return;
+    // Validate each journal has a date
+    for (const sec of journals) {
+      if (!sec.postedAt) {
+        setError("計上日は必須です");
+        return;
+      }
     }
     // Validate amounts are valid numbers
     for (const sec of journals) {
@@ -628,8 +667,8 @@ export function JournalForm({ editId, onSuccess, onCancel }: Props) {
           const sec = journals[0];
           await api.put(`/vouchers/${editId}/journals/${journalId}`, {
             book_id: Number(sec.bookId),
-            journal_type_id: Number(sec.journalTypeId),
-            voucher_type_id: Number(voucherTypeId),
+            posted_at: new Date(sec.postedAt).toISOString(),
+            journal_type_id: Number(sec.journalTypeId) || undefined,
             project_id: Number(sec.projectId) || undefined,
             description: sec.description || undefined,
             metadata: Object.keys(sec.metadata).length > 0 ? sec.metadata : undefined,
@@ -640,12 +679,11 @@ export function JournalForm({ editId, onSuccess, onCancel }: Props) {
       } else {
         await api.post("/vouchers", {
           idempotency_key: `web:${crypto.randomUUID()}`,
-          posted_date: new Date(postedDate).toISOString(),
           description: headerDescription || undefined,
           journals: journals.map((sec) => ({
             book_id: Number(sec.bookId),
-            journal_type_id: Number(sec.journalTypeId),
-            voucher_type_id: Number(voucherTypeId),
+            posted_at: new Date(sec.postedAt).toISOString(),
+            journal_type_id: Number(sec.journalTypeId) || undefined,
             project_id: Number(sec.projectId) || undefined,
             description: sec.description || undefined,
             metadata: Object.keys(sec.metadata).length > 0 ? sec.metadata : undefined,
@@ -662,8 +700,6 @@ export function JournalForm({ editId, onSuccess, onCancel }: Props) {
     }
   };
 
-  // SideCell is extracted as a memo component above
-
   return (
     <div className="flex flex-col h-full">
       {/* ── 上部ヘッダバー ── */}
@@ -675,31 +711,6 @@ export function JournalForm({ editId, onSuccess, onCancel }: Props) {
         >
           {editId ? "修正" : "新規"}
         </span>
-
-        <div className="flex items-center gap-1">
-          <span className="text-xs text-muted-foreground">伝票日付</span>
-          <Input
-            type="date"
-            value={postedDate}
-            onChange={(e) => setPostedDate(e.target.value)}
-            className="w-36 h-8 text-xs"
-          />
-        </div>
-
-        <div className="flex items-center gap-1">
-          <span className="text-xs text-muted-foreground">伝票種別</span>
-          <div className="w-32">
-            <MasterCombobox
-              options={vts.comboOptions}
-              value={voucherTypeId}
-              onValueChange={setVoucherTypeId}
-              placeholder="伝票種別"
-              onCreate={vts.create}
-              onRename={vts.rename}
-              className="h-8 text-xs"
-            />
-          </div>
-        </div>
 
         <div className="flex items-center gap-1 flex-1 min-w-0">
           <span className="text-xs text-muted-foreground shrink-0">摘要</span>
@@ -743,6 +754,16 @@ export function JournalForm({ editId, onSuccess, onCancel }: Props) {
                 </span>
 
                 <div className="flex items-center gap-1">
+                  <span className="text-xs text-muted-foreground">計上日</span>
+                  <Input
+                    type="date"
+                    value={sec.postedAt}
+                    onChange={(e) => updateSection(ji, { postedAt: e.target.value })}
+                    className="w-36 h-7 text-xs"
+                  />
+                </div>
+
+                <div className="flex items-center gap-1">
                   <span className="text-xs text-muted-foreground">帳簿</span>
                   <Select
                     value={sec.bookId}
@@ -763,39 +784,12 @@ export function JournalForm({ editId, onSuccess, onCancel }: Props) {
 
                 <div className="w-32">
                   <MasterCombobox
-                    options={(journalTypes[sec.bookId] ?? []).map((jt) => ({
-                      value: String(jt.id),
-                      label: `${jt.code} ${jt.name}`,
-                      displayLabel: jt.name,
-                    }))}
+                    options={journalTypeOptions}
                     value={sec.journalTypeId}
                     onValueChange={(v) => updateSection(ji, { journalTypeId: v })}
                     placeholder="仕訳種別"
-                    onCreate={sec.bookId ? async (name) => {
-                      try {
-                        const res = await api.post<{ data: JournalTypeRow }>(
-                          `/books/${sec.bookId}/journal-types`,
-                          { code: randomCode(), name },
-                        );
-                        setJournalTypes((prev) => ({
-                          ...prev,
-                          [sec.bookId]: [...(prev[sec.bookId] ?? []), res.data],
-                        }));
-                        return String(res.data.id);
-                      } catch { return null; }
-                    } : undefined}
-                    onRename={sec.bookId ? async (id, newName) => {
-                      try {
-                        await api.put(`/books/${sec.bookId}/journal-types/${id}`, { name: newName });
-                        setJournalTypes((prev) => ({
-                          ...prev,
-                          [sec.bookId]: (prev[sec.bookId] ?? []).map((jt) =>
-                            String(jt.id) === id ? { ...jt, name: newName } : jt,
-                          ),
-                        }));
-                        return true;
-                      } catch { return false; }
-                    } : undefined}
+                    onCreate={createJournalType}
+                    onRename={allCats.rename}
                     className="h-7 text-xs"
                   />
                 </div>
@@ -818,9 +812,9 @@ export function JournalForm({ editId, onSuccess, onCancel }: Props) {
                     <EditableTagBadge
                       key={tagId}
                       tagId={tagId}
-                      allTags={tags.items}
+                      allTags={tagItems}
                       onRemove={() => removeTag(ji, tagId)}
-                      onRename={tags.rename}
+                      onRename={allCats.rename}
                     />
                   ))}
                   <div className="w-40">
@@ -833,7 +827,7 @@ export function JournalForm({ editId, onSuccess, onCancel }: Props) {
                       placeholder="+ タグ"
                       className="h-7 text-xs"
                       onCreate={async (name) => {
-                        const id = await tags.create(name);
+                        const id = await createTag(name);
                         if (id) addTag(ji, Number(id));
                         return null;
                       }}

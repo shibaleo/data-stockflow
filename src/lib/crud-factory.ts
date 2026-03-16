@@ -153,7 +153,7 @@ export function registerCrudHandlers<T extends BaseRow>(
     buildCreate, hashCreate,
     buildUpdate, hashUpdate,
     buildDeactivate, hashDeactivate,
-    writeRoles = ["user"],
+    writeRoles = ["admin", "user"],
   } = config;
 
   const writeGuard = requireRole(...writeRoles);

@@ -1,11 +1,11 @@
--- Schema v2: Full rebuild
+-- Schema v3: Category system + posted_at on journal
 -- Drop and recreate the entire schema
 
 DROP SCHEMA IF EXISTS data_stockflow CASCADE;
 CREATE SCHEMA data_stockflow;
 
 -- ============================================================
--- SEQUENCES (13)
+-- SEQUENCES (12)
 -- ============================================================
 
 CREATE SEQUENCE data_stockflow.tenant_key_seq        START WITH 100000000000;
@@ -14,13 +14,11 @@ CREATE SEQUENCE data_stockflow.user_key_seq          START WITH 100000000000;
 CREATE SEQUENCE data_stockflow.book_key_seq          START WITH 100000000000;
 CREATE SEQUENCE data_stockflow.account_key_seq       START WITH 100000000000;
 CREATE SEQUENCE data_stockflow.period_key_seq        START WITH 100000000000;
-CREATE SEQUENCE data_stockflow.tag_key_seq           START WITH 100000000000;
+CREATE SEQUENCE data_stockflow.category_key_seq      START WITH 100000000000;
 CREATE SEQUENCE data_stockflow.department_key_seq    START WITH 100000000000;
 CREATE SEQUENCE data_stockflow.counterparty_key_seq  START WITH 100000000000;
 CREATE SEQUENCE data_stockflow.voucher_key_seq       START WITH 100000000000;
 CREATE SEQUENCE data_stockflow.journal_key_seq       START WITH 100000000000;
-CREATE SEQUENCE data_stockflow.voucher_type_key_seq  START WITH 100000000000;
-CREATE SEQUENCE data_stockflow.journal_type_key_seq  START WITH 100000000000;
 CREATE SEQUENCE data_stockflow.project_key_seq       START WITH 100000000000;
 
 -- ============================================================
@@ -146,9 +144,19 @@ CREATE TABLE data_stockflow.period (
   UNIQUE (tenant_key, code, revision)
 );
 
--- ---- tag ----
-CREATE TABLE data_stockflow.tag (
-  key              BIGINT NOT NULL DEFAULT nextval('data_stockflow.tag_key_seq'),
+-- ---- category_type (system seed, no revision) ----
+-- 分類軸の定義。role テーブルと同様、変更はマイグレーションのみ。
+CREATE TABLE data_stockflow.category_type (
+  code             TEXT PRIMARY KEY,
+  entity_type      TEXT NOT NULL,
+  name             TEXT NOT NULL,
+  allow_multiple   BOOLEAN NOT NULL DEFAULT false
+);
+
+-- ---- category (tenant-scoped classification values) ----
+-- tag, voucher_type, journal_type を統合した汎用分類マスタ。
+CREATE TABLE data_stockflow.category (
+  key              BIGINT NOT NULL DEFAULT nextval('data_stockflow.category_key_seq'),
   revision         INTEGER NOT NULL DEFAULT 1,
   created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
   valid_from       TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -158,13 +166,13 @@ CREATE TABLE data_stockflow.tag (
   revision_hash    TEXT NOT NULL,
   created_by       BIGINT NOT NULL,
   tenant_key       BIGINT NOT NULL,
+  category_type_code TEXT NOT NULL REFERENCES data_stockflow.category_type(code),
   code             TEXT NOT NULL,
   name             TEXT NOT NULL,
-  tag_type         TEXT NOT NULL,
   is_active        BOOLEAN NOT NULL DEFAULT true,
-  parent_tag_key   BIGINT,
+  parent_category_key BIGINT,
   PRIMARY KEY (key, revision),
-  UNIQUE (tenant_key, code, revision)
+  UNIQUE (tenant_key, category_type_code, code, revision)
 );
 
 -- ---- department ----
@@ -208,46 +216,6 @@ CREATE TABLE data_stockflow.counterparty (
   UNIQUE (tenant_key, code, revision)
 );
 
--- ---- voucher_type ----
-CREATE TABLE data_stockflow.voucher_type (
-  key              BIGINT NOT NULL DEFAULT nextval('data_stockflow.voucher_type_key_seq'),
-  revision         INTEGER NOT NULL DEFAULT 1,
-  created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
-  valid_from       TIMESTAMPTZ NOT NULL DEFAULT now(),
-  valid_to         TIMESTAMPTZ,
-  lines_hash       TEXT NOT NULL,
-  prev_revision_hash TEXT NOT NULL,
-  revision_hash    TEXT NOT NULL,
-  created_by       BIGINT NOT NULL,
-  tenant_key       BIGINT NOT NULL,
-  code             TEXT NOT NULL,
-  name             TEXT NOT NULL,
-  is_active        BOOLEAN NOT NULL DEFAULT true,
-  parent_voucher_type_key BIGINT,
-  PRIMARY KEY (key, revision),
-  UNIQUE (tenant_key, code, revision)
-);
-
--- ---- journal_type ----
-CREATE TABLE data_stockflow.journal_type (
-  key              BIGINT NOT NULL DEFAULT nextval('data_stockflow.journal_type_key_seq'),
-  revision         INTEGER NOT NULL DEFAULT 1,
-  created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
-  valid_from       TIMESTAMPTZ NOT NULL DEFAULT now(),
-  valid_to         TIMESTAMPTZ,
-  lines_hash       TEXT NOT NULL,
-  prev_revision_hash TEXT NOT NULL,
-  revision_hash    TEXT NOT NULL,
-  created_by       BIGINT NOT NULL,
-  book_key         BIGINT NOT NULL,
-  code             TEXT NOT NULL,
-  name             TEXT NOT NULL,
-  is_active        BOOLEAN NOT NULL DEFAULT true,
-  parent_journal_type_key BIGINT,
-  PRIMARY KEY (key, revision),
-  UNIQUE (book_key, code, revision)
-);
-
 -- ---- project ----
 CREATE TABLE data_stockflow.project (
   key              BIGINT NOT NULL DEFAULT nextval('data_stockflow.project_key_seq'),
@@ -271,7 +239,7 @@ CREATE TABLE data_stockflow.project (
   UNIQUE (tenant_key, code, revision)
 );
 
--- ---- voucher ----
+-- ---- voucher (business grouping — no posted_date, no period_key) ----
 CREATE TABLE data_stockflow.voucher (
   key              BIGINT NOT NULL DEFAULT nextval('data_stockflow.voucher_key_seq'),
   revision         INTEGER NOT NULL DEFAULT 1,
@@ -284,9 +252,7 @@ CREATE TABLE data_stockflow.voucher (
   created_by       BIGINT NOT NULL,
   tenant_key       BIGINT NOT NULL,
   idempotency_key  TEXT NOT NULL UNIQUE,
-  period_key       BIGINT NOT NULL,
   voucher_code     TEXT,
-  posted_date      TIMESTAMPTZ NOT NULL,
   description      TEXT,
   source_system    TEXT,
   sequence_no      INTEGER NOT NULL,
@@ -297,10 +263,10 @@ CREATE TABLE data_stockflow.voucher (
 
 -- Conditional unique on voucher_code (only when non-null)
 CREATE UNIQUE INDEX uq_voucher_code
-  ON data_stockflow.voucher (tenant_key, period_key, voucher_code)
+  ON data_stockflow.voucher (tenant_key, voucher_code)
   WHERE voucher_code IS NOT NULL;
 
--- ---- journal ----
+-- ---- journal (posted_at + period_key moved here; type keys removed) ----
 CREATE TABLE data_stockflow.journal (
   key              BIGINT NOT NULL DEFAULT nextval('data_stockflow.journal_key_seq'),
   revision         INTEGER NOT NULL DEFAULT 1,
@@ -314,9 +280,9 @@ CREATE TABLE data_stockflow.journal (
   tenant_key       BIGINT NOT NULL,
   voucher_key      BIGINT NOT NULL,
   book_key         BIGINT NOT NULL,
+  period_key       BIGINT NOT NULL,
+  posted_at        TIMESTAMPTZ NOT NULL,
   is_active        BOOLEAN NOT NULL DEFAULT true,
-  journal_type_key BIGINT NOT NULL,
-  voucher_type_key BIGINT NOT NULL,
   project_key      BIGINT NOT NULL,
   adjustment_flag  TEXT NOT NULL DEFAULT 'none',
   description      TEXT,
@@ -342,18 +308,32 @@ CREATE TABLE data_stockflow.journal_line (
   UNIQUE (journal_key, journal_revision, side, sort_order)
 );
 
--- ---- journal_tag ----
-CREATE TABLE data_stockflow.journal_tag (
+-- ---- entity_category (polymorphic junction — replaces journal_tag) ----
+-- エンティティと分類の紐付。journal のスナップショット分類を含む。
+CREATE TABLE data_stockflow.entity_category (
   uuid             UUID NOT NULL DEFAULT gen_random_uuid(),
-  journal_key      BIGINT NOT NULL,
-  journal_revision INTEGER NOT NULL,
   tenant_key       BIGINT NOT NULL,
-  tag_key          BIGINT NOT NULL,
+  category_type_code TEXT NOT NULL REFERENCES data_stockflow.category_type(code),
+  entity_key       BIGINT NOT NULL,
+  entity_revision  INTEGER,
+  category_key     BIGINT NOT NULL,
   created_by       BIGINT NOT NULL,
   created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
-  PRIMARY KEY (uuid),
-  FOREIGN KEY (journal_key, journal_revision) REFERENCES data_stockflow.journal (key, revision)
+  PRIMARY KEY (uuid)
 );
+
+-- allow_multiple=false の category_type に対するユニーク制約
+-- journal_type: 1仕訳に1つだけ
+CREATE UNIQUE INDEX uq_entity_category_journal_type
+  ON data_stockflow.entity_category (tenant_key, entity_key, entity_revision)
+  WHERE category_type_code = 'journal_type';
+
+-- journal_tag の検索用インデックス
+CREATE INDEX idx_entity_category_entity
+  ON data_stockflow.entity_category (category_type_code, entity_key, entity_revision);
+
+CREATE INDEX idx_entity_category_category
+  ON data_stockflow.entity_category (category_key);
 
 -- ---- api_key ----
 CREATE TABLE data_stockflow.api_key (
@@ -373,7 +353,7 @@ CREATE TABLE data_stockflow.api_key (
 CREATE INDEX idx_api_key_user ON data_stockflow.api_key (user_key);
 CREATE INDEX idx_api_key_prefix ON data_stockflow.api_key (key_prefix);
 
--- ---- system_log (renamed from audit_log) ----
+-- ---- system_log ----
 CREATE TABLE data_stockflow.system_log (
   uuid             UUID NOT NULL DEFAULT gen_random_uuid(),
   tenant_key       BIGINT,
@@ -395,7 +375,7 @@ CREATE INDEX idx_system_log_tenant_created
 CREATE INDEX idx_system_log_entity
   ON data_stockflow.system_log (entity_type, entity_key);
 
--- ---- event_log (business-level activity log) ----
+-- ---- event_log ----
 CREATE TABLE data_stockflow.event_log (
   uuid             UUID NOT NULL DEFAULT gen_random_uuid(),
   tenant_key       BIGINT,
@@ -460,9 +440,9 @@ FROM data_stockflow.period
 WHERE valid_from <= now() AND (valid_to IS NULL OR valid_to > now())
 ORDER BY key, created_at DESC;
 
-CREATE VIEW data_stockflow.current_tag AS
+CREATE VIEW data_stockflow.current_category AS
 SELECT DISTINCT ON (key) *
-FROM data_stockflow.tag
+FROM data_stockflow.category
 WHERE valid_from <= now() AND (valid_to IS NULL OR valid_to > now())
 ORDER BY key, created_at DESC;
 
@@ -475,18 +455,6 @@ ORDER BY key, created_at DESC;
 CREATE VIEW data_stockflow.current_counterparty AS
 SELECT DISTINCT ON (key) *
 FROM data_stockflow.counterparty
-WHERE valid_from <= now() AND (valid_to IS NULL OR valid_to > now())
-ORDER BY key, created_at DESC;
-
-CREATE VIEW data_stockflow.current_voucher_type AS
-SELECT DISTINCT ON (key) *
-FROM data_stockflow.voucher_type
-WHERE valid_from <= now() AND (valid_to IS NULL OR valid_to > now())
-ORDER BY key, created_at DESC;
-
-CREATE VIEW data_stockflow.current_journal_type AS
-SELECT DISTINCT ON (key) *
-FROM data_stockflow.journal_type
 WHERE valid_from <= now() AND (valid_to IS NULL OR valid_to > now())
 ORDER BY key, created_at DESC;
 
@@ -526,20 +494,14 @@ SELECT * FROM data_stockflow.account ORDER BY key, revision;
 CREATE VIEW data_stockflow.history_period AS
 SELECT * FROM data_stockflow.period ORDER BY key, revision;
 
-CREATE VIEW data_stockflow.history_tag AS
-SELECT * FROM data_stockflow.tag ORDER BY key, revision;
+CREATE VIEW data_stockflow.history_category AS
+SELECT * FROM data_stockflow.category ORDER BY key, revision;
 
 CREATE VIEW data_stockflow.history_department AS
 SELECT * FROM data_stockflow.department ORDER BY key, revision;
 
 CREATE VIEW data_stockflow.history_counterparty AS
 SELECT * FROM data_stockflow.counterparty ORDER BY key, revision;
-
-CREATE VIEW data_stockflow.history_voucher_type AS
-SELECT * FROM data_stockflow.voucher_type ORDER BY key, revision;
-
-CREATE VIEW data_stockflow.history_journal_type AS
-SELECT * FROM data_stockflow.journal_type ORDER BY key, revision;
 
 CREATE VIEW data_stockflow.history_project AS
 SELECT * FROM data_stockflow.project ORDER BY key, revision;
@@ -549,12 +511,18 @@ SELECT * FROM data_stockflow.journal ORDER BY key, revision;
 
 -- ============================================================
 -- BOOTSTRAP DATA
--- Only roles are seeded. Tenants, users, and all tenant-scoped
--- data are created via the platform API after bootstrap.
 -- ============================================================
 
+-- Roles (system seed)
 INSERT INTO data_stockflow.role (key, revision, code, name, lines_hash, prev_revision_hash, revision_hash) VALUES
   (nextval('data_stockflow.role_key_seq'), 1, 'platform', 'Platform Admin', 'bootstrap', 'genesis', 'bootstrap'),
   (nextval('data_stockflow.role_key_seq'), 1, 'audit',    'Auditor',        'bootstrap', 'genesis', 'bootstrap'),
   (nextval('data_stockflow.role_key_seq'), 1, 'admin',    'Tenant Admin',   'bootstrap', 'genesis', 'bootstrap'),
   (nextval('data_stockflow.role_key_seq'), 1, 'user',     'User',           'bootstrap', 'genesis', 'bootstrap');
+
+-- Category types (system seed)
+-- journal_type: 仕訳種別（1仕訳に1つ）
+-- journal_tag: 仕訳タグ（1仕訳に複数可）
+INSERT INTO data_stockflow.category_type (code, entity_type, name, allow_multiple) VALUES
+  ('journal_type', 'journal', '仕訳種別', false),
+  ('journal_tag',  'journal', '仕訳タグ', true);

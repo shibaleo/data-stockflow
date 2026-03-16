@@ -16,7 +16,7 @@ export type AuditAction =
 export type AuditEntityType =
   | "book"
   | "account"
-  | "tag"
+  | "category"
   | "department"
   | "period"
   | "counterparty"
@@ -25,8 +25,6 @@ export type AuditEntityType =
   | "tenant"
   | "role"
   | "user"
-  | "voucher_type"
-  | "journal_type"
   | "project"
   | "api_key";
 

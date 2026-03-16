@@ -13,20 +13,35 @@
 ```env
 DATABASE_URL=postgresql://...
 JWT_SECRET=<ランダム文字列>
+AUTH_SECRET=<ランダム文字列>
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_...
 CLERK_SECRET_KEY=sk_...
+BASE_URL=http://localhost:3000
 ```
+
+## フロー図
+
+```
+migration.sql → npm run dev → bootstrap.ts → seed-accounting.mjs → Clerk Login
+  (build)       (server)      (bootstrap)       (seed)              (利用開始)
+```
+
+| フェーズ | スコープ | 内容 |
+|----------|----------|------|
+| build | なし | スキーマ作成、ロール seed |
+| bootstrap | platform | テナント・ユーザー作成、API key 発行 |
+| seed | admin | 帳簿・勘定科目・期間・デモデータ投入 |
 
 ## 1. 依存関係インストール
 
 ```bash
-npm install
+pnpm install
 ```
 
-## 2. データベースマイグレーション
+## 2. データベースマイグレーション (build)
 
 スキーマ `data_stockflow` を作成し、全テーブル・ビュー・トリガーを構築する。
-ブートストラップデータとしてロール 4 件 (platform, audit, admin, user) のみ投入される。
+ブートストラップデータとしてロール 4 件 + カテゴリ種別 2 件が投入される。
 
 ```bash
 psql $DATABASE_URL -f scripts/migration.sql
@@ -34,59 +49,31 @@ psql $DATABASE_URL -f scripts/migration.sql
 
 > **注意**: `DROP SCHEMA IF EXISTS data_stockflow CASCADE` が先頭にあるため、既存データは全て削除される。
 
-## 3. プラットフォーム API キー発行
+## 3. アプリケーション起動
 
-マイグレーション後、プラットフォーム操作用の API キーを生成する。
-このキーは `userKey: 0, tenantKey: 0, role: platform` で発行され、テナント・ユーザー管理の全操作が可能。
+bootstrap / seed はいずれも API 経由で動作するため、先にサーバーを起動する。
+
+```bash
+pnpm dev
+```
+
+API ドキュメント: http://localhost:3000/api/reference
+
+## 4. ブートストラップ (bootstrap)
+
+**別ターミナルで実行。** 1 つのテナントが使える状態まで自動セットアップする。
+
+1. Platform API key 発行 (platform スコープ)
+2. テナント作成 (`POST /tenants`)
+3. 管理者ユーザー登録 (`POST /tenants/{id}/users`)
+4. Admin API key 発行 (admin スコープ)
 
 ```bash
 npx tsx scripts/bootstrap.ts
 ```
 
-出力された `PLATFORM_API_KEY=sf_...` を `.env` に追記する。
-このキーは再表示できないため、安全に保管すること。
-
-## 4. 初回テナント作成
-
-プラットフォーム API キーを使ってテナントを作成する。
-
-```bash
-curl -X POST http://localhost:3000/api/v1/tenants \
-  -H "Authorization: Bearer $PLATFORM_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"name": "My Company"}'
-```
-
-レスポンス例:
-```json
-{
-  "data": {
-    "id": 100000000000,
-    "revision": 1,
-    "name": "My Company",
-    "locked_until": null
-  }
-}
-```
-
-レスポンスの `id` がテナント ID となる。
-
-## 5. 管理者ユーザー登録 (招待)
-
-テナントに管理者ユーザーをメールアドレスで事前登録する。
-この時点では `external_id` は null — Clerk ログイン時にメールアドレスで自動紐付けされる。
-
-```bash
-curl -X POST http://localhost:3000/api/v1/tenants/{tenantId}/users \
-  -H "Authorization: Bearer $PLATFORM_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "shiba.dog.leo.private@gmail.com",
-    "code": "admin001",
-    "name": "Admin User",
-    "role_id": 100000000002
-  }'
-```
+出力された `PLATFORM_API_KEY` と `ADMIN_API_KEY` を `.env` に追記する。
+これらのキーは再表示できないため、安全に保管すること。
 
 ### ロール ID 一覧
 
@@ -97,26 +84,23 @@ curl -X POST http://localhost:3000/api/v1/tenants/{tenantId}/users \
 | 100000000002 | admin | テナント管理者 |
 | 100000000003 | user | 一般ユーザー |
 
+## 5. デモデータ投入 (seed)
+
+admin API key を使い、帳簿・勘定科目・会計期間・マスタ・サンプル伝票を投入する。
+
+```bash
+# 一般帳簿 + 全勘定科目 + 基盤マスタ + サンプル伝票
+node scripts/seed-accounting.mjs
+
+# 食料品帳簿 (オプション)
+node scripts/seed-grocery.mjs
+```
+
 ## 6. ログインと自動紐付け
 
-1. 登録したメールアドレスの Google アカウントで Clerk ログイン
+1. bootstrap で登録したメールアドレスの Google アカウントで Clerk ログイン
 2. システムが Clerk JWT の `sub` → `external_id` で検索 (初回は未登録)
 3. Clerk Backend API からメールアドレスを取得
 4. `email` で一致するユーザーを検索 → ヒット
 5. `external_id` に Clerk User ID を書き込み (append-only で新リビジョン追加)
 6. 以降のログインは `external_id` で即マッチ
-
-## 7. アプリケーション起動
-
-```bash
-npm run dev
-```
-
-API ドキュメント: http://localhost:3000/api/reference
-
-## フロー図
-
-```
-migration.sql  →  bootstrap.ts  →  POST /tenants  →  POST /tenants/:id/users  →  Clerk Login
-   (roles)        (API key)        (tenant)          (admin by email)            (auto-bind)
-```
