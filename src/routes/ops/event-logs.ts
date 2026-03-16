@@ -75,15 +75,16 @@ app.openapi(list, async (c) => {
 
   if (query.cursor) {
     try {
-      const decoded = JSON.parse(Buffer.from(query.cursor, "base64url").toString());
-      if (decoded.created_at && decoded.uuid) {
+      const plain = Buffer.from(query.cursor, "base64url").toString();
+      const sep = plain.indexOf("|");
+      if (sep > 0) {
+        const cursorTime = plain.slice(0, sep);
+        const cursorUuid = plain.slice(sep + 1);
         conditions.push(
-          sql`(created_at, uuid) < (${decoded.created_at}::timestamptz, ${decoded.uuid}::uuid)`,
+          sql`(created_at, uuid) < (${cursorTime}::timestamptz, ${cursorUuid}::uuid)`,
         );
       }
-    } catch {
-      // invalid cursor
-    }
+    } catch { /* invalid cursor */ }
   }
 
   const whereClause = sql.join(conditions, sql` AND `);
@@ -117,13 +118,7 @@ app.openapi(list, async (c) => {
   const nextCursor =
     rows.length === limit
       ? Buffer.from(
-          JSON.stringify({
-            created_at:
-              rows[rows.length - 1].created_at instanceof Date
-                ? rows[rows.length - 1].created_at.toISOString()
-                : String(rows[rows.length - 1].created_at),
-            uuid: rows[rows.length - 1].uuid,
-          }),
+          `${rows[rows.length - 1].created_at instanceof Date ? rows[rows.length - 1].created_at.toISOString() : String(rows[rows.length - 1].created_at)}|${rows[rows.length - 1].uuid}`,
         ).toString("base64url")
       : null;
 

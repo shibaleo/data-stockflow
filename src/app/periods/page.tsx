@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { Plus, Pencil, RefreshCw, CalendarPlus } from "lucide-react";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { Plus, Pencil, RefreshCw, Lock, Unlock, ShieldCheck, ChevronDown, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,13 +22,12 @@ import {
   DialogFooter,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { SortHeader } from "@/components/shared/sort-header";
-import { useSort } from "@/hooks/use-sort";
-import { api, ApiError } from "@/lib/api-client";
+import { api, ApiError, fetchAllPages } from "@/lib/api-client";
 
 interface PeriodRow {
   id: number;
   code: string;
+  name: string;
   start_date: string;
   end_date: string;
   status: string;
@@ -50,28 +49,81 @@ const STATUS_STYLE: Record<string, string> = {
   finalized: "bg-blue-900/30 text-blue-400 border-blue-800/50",
 };
 
-type PSortKey = "code" | "start_date" | "status";
+// ── Tree helpers ──
 
-const COLUMNS: [PSortKey, string][] = [
-  ["code", "コード"],
-  ["start_date", "期間"],
-  ["status", "ステータス"],
-];
+interface PeriodTreeNode {
+  id: number;
+  data: PeriodRow;
+  children: PeriodTreeNode[];
+  depth: number;
+  hasChildren: boolean;
+}
+
+function buildPeriodTree(items: PeriodRow[]): PeriodTreeNode[] {
+  const nodeMap = new Map<number, PeriodTreeNode>();
+  for (const item of items) {
+    nodeMap.set(item.id, { id: item.id, data: item, children: [], depth: 0, hasChildren: false });
+  }
+  const roots: PeriodTreeNode[] = [];
+  for (const node of nodeMap.values()) {
+    const parentId = node.data.parent_period_id;
+    if (parentId && nodeMap.has(parentId)) {
+      nodeMap.get(parentId)!.children.push(node);
+      nodeMap.get(parentId)!.hasChildren = true;
+    } else {
+      roots.push(node);
+    }
+  }
+  function sortAndSetDepth(nodes: PeriodTreeNode[], depth: number) {
+    nodes.sort((a, b) => a.data.start_date.localeCompare(b.data.start_date));
+    for (const n of nodes) { n.depth = depth; sortAndSetDepth(n.children, depth + 1); }
+  }
+  sortAndSetDepth(roots, 0);
+  return roots;
+}
+
+function flattenPeriodTree(nodes: PeriodTreeNode[], collapsed: Set<number>): PeriodTreeNode[] {
+  const result: PeriodTreeNode[] = [];
+  function walk(list: PeriodTreeNode[]) {
+    for (const n of list) {
+      result.push(n);
+      if (n.hasChildren && !collapsed.has(n.id)) walk(n.children);
+    }
+  }
+  walk(nodes);
+  return result;
+}
+
+function getDescendantIds(items: PeriodRow[], id: number): Set<number> {
+  const result = new Set<number>([id]);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const item of items) {
+      if (item.parent_period_id && result.has(item.parent_period_id) && !result.has(item.id)) {
+        result.add(item.id);
+        changed = true;
+      }
+    }
+  }
+  return result;
+}
 
 export default function PeriodsPage() {
   const [periods, setPeriods] = useState<PeriodRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
-  const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
 
-  const { sorted, sortKey, sortDir, toggleSort } = useSort<PeriodRow, PSortKey>(periods, "start_date");
+  const roots = useMemo(() => buildPeriodTree(periods), [periods]);
+  const flatNodes = useMemo(() => flattenPeriodTree(roots, collapsed), [roots, collapsed]);
 
   const fetchPeriods = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api.get<{ data: PeriodRow[] }>(`/periods?limit=200`);
-      setPeriods(res.data);
+      const data = await fetchAllPages<PeriodRow>("/periods");
+      setPeriods(data);
     } catch (e) {
       const msg = e instanceof ApiError ? e.body.error : "期間の取得に失敗しました";
       toast.error(msg);
@@ -80,9 +132,7 @@ export default function PeriodsPage() {
     }
   }, []);
 
-  useEffect(() => {
-    fetchPeriods();
-  }, [fetchPeriods]);
+  useEffect(() => { fetchPeriods(); }, [fetchPeriods]);
 
   const handleCreate = () => { setEditId(null); setDialogOpen(true); };
   const handleEdit = (id: number) => { setEditId(id); setDialogOpen(true); };
@@ -93,7 +143,26 @@ export default function PeriodsPage() {
     fetchPeriods();
   };
 
-  const handleBulkSuccess = () => { setBulkDialogOpen(false); fetchPeriods(); };
+  const toggleCollapse = (id: number) => {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const handleStatusAction = async (id: number, action: "close" | "reopen" | "finalize") => {
+    const labels = { close: "締め", reopen: "再開", finalize: "確定" };
+    try {
+      await api.post(`/periods/${id}/${action}`, {});
+      toast.success(`期間を${labels[action]}しました`);
+      fetchPeriods();
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.body.error : `${labels[action]}に失敗しました`;
+      toast.error(msg);
+    }
+  };
+
   const formatDate = (iso: string) => new Date(iso).toLocaleDateString("ja-JP");
 
   return (
@@ -116,40 +185,70 @@ export default function PeriodsPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border text-left text-muted-foreground">
-                {COLUMNS.map(([key, label]) => (
-                  <th key={key} className="pb-3 pr-4 font-medium">
-                    <SortHeader column={key} label={label} sortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} />
-                  </th>
-                ))}
-                <th className="pb-3 font-medium w-20">操作</th>
+                <th className="pb-3 pr-4 font-medium">名前</th>
+                <th className="pb-3 pr-4 font-medium">コード</th>
+                <th className="pb-3 pr-4 font-medium">期間</th>
+                <th className="pb-3 pr-4 font-medium">ステータス</th>
+                <th className="pb-3 font-medium w-32">操作</th>
               </tr>
             </thead>
             <tbody>
-              {sorted.map((p) => (
-                <tr key={p.id} className="border-b border-border/50 hover:bg-accent/30 transition-colors">
-                  <td className="py-3 pr-4 font-mono text-xs">{p.code}</td>
-                  <td className="py-3 pr-4">{formatDate(p.start_date)} ~ {formatDate(p.end_date)}</td>
-                  <td className="py-3 pr-4">
-                    <Badge className={STATUS_STYLE[p.status] || ""}>{STATUS_LABEL[p.status] || p.status}</Badge>
-                  </td>
-                  <td className="py-3">
-                    <Button variant="ghost" size="icon" onClick={() => handleEdit(p.id)}>
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                  </td>
-                </tr>
-              ))}
+              {flatNodes.map((node) => {
+                const p = node.data;
+                return (
+                  <tr key={p.id} className="border-b border-border/50 hover:bg-accent/30 transition-colors">
+                    <td className="py-2 pr-4" style={{ paddingLeft: `${node.depth * 24 + 12}px` }}>
+                      <div className="flex items-center">
+                        {node.hasChildren ? (
+                          <button onClick={() => toggleCollapse(p.id)} className="mr-1.5 w-4 text-center text-muted-foreground hover:text-foreground">
+                            {collapsed.has(p.id) ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                          </button>
+                        ) : node.depth > 0 ? (
+                          <span className="mr-1.5 w-4 text-center text-muted-foreground/40">└</span>
+                        ) : (
+                          <span className="mr-1.5 w-4" />
+                        )}
+                        <span>{p.name}</span>
+                      </div>
+                    </td>
+                    <td className="py-2 pr-4 font-mono text-xs">{p.code}</td>
+                    <td className="py-2 pr-4">{formatDate(p.start_date)} ~ {formatDate(p.end_date)}</td>
+                    <td className="py-2 pr-4">
+                      <Badge className={STATUS_STYLE[p.status] || ""}>{STATUS_LABEL[p.status] || p.status}</Badge>
+                    </td>
+                    <td className="py-2">
+                      <div className="flex items-center gap-1">
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleEdit(p.id)} title="編集">
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        {p.status === "open" && (
+                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleStatusAction(p.id, "close")} title="締め">
+                            <Lock className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                        {p.status === "closed" && (
+                          <>
+                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleStatusAction(p.id, "reopen")} title="再開">
+                              <Unlock className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleStatusAction(p.id, "finalize")} title="確定">
+                              <ShieldCheck className="h-3.5 w-3.5" />
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
       )}
 
-      <div className="fixed bottom-6 right-6 flex flex-col gap-3">
-        <Button className="h-12 w-12 rounded-full shadow-lg" variant="outline" size="icon" title="個別作成" onClick={handleCreate}>
-          <Plus className="h-5 w-5" />
-        </Button>
-        <Button className="h-14 w-14 rounded-full shadow-lg" size="icon" title="年度一括作成" onClick={() => setBulkDialogOpen(true)}>
-          <CalendarPlus className="h-6 w-6" />
+      <div className="fixed bottom-6 right-6">
+        <Button className="h-14 w-14 rounded-full shadow-lg" size="icon" title="期間を作成" onClick={handleCreate}>
+          <Plus className="h-6 w-6" />
         </Button>
       </div>
 
@@ -159,12 +258,6 @@ export default function PeriodsPage() {
         editId={editId}
         periods={periods}
         onSuccess={handleSuccess}
-      />
-
-      <BulkCreateDialog
-        open={bulkDialogOpen}
-        onOpenChange={setBulkDialogOpen}
-        onSuccess={handleBulkSuccess}
       />
     </div>
   );
@@ -184,47 +277,72 @@ function PeriodDialog({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [code, setCode] = useState("");
+  const [name, setName] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
-  const [status, setStatus] = useState("open");
+  const [parentId, setParentId] = useState<string>("none");
+
+  // Exclude self and descendants from parent options
+  const parentOptions = useMemo(() => {
+    if (!editId) return periods.filter((p) => p.is_active);
+    const excluded = getDescendantIds(periods, editId);
+    return periods.filter((p) => p.is_active && !excluded.has(p.id));
+  }, [periods, editId]);
+
+  const selectedParent = parentId !== "none" ? periods.find((p) => p.id === Number(parentId)) : null;
 
   useEffect(() => {
-    if (!open) { setCode(""); setStartDate(""); setEndDate(""); setStatus("open"); setError(null); return; }
+    if (!open) { setCode(""); setName(""); setStartDate(""); setEndDate(""); setParentId("none"); setError(null); return; }
     if (!editId) return;
     const existing = periods.find((p) => p.id === editId);
     if (existing) {
       setCode(existing.code);
+      setName(existing.name);
       setStartDate(existing.start_date.slice(0, 10));
       setEndDate(existing.end_date.slice(0, 10));
-      setStatus(existing.status);
+      setParentId(existing.parent_period_id ? String(existing.parent_period_id) : "none");
     }
   }, [open, editId, periods]);
 
   const handleSubmit = async () => {
     setError(null);
-    if (!code.trim() || !startDate || !endDate) { setError("コード、開始日、終了日は必須です"); return; }
-    if (new Date(startDate) >= new Date(endDate)) { setError("終了日は開始日より後にしてください"); return; }
+    if (!code.trim() || !name.trim() || !startDate || !endDate) {
+      setError("コード、名前、開始日、終了日は必須です");
+      return;
+    }
+    const sd = new Date(startDate);
+    const ed = new Date(endDate);
+    if (sd >= ed) { setError("終了日は開始日より後にしてください"); return; }
+
+    // Client-side parent date range check
+    if (selectedParent) {
+      const ps = new Date(selectedParent.start_date);
+      const pe = new Date(selectedParent.end_date);
+      if (sd < ps || ed > pe) {
+        setError(`親期間（${new Date(selectedParent.start_date).toLocaleDateString("ja-JP")} ~ ${new Date(selectedParent.end_date).toLocaleDateString("ja-JP")}）の範囲内にしてください`);
+        return;
+      }
+    }
 
     setLoading(true);
     try {
+      const payload: Record<string, unknown> = {
+        code: code.trim(),
+        name: name.trim(),
+        start_date: sd.toISOString(),
+        end_date: ed.toISOString(),
+      };
       if (editId) {
-        await api.put(`/periods/${editId}`, {
-          code: code.trim(),
-          start_date: new Date(startDate).toISOString(),
-          end_date: new Date(endDate).toISOString(),
-          status,
-        });
+        payload.parent_period_id = parentId === "none" ? null : Number(parentId);
+        await api.put(`/periods/${editId}`, payload);
       } else {
-        await api.post(`/periods`, {
-          code: code.trim(),
-          start_date: new Date(startDate).toISOString(),
-          end_date: new Date(endDate).toISOString(),
-          status,
-        });
+        if (parentId !== "none") payload.parent_period_id = Number(parentId);
+        payload.status = "open";
+        await api.post(`/periods`, payload);
       }
       onSuccess();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "保存に失敗しました");
+      setError(e instanceof ApiError ? e.body.error : e instanceof Error ? e.message : "保存に失敗しました");
     } finally {
       setLoading(false);
     }
@@ -240,9 +358,27 @@ function PeriodDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>コード</Label>
+              <Input value={code} onChange={(e) => setCode(e.target.value)} placeholder="例: 2026-01" className="font-mono" />
+            </div>
+            <div className="space-y-2">
+              <Label>名前</Label>
+              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="例: 2026年1月期" />
+            </div>
+          </div>
           <div className="space-y-2">
-            <Label>コード</Label>
-            <Input value={code} onChange={(e) => setCode(e.target.value)} placeholder="例: 2026-01" className="font-mono" />
+            <Label>親期間</Label>
+            <Select value={parentId} onValueChange={setParentId}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">なし</SelectItem>
+                {parentOptions.map((p) => (
+                  <SelectItem key={p.id} value={String(p.id)}>{p.name} ({p.code})</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
@@ -254,131 +390,16 @@ function PeriodDialog({
               <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
             </div>
           </div>
-          <div className="space-y-2">
-            <Label>ステータス</Label>
-            <Select value={status} onValueChange={setStatus}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="open">オープン</SelectItem>
-                <SelectItem value="closed">クローズ</SelectItem>
-                <SelectItem value="finalized">確定済</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+          {selectedParent && (
+            <p className="text-xs text-muted-foreground">
+              親期間の範囲: {new Date(selectedParent.start_date).toLocaleDateString("ja-JP")} ~ {new Date(selectedParent.end_date).toLocaleDateString("ja-JP")}
+            </p>
+          )}
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={loading}>キャンセル</Button>
           <Button onClick={handleSubmit} disabled={loading}>{loading ? "保存中..." : editId ? "更新" : "作成"}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// ── Bulk Create Dialog ──
-
-function BulkCreateDialog({
-  open, onOpenChange, onSuccess,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onSuccess: () => void;
-}) {
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [fiscalYear, setFiscalYear] = useState("2026");
-  const [startMonth, setStartMonth] = useState("4");
-  const [progress, setProgress] = useState("");
-
-  useEffect(() => { if (!open) { setError(null); setProgress(""); } }, [open]);
-
-  const startMon = Number(startMonth);
-  const year = Number(fiscalYear);
-  const preview = Array.from({ length: 12 }, (_, i) => {
-    const mon = ((startMon - 1 + i) % 12) + 1;
-    const y = year + (startMon + i > 12 ? 1 : 0);
-    const start = new Date(y, mon - 1, 1);
-    const end = new Date(y, mon, 0);
-    return { periodNo: i + 1, code: `${year}-${String(i + 1).padStart(2, "0")}`, start, end };
-  });
-
-  const handleSubmit = async () => {
-    setError(null);
-    if (!Number.isInteger(year) || year < 1900 || year > 2100) { setError("年度は1900~2100の整数で入力してください"); return; }
-    setLoading(true);
-    let created = 0;
-    try {
-      for (const p of preview) {
-        setProgress(`${created + 1}/12 作成中...`);
-        await api.post(`/periods`, {
-          code: p.code, start_date: p.start.toISOString(), end_date: p.end.toISOString(), status: "open",
-        });
-        created++;
-      }
-      toast.success(`${created}件の期間を作成しました`);
-      onSuccess();
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "作成に失敗しました";
-      setError(`${created}件作成後にエラー: ${msg}`);
-    } finally {
-      setLoading(false); setProgress("");
-    }
-  };
-
-  const fmt = (d: Date) => d.toLocaleDateString("ja-JP");
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
-        <DialogHeader>
-          <DialogTitle>年度一括作成</DialogTitle>
-          <DialogDescription>指定した年度・開始月から12ヶ月分の期間を一括作成します</DialogDescription>
-        </DialogHeader>
-        <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>年度</Label>
-              <Input type="number" value={fiscalYear} onChange={(e) => setFiscalYear(e.target.value)} placeholder="2026" />
-            </div>
-            <div className="space-y-2">
-              <Label>開始月</Label>
-              <Select value={startMonth} onValueChange={setStartMonth}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {Array.from({ length: 12 }, (_, i) => (
-                    <SelectItem key={i + 1} value={String(i + 1)}>{i + 1}月</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <div className="rounded-md border border-border overflow-hidden">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b border-border bg-muted/30 text-muted-foreground">
-                  <th className="py-1.5 px-3 text-left font-medium">期</th>
-                  <th className="py-1.5 px-3 text-left font-medium">コード</th>
-                  <th className="py-1.5 px-3 text-left font-medium">期間</th>
-                </tr>
-              </thead>
-              <tbody>
-                {preview.map((p) => (
-                  <tr key={p.periodNo} className="border-b border-border/50">
-                    <td className="py-1 px-3">{p.periodNo}</td>
-                    <td className="py-1 px-3 font-mono">{p.code}</td>
-                    <td className="py-1 px-3">{fmt(p.start)} ~ {fmt(p.end)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          {progress && <p className="text-sm text-muted-foreground">{progress}</p>}
-          {error && <p className="text-sm text-destructive">{error}</p>}
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={loading}>キャンセル</Button>
-          <Button onClick={handleSubmit} disabled={loading}>{loading ? progress || "作成中..." : "12ヶ月分を作成"}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

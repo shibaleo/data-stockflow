@@ -36,8 +36,8 @@ export function dataSchema<T extends z.ZodType>(itemSchema: T) {
 }
 
 export const listQuerySchema = z.object({
-  limit: z.string().optional().openapi({ example: "50" }),
-  cursor: z.string().optional(),
+  limit: z.string().optional().openapi({ example: "100" }),
+  cursor: z.string().optional().openapi({ description: "Last key from previous page" }),
 });
 
 // v2: id path param (BIGINT key exposed as "id")
@@ -218,6 +218,7 @@ export const updateAccountSchema = z.object({
 export const periodResponseSchema = z.object({
   id: z.number(),
   code: z.string(),
+  name: z.string(),
   start_date: z.string(),
   end_date: z.string(),
   status: z.string(),
@@ -229,6 +230,7 @@ export const periodResponseSchema = z.object({
 
 export const createPeriodSchema = z.object({
   code: zSanitized(z.string().min(1).max(50)),
+  name: zSanitized(z.string().min(1).max(200)),
   start_date: z.string().datetime(),
   end_date: z.string().datetime(),
   status: z.enum(["open", "closed", "finalized"]).default("open"),
@@ -237,9 +239,11 @@ export const createPeriodSchema = z.object({
 
 export const updatePeriodSchema = z.object({
   code: zSanitized(z.string().min(1).max(100)).optional(),
+  name: zSanitized(z.string().min(1).max(200)).optional(),
   start_date: z.string().datetime().optional(),
   end_date: z.string().datetime().optional(),
   status: z.enum(["open", "closed", "finalized"]).optional(),
+  parent_period_id: z.number().int().positive().nullable().optional(),
   is_active: z.boolean().optional(),
 });
 
@@ -389,8 +393,8 @@ export const journalLineResponseSchema = z.object({
   sort_order: z.number(),
   side: z.string(),
   account_id: z.number(),
-  department_id: z.number(),
-  counterparty_id: z.number(),
+  department_id: z.number().nullable(),
+  counterparty_id: z.number().nullable(),
   amount: z.string(),
   description: z.string().nullable(),
 });
@@ -426,8 +430,8 @@ export const journalLineSchema = z.object({
   sort_order: z.number().int().min(1),
   side: z.enum(["debit", "credit"]),
   account_id: z.number().int().positive(),
-  department_id: z.number().int().positive(),
-  counterparty_id: z.number().int().positive(),
+  department_id: z.number().int().positive().nullable().optional(),
+  counterparty_id: z.number().int().positive().nullable().optional(),
   amount: z.number().positive("amount must be positive"),
   description: z.string().optional(),
 });

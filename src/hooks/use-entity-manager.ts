@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback, type Dispatch, type SetStateAction } from "react";
-import { api } from "@/lib/api-client";
+import { api, fetchAllPages } from "@/lib/api-client";
 import type { ComboOption } from "@/components/journals/master-combobox";
 
 /** Base shape shared by all master entities */
@@ -51,8 +51,8 @@ export function useEntityManager<T extends EntityRow>(
   const refetch = useCallback(async () => {
     if (!endpoint) return;
     try {
-      const res = await api.get<{ data: T[] }>(endpoint);
-      setItems(res.data.filter((r) => r.is_active));
+      const all = await fetchAllPages<T>(endpoint);
+      setItems(all.filter((r) => r.is_active));
     } catch {
       // silently fail — caller can check items.length
     }

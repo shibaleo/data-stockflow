@@ -22,7 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { api, ApiError } from "@/lib/api-client";
+import { api, ApiError, fetchAllPages } from "@/lib/api-client";
 import { formatUnitPreview } from "@/lib/format";
 
 interface BookRow {
@@ -65,8 +65,8 @@ export default function BooksPage() {
   const fetchBooks = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api.get<{ data: BookRow[] }>("/books");
-      setBooks(res.data);
+      const data = await fetchAllPages<BookRow>("/books");
+      setBooks(data);
     } catch (e) {
       const msg = e instanceof ApiError ? e.body.error : "帳簿の取得に失敗しました";
       toast.error(msg);

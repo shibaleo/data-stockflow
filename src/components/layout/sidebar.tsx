@@ -17,6 +17,7 @@ import {
   PenLine,
   Shield,
   Tag,
+  Tags,
   Users,
 } from "lucide-react";
 import { UserButton, useUser } from "@clerk/nextjs";
@@ -42,6 +43,7 @@ const navItems: NavItem[] = [
   { href: "/counterparties", label: "取引先", icon: Users },
   { href: "/projects", label: "プロジェクト", icon: FolderKanban },
   { href: "/categories", label: "分類", icon: Tag },
+  { href: "/tags", label: "タグ", icon: Tags },
   // 設定
   { href: "/periods", label: "期間", icon: Calendar, separator: true },
   { href: "/books", label: "帳簿", icon: BookOpen },

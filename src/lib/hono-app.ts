@@ -11,6 +11,7 @@ import roles from "@/routes/roles";
 import users from "@/routes/users";
 import books from "@/routes/books";
 import accounts from "@/routes/accounts";
+import categoryTypes from "@/routes/category-types";
 import categories from "@/routes/categories";
 import departments from "@/routes/departments";
 import periods from "@/routes/periods";
@@ -57,6 +58,9 @@ app.use("*", requireWritable());
 // Platform-scoped
 app.route("/tenants", tenants);
 app.route("/roles", roles);
+
+// Platform-scoped read-only
+app.route("/category-types", categoryTypes);
 
 // Tenant-scoped master routes
 app.route("/users", users);

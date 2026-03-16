@@ -66,6 +66,7 @@ export interface CurrentPeriod extends BaseEntity {
   created_by: number;
   tenant_key: number;
   code: string;
+  name: string;
   start_date: Date;
   end_date: Date;
   status: string;

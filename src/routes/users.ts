@@ -1,7 +1,7 @@
 import { createApp } from "@/lib/create-app";
 import { db } from "@/lib/db";
 import { user } from "@/lib/db/schema";
-import { listCurrent, getCurrent, getMaxRevision, listHistory } from "@/lib/append-only";
+import { listCurrent, getCurrent, getMaxRevision, listHistory, decodeCursor, encodeCursor } from "@/lib/append-only";
 import { userResponseSchema, createUserSchema, updateUserSchema } from "@/lib/validators";
 import { requireTenant, requireAuth, requireRole } from "@/middleware/guards";
 import { recordAudit } from "@/lib/audit";
@@ -20,9 +20,13 @@ const mapUser = createMapper<CurrentUser>([], ["tenant_key", "role_key"]);
 const routes = defineCrudRoutes("Users", "userId", userResponseSchema, createUserSchema, updateUserSchema);
 
 app.openapi(routes.list, async (c) => {
+  const query = c.req.valid("query");
+  const limit = Math.min(Number(query.limit || 100), 200);
+  const cursor = query.cursor ? decodeCursor(query.cursor) : undefined;
   const scope = c.get("userRole") === "platform" ? null : { tenant_key: c.get("tenantKey") };
-  const rows = await listCurrent<CurrentUser>("current_user", scope);
-  return c.json({ data: rows.map(mapUser) }, 200);
+  const rows = await listCurrent<CurrentUser>("current_user", scope, { limit, cursor });
+  const nextCursor = rows.length === limit ? encodeCursor(rows[rows.length - 1]) : null;
+  return c.json({ data: rows.map(mapUser), next_cursor: nextCursor }, 200);
 });
 
 /** GET /users/me — current authenticated user */

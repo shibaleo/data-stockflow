@@ -5,7 +5,7 @@ const S = "data_stockflow";
 
 /**
  * List current (latest active revision) records from a current_* view.
- * Cursor-based pagination using (created_at, key).
+ * Cursor-based pagination using key (monotonically increasing).
  *
  * scopeFilter can be:
  * - { tenant_key: number } for tenant-scoped views
@@ -17,12 +17,13 @@ export async function listCurrent<T>(
   scopeFilter: { tenant_key: number } | { book_key: number } | null,
   options: {
     limit?: number;
-    cursor?: { created_at: string; key: number };
+    cursor?: number;
     activeOnly?: boolean;
   } = {}
 ): Promise<T[]> {
-  const limit = Math.min(options.limit ?? 50, 200);
+  const limit = Math.min(options.limit ?? 100, 200);
   const activeClause = options.activeOnly ? sql`AND is_active = true` : sql``;
+  const cursorClause = options.cursor ? sql`AND key < ${options.cursor}` : sql``;
 
   let filterCol: string | null = null;
   let filterVal: number | null = null;
@@ -36,36 +37,12 @@ export async function listCurrent<T>(
     }
   }
 
-  if (filterCol && filterVal != null && options.cursor) {
-    const { rows } = await db.execute(sql`
-      SELECT * FROM ${sql.raw(`"${S}"."${viewName}"`)}
-      WHERE ${sql.raw(`"${filterCol}"`)} = ${filterVal}
-        ${activeClause}
-        AND (created_at, key) < (${options.cursor.created_at}::timestamptz, ${options.cursor.key})
-      ORDER BY created_at DESC, key DESC
-      LIMIT ${limit}
-    `);
-    return rows as T[];
-  }
-
   if (filterCol && filterVal != null) {
     const { rows } = await db.execute(sql`
       SELECT * FROM ${sql.raw(`"${S}"."${viewName}"`)}
       WHERE ${sql.raw(`"${filterCol}"`)} = ${filterVal}
-        ${activeClause}
-      ORDER BY created_at DESC, key DESC
-      LIMIT ${limit}
-    `);
-    return rows as T[];
-  }
-
-  // No filter (e.g. role)
-  if (options.cursor) {
-    const { rows } = await db.execute(sql`
-      SELECT * FROM ${sql.raw(`"${S}"."${viewName}"`)}
-      WHERE 1=1 ${activeClause}
-        AND (created_at, key) < (${options.cursor.created_at}::timestamptz, ${options.cursor.key})
-      ORDER BY created_at DESC, key DESC
+        ${activeClause} ${cursorClause}
+      ORDER BY key DESC
       LIMIT ${limit}
     `);
     return rows as T[];
@@ -73,8 +50,8 @@ export async function listCurrent<T>(
 
   const { rows } = await db.execute(sql`
     SELECT * FROM ${sql.raw(`"${S}"."${viewName}"`)}
-    WHERE 1=1 ${activeClause}
-    ORDER BY created_at DESC, key DESC
+    WHERE 1=1 ${activeClause} ${cursorClause}
+    ORDER BY key DESC
     LIMIT ${limit}
   `);
   return rows as T[];
@@ -134,33 +111,13 @@ export async function listHistory<T>(
   return rows as T[];
 }
 
-/**
- * Decode a cursor string (base64 JSON).
- */
-export function decodeCursor(
-  cursor: string
-): { created_at: string; key: number } | undefined {
-  try {
-    const decoded = JSON.parse(Buffer.from(cursor, "base64url").toString());
-    if (decoded.created_at && decoded.key != null) return decoded;
-  } catch {
-    // invalid cursor
-  }
-  return undefined;
+/** Decode cursor string → key number. */
+export function decodeCursor(cursor: string): number | undefined {
+  const n = Number(cursor);
+  return Number.isFinite(n) ? n : undefined;
 }
 
-/**
- * Encode a cursor from a row with created_at and key.
- */
-export function encodeCursor(row: {
-  created_at: Date | string;
-  key: number;
-}): string {
-  const ts =
-    row.created_at instanceof Date
-      ? row.created_at.toISOString()
-      : row.created_at;
-  return Buffer.from(
-    JSON.stringify({ created_at: ts, key: row.key })
-  ).toString("base64url");
+/** Encode cursor from a row's key. */
+export function encodeCursor(row: { key: number }): string {
+  return String(row.key);
 }

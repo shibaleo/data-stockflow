@@ -13,7 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { MasterCombobox, type ComboOption } from "./master-combobox";
-import { api } from "@/lib/api-client";
+import { api, fetchAllPages } from "@/lib/api-client";
 import { formatAmount } from "@/lib/format";
 import { useEntityManager, randomCode, type EntityRow } from "@/hooks/use-entity-manager";
 
@@ -415,17 +415,15 @@ export function JournalForm({ editId, onSuccess, onCancel }: Props) {
   useEffect(() => {
     (async () => {
       try {
-        const booksRes = await api.get<{ data: BookRow[] }>("/books");
-        const activeBooks = booksRes.data.filter((b) => b.is_active);
+        const allBooks = await fetchAllPages<BookRow>("/books");
+        const activeBooks = allBooks.filter((b) => b.is_active);
         setBooks(activeBooks);
 
         const accountResults = await Promise.all(
-          activeBooks.map((b) =>
-            api.get<{ data: Account[] }>(`/books/${b.id}/accounts?limit=200`)
-          ),
+          activeBooks.map((b) => fetchAllPages<Account>(`/books/${b.id}/accounts`)),
         );
 
-        const allAccounts = accountResults.flatMap((r) => r.data);
+        const allAccounts = accountResults.flat();
         setAccounts(Array.from(new Map(allAccounts.map((a) => [a.id, a])).values()));
 
         const defaultBookId = activeBooks.length > 0 ? String(activeBooks[0].id) : "";
@@ -486,7 +484,7 @@ export function JournalForm({ editId, onSuccess, onCancel }: Props) {
           // Extract tags from categories
           const tagIds = j.categories
             .filter((cat) => cat.category_type_code === "journal_tag")
-            .map((cat) => cat.category_key);
+            .map((cat) => Number(cat.category_key));
 
           return {
             bookId: String(j.book_id),
@@ -1048,8 +1046,8 @@ function buildLines(sec: JournalSection) {
     side: string;
     account_id: number;
     amount: number;
-    department_id?: number;
-    counterparty_id?: number;
+    department_id: number | null;
+    counterparty_id: number | null;
     description?: string;
   }[] = [];
 
@@ -1064,10 +1062,8 @@ function buildLines(sec: JournalSection) {
         side: "debit",
         account_id: Number(row.debit_account_id),
         amount: parseFloat(row.debit_amount),
-        department_id: row.debit_department_id ? Number(row.debit_department_id) : undefined,
-        counterparty_id: row.debit_counterparty_id
-          ? Number(row.debit_counterparty_id)
-          : undefined,
+        department_id: row.debit_department_id ? Number(row.debit_department_id) : null,
+        counterparty_id: row.debit_counterparty_id ? Number(row.debit_counterparty_id) : null,
         description: row.description || undefined,
       });
     }
@@ -1077,10 +1073,8 @@ function buildLines(sec: JournalSection) {
         side: "credit",
         account_id: Number(row.credit_account_id),
         amount: parseFloat(row.credit_amount),
-        department_id: row.credit_department_id ? Number(row.credit_department_id) : undefined,
-        counterparty_id: row.credit_counterparty_id
-          ? Number(row.credit_counterparty_id)
-          : undefined,
+        department_id: row.credit_department_id ? Number(row.credit_department_id) : null,
+        counterparty_id: row.credit_counterparty_id ? Number(row.credit_counterparty_id) : null,
         description: hasDebit ? undefined : row.description || undefined,
       });
     }

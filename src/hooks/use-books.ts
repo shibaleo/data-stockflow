@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { toast } from "sonner";
-import { api, ApiError } from "@/lib/api-client";
+import { api, ApiError, fetchAllPages } from "@/lib/api-client";
 
 export interface BookRow {
   id: number;
@@ -35,8 +35,8 @@ export function useBooks() {
 
   const refetchBooks = useCallback(async () => {
     try {
-      const res = await api.get<{ data: BookRow[] }>("/books");
-      const active = res.data.filter((b) => b.is_active);
+      const all = await fetchAllPages<BookRow>("/books");
+      const active = all.filter((b) => b.is_active);
       setBooks(active);
       if (active.length > 0 && !selectedBookId) {
         setSelectedBookId(String(active[0].id));

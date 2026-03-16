@@ -14,11 +14,6 @@
  */
 
 import "dotenv/config";
-import ws from "ws";
-import { neonConfig } from "@neondatabase/serverless";
-
-neonConfig.webSocketConstructor = ws;
-
 import { createApiKey } from "@/lib/api-keys";
 
 const BASE = process.env.BASE_URL || "http://localhost:3000";

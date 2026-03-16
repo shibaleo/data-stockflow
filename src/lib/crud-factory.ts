@@ -8,8 +8,8 @@ import { createApp } from "@/lib/create-app";
 import { createRoute } from "@hono/zod-openapi";
 import { z } from "@hono/zod-openapi";
 import { db } from "@/lib/db";
-import { listCurrent, getCurrent, getMaxRevision, listHistory } from "@/lib/append-only";
-import { errorSchema, messageSchema, dataSchema } from "@/lib/validators";
+import { listCurrent, getCurrent, getMaxRevision, listHistory, encodeCursor, decodeCursor } from "@/lib/append-only";
+import { errorSchema, messageSchema, dataSchema, paginatedSchema, listQuerySchema } from "@/lib/validators";
 import { requireRole } from "@/middleware/guards";
 import { recordAudit, type AuditEntityType } from "@/lib/audit";
 import { recordEvent, computeChanges } from "@/lib/event-log";
@@ -77,7 +77,8 @@ export function defineCrudRoutes(
   return {
     list: createRoute({
       method: "get" as const, path: "/", tags: [tag], summary: `List ${tag.toLowerCase()}`,
-      responses: { 200: { description: "Success", ...jc(z.object({ data: z.array(responseSchema) })) } },
+      request: { query: listQuerySchema },
+      responses: { 200: { description: "Success", ...jc(paginatedSchema(responseSchema)) } },
     }),
     get: createRoute({
       method: "get" as const, path: `/{${idParam}}`, tags: [tag], summary: `Get ${singular}`,
@@ -168,8 +169,14 @@ export function registerCrudHandlers<T extends BaseRow>(
 
   // LIST
   app.openapi(routes.list, async (c) => {
-    const rows = await listCurrent<T>(viewName, resolveScope(c));
-    return c.json({ data: rows.map(mapRow) }, 200);
+    const query = c.req.valid("query");
+    const limit = Math.min(Number(query.limit || 100), 200);
+    const cursor = query.cursor ? decodeCursor(query.cursor) : undefined;
+    const rows = await listCurrent<T>(viewName, resolveScope(c), { limit, cursor });
+    const nextCursor = rows.length === limit
+      ? encodeCursor(rows[rows.length - 1])
+      : null;
+    return c.json({ data: rows.map(mapRow), next_cursor: nextCursor }, 200);
   });
 
   // GET

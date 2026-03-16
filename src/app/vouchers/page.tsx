@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { JournalTable, type VoucherRow } from "@/components/journals/journal-table";
 import { JournalForm } from "@/components/journals/journal-form";
-import { api, ApiError } from "@/lib/api-client";
+import { api, ApiError, fetchAllPages } from "@/lib/api-client";
 
 type ViewMode = "list" | "form";
 
@@ -19,8 +19,8 @@ export default function VouchersPage() {
   const fetchVouchers = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api.get<{ data: VoucherRow[] }>("/vouchers");
-      setVouchers(res.data);
+      const data = await fetchAllPages<VoucherRow>("/vouchers");
+      setVouchers(data);
     } catch (e) {
       const msg =
         e instanceof ApiError ? e.body.error : "伝票の取得に失敗しました";

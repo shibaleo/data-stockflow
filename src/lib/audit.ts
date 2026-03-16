@@ -11,7 +11,8 @@ export type AuditAction =
   | "restore"
   | "reverse"
   | "close"
-  | "reopen";
+  | "reopen"
+  | "finalize";
 
 export type AuditEntityType =
   | "book"

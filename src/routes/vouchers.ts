@@ -3,7 +3,7 @@ import { createRoute, z } from "@hono/zod-openapi";
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
 import { voucher, journal, journalLine, entityCategory } from "@/lib/db/schema";
-import { errorSchema, dataSchema, voucherResponseSchema, voucherDetailResponseSchema, createVoucherSchema } from "@/lib/validators";
+import { errorSchema, dataSchema, paginatedSchema, listQuerySchema, voucherResponseSchema, voucherDetailResponseSchema, createVoucherSchema } from "@/lib/validators";
 import { requireTenant, requireAuth, requireRole } from "@/middleware/guards";
 import { recordAudit } from "@/lib/audit";
 import { recordEvent } from "@/lib/event-log";
@@ -16,7 +16,7 @@ import {
   GENESIS_PREV_HASH,
   type LineHashInput,
 } from "@/lib/hash-chain";
-import { getCurrent } from "@/lib/append-only";
+import { getCurrent, decodeCursor, encodeCursor } from "@/lib/append-only";
 import type { CurrentPeriod, CurrentJournal, JournalLineRow, EntityCategoryRow, VoucherRow } from "@/lib/types";
 
 const S = "data_stockflow";
@@ -32,8 +32,9 @@ const mapVoucher = createMapper<VoucherRow>(
 
 const list = createRoute({
   method: "get", path: "/", tags: ["Vouchers"], summary: "List vouchers",
+  request: { query: listQuerySchema },
   responses: { 200: { description: "Success", content: { "application/json": {
-    schema: z.object({ data: z.array(voucherResponseSchema) }),
+    schema: paginatedSchema(voucherResponseSchema),
   } } } },
 });
 
@@ -59,14 +60,23 @@ const create = createRoute({
 
 app.openapi(list, async (c) => {
   const tenantKey = c.get("tenantKey");
+  const query = c.req.valid("query");
+  const limit = Math.min(Number(query.limit || 100), 200);
+  const cursor = query.cursor ? decodeCursor(query.cursor) : undefined;
+  const cursorClause = cursor ? sql`AND key < ${cursor}` : sql``;
   const { rows } = await db.execute(sql`
     SELECT * FROM ${sql.raw(`"${S}".voucher`)}
     WHERE tenant_key = ${tenantKey} AND revision = 1
-    ORDER BY created_at DESC, key DESC
-    LIMIT 50
+    ${cursorClause}
+    ORDER BY key DESC
+    LIMIT ${limit}
   `);
+  const mapped = (rows as VoucherRow[]).map(mapVoucher);
+  const nextCursor = rows.length === limit
+    ? encodeCursor(rows[rows.length - 1] as VoucherRow)
+    : null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return c.json({ data: (rows as VoucherRow[]).map(mapVoucher) } as any, 200);
+  return c.json({ data: mapped, next_cursor: nextCursor } as any, 200);
 });
 
 app.openapi(get, async (c) => {

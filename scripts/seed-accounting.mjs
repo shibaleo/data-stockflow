@@ -55,6 +55,7 @@ console.log(`  general → id=${BOOK_ID}`);
 console.log("\n=== 会計期間 ===");
 const period = await post("/periods", {
   code: "FY2025",
+  name: "2025年度",
   start_date: "2025-04-01T00:00:00Z",
   end_date: "2026-03-31T23:59:59Z",
   status: "open",
@@ -62,35 +63,37 @@ const period = await post("/periods", {
 if (period) console.log(`  FY2025 → id=${period.id}`);
 
 // ============================================================
-// 3. Categories
+// 3. Categories (all domain entities except tenant)
 // ============================================================
 
 console.log("\n=== カテゴリ ===");
 
-const catNormal = await post("/categories", {
-  category_type_code: "journal_type", code: "normal", name: "経常",
-});
-if (catNormal) console.log(`  journal_type/normal → id=${catNormal.id}`);
+async function cat(typeCode, code, name, parentId) {
+  const body = { category_type_code: typeCode, code, name };
+  if (parentId) body.parent_category_id = parentId;
+  const d = await post("/categories", body);
+  if (d) console.log(`  ${typeCode}/${code} → id=${d.id}`);
+  return d;
+}
 
-const catSpecial = await post("/categories", {
-  category_type_code: "journal_type", code: "special", name: "特別",
-});
-if (catSpecial) console.log(`  journal_type/special → id=${catSpecial.id}`);
+// -- 種別（各エンティティ） --
+await cat("user_type", "default", "デフォルト");
+await cat("book_type", "default", "デフォルト");
+await cat("account_class", "default", "デフォルト");
+await cat("period_type", "default", "デフォルト");
+await cat("department_type", "default", "デフォルト");
+await cat("counterparty_type", "default", "デフォルト");
+await cat("project_type", "default", "デフォルト");
+await cat("voucher_type", "default", "デフォルト");
 
-const tagFixed = await post("/categories", {
-  category_type_code: "journal_tag", code: "fixed", name: "固定費",
-});
-if (tagFixed) console.log(`  journal_tag/fixed → id=${tagFixed.id}`);
+// -- 仕訳種別 --
+const catNormal = await cat("journal_type", "normal", "経常");
+const catSpecial = await cat("journal_type", "special", "特別");
 
-const tagVariable = await post("/categories", {
-  category_type_code: "journal_tag", code: "variable", name: "変動費",
-});
-if (tagVariable) console.log(`  journal_tag/variable → id=${tagVariable.id}`);
-
-const tagSalary = await post("/categories", {
-  category_type_code: "journal_tag", code: "salary", name: "給与",
-});
-if (tagSalary) console.log(`  journal_tag/salary → id=${tagSalary.id}`);
+// -- 仕訳タグ（journal のみ） --
+const tagFixed = await cat("journal_tag", "fixed", "固定費");
+const tagVariable = await cat("journal_tag", "variable", "変動費");
+const tagSalary = await cat("journal_tag", "salary", "給与");
 
 // ============================================================
 // 4. Department / Counterparty / Project

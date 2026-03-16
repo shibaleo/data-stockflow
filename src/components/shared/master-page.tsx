@@ -31,7 +31,7 @@ import {
   DialogFooter,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { api, ApiError } from "@/lib/api-client";
+import { api, ApiError, fetchAllPages } from "@/lib/api-client";
 
 // ── Types ──
 
@@ -76,6 +76,12 @@ export interface MasterPageConfig {
   createOnlyFields?: ExtraField[];
   icon?: ReactNode;
   createLabel?: string;
+  /** Additional query params for the fetch (e.g., filter by type) */
+  fetchParams?: Record<string, string>;
+  /** Default extra field values for create (hidden from dialog) */
+  defaultExtraValues?: Record<string, string>;
+  /** Client-side filter applied after fetch */
+  clientFilter?: (item: MasterRow) => boolean;
 }
 
 // ── Tree ──
@@ -293,6 +299,7 @@ export function MasterItemDialog({
       if (item) {
         await api.put(`${config.endpoint}/${item.id}`, payload);
       } else {
+        if (config.defaultExtraValues) Object.assign(payload, config.defaultExtraValues);
         await api.post(config.endpoint, payload);
       }
       onSaved();
@@ -422,15 +429,17 @@ export function MasterPage({ config, headerSlot, afterContent, canDelete, detail
   const fetchItems = useCallback(async () => {
     setLoading(true);
     try {
-      const qs = showInactive ? "?limit=200&include_inactive=true" : "?limit=200";
-      const res = await api.get<{ data: MasterRow[] }>(`${config.endpoint}${qs}`);
-      setItems(res.data);
+      const params: Record<string, string> = { ...config.fetchParams };
+      if (showInactive) params.include_inactive = "true";
+      let data = await fetchAllPages<MasterRow>(config.endpoint, Object.keys(params).length > 0 ? params : undefined);
+      if (config.clientFilter) data = data.filter(config.clientFilter);
+      setItems(data);
     } catch (e) {
       toast.error(e instanceof ApiError ? e.body.error : `${config.entityName}の取得に失敗しました`);
     } finally {
       setLoading(false);
     }
-  }, [config.endpoint, config.entityName, showInactive]);
+  }, [config.endpoint, config.entityName, config.fetchParams, showInactive]);
 
   useEffect(() => { fetchItems(); }, [fetchItems]);
 

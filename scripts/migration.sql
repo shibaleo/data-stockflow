@@ -135,6 +135,7 @@ CREATE TABLE data_stockflow.period (
   created_by       BIGINT NOT NULL,
   tenant_key       BIGINT NOT NULL,
   code             TEXT NOT NULL,
+  name             TEXT NOT NULL,
   start_date       TIMESTAMPTZ NOT NULL,
   end_date         TIMESTAMPTZ NOT NULL,
   status           TEXT NOT NULL DEFAULT 'open',
@@ -299,8 +300,8 @@ CREATE TABLE data_stockflow.journal_line (
   sort_order       INTEGER NOT NULL,
   side             TEXT NOT NULL,
   account_key      BIGINT NOT NULL,
-  department_key   BIGINT NOT NULL,
-  counterparty_key BIGINT NOT NULL,
+  department_key   BIGINT,
+  counterparty_key BIGINT,
   amount           DECIMAL(15,0) NOT NULL,
   description      TEXT,
   PRIMARY KEY (uuid),
@@ -323,7 +324,31 @@ CREATE TABLE data_stockflow.entity_category (
 );
 
 -- allow_multiple=false の category_type に対するユニーク制約
--- journal_type: 1仕訳に1つだけ
+-- 各エンティティに対して _type は 1つだけ
+CREATE UNIQUE INDEX uq_entity_category_user_type
+  ON data_stockflow.entity_category (tenant_key, entity_key, entity_revision)
+  WHERE category_type_code = 'user_type';
+CREATE UNIQUE INDEX uq_entity_category_book_type
+  ON data_stockflow.entity_category (tenant_key, entity_key, entity_revision)
+  WHERE category_type_code = 'book_type';
+CREATE UNIQUE INDEX uq_entity_category_account_class
+  ON data_stockflow.entity_category (tenant_key, entity_key, entity_revision)
+  WHERE category_type_code = 'account_class';
+CREATE UNIQUE INDEX uq_entity_category_period_type
+  ON data_stockflow.entity_category (tenant_key, entity_key, entity_revision)
+  WHERE category_type_code = 'period_type';
+CREATE UNIQUE INDEX uq_entity_category_department_type
+  ON data_stockflow.entity_category (tenant_key, entity_key, entity_revision)
+  WHERE category_type_code = 'department_type';
+CREATE UNIQUE INDEX uq_entity_category_counterparty_type
+  ON data_stockflow.entity_category (tenant_key, entity_key, entity_revision)
+  WHERE category_type_code = 'counterparty_type';
+CREATE UNIQUE INDEX uq_entity_category_project_type
+  ON data_stockflow.entity_category (tenant_key, entity_key, entity_revision)
+  WHERE category_type_code = 'project_type';
+CREATE UNIQUE INDEX uq_entity_category_voucher_type
+  ON data_stockflow.entity_category (tenant_key, entity_key, entity_revision)
+  WHERE category_type_code = 'voucher_type';
 CREATE UNIQUE INDEX uq_entity_category_journal_type
   ON data_stockflow.entity_category (tenant_key, entity_key, entity_revision)
   WHERE category_type_code = 'journal_type';
@@ -521,8 +546,15 @@ INSERT INTO data_stockflow.role (key, revision, code, name, lines_hash, prev_rev
   (nextval('data_stockflow.role_key_seq'), 1, 'user',     'User',           'bootstrap', 'genesis', 'bootstrap');
 
 -- Category types (system seed)
--- journal_type: 仕訳種別（1仕訳に1つ）
--- journal_tag: 仕訳タグ（1仕訳に複数可）
+-- 各ドメインエンティティに種別（単一）、仕訳のみタグ（複数可）
 INSERT INTO data_stockflow.category_type (code, entity_type, name, allow_multiple) VALUES
-  ('journal_type', 'journal', '仕訳種別', false),
-  ('journal_tag',  'journal', '仕訳タグ', true);
+  ('user_type',         'user',         'ユーザー種別',       false),
+  ('book_type',         'book',         '帳簿種別',          false),
+  ('account_class',     'account',      '勘定科目分類',       false),
+  ('period_type',       'period',       '会計期間種別',       false),
+  ('department_type',   'department',   '部門種別',          false),
+  ('counterparty_type', 'counterparty', '取引先種別',         false),
+  ('project_type',      'project',      'プロジェクト種別',    false),
+  ('voucher_type',      'voucher',      '伝票種別',          false),
+  ('journal_type',      'journal',      '仕訳種別',          false),
+  ('journal_tag',       'journal',      '仕訳タグ',          true);

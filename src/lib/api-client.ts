@@ -71,3 +71,25 @@ function createApiHelpers(basePrefix: string) {
 
 /** Unified API v1 */
 export const api = createApiHelpers("/api/v1");
+
+/**
+ * Fetch all pages of a paginated list endpoint.
+ * Automatically follows next_cursor until exhausted.
+ */
+export async function fetchAllPages<T>(
+  endpoint: string,
+  params?: Record<string, string>,
+): Promise<T[]> {
+  const all: T[] = [];
+  let cursor: string | null = null;
+  do {
+    const qs = new URLSearchParams({ limit: "200", ...params });
+    if (cursor) qs.set("cursor", cursor);
+    const res = await api.get<{ data: T[]; next_cursor: string | null }>(
+      `${endpoint}?${qs.toString()}`,
+    );
+    all.push(...res.data);
+    cursor = res.next_cursor;
+  } while (cursor);
+  return all;
+}
