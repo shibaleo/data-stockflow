@@ -11,15 +11,13 @@ export type AuditAction =
   | "restore"
   | "reverse"
   | "close"
-  | "reopen"
-  | "finalize";
+  | "reopen";
 
 export type AuditEntityType =
   | "book"
   | "account"
   | "category"
   | "department"
-  | "period"
   | "counterparty"
   | "voucher"
   | "journal"

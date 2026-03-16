@@ -53,7 +53,6 @@ interface VoucherDetail {
   journals: {
     id: number;
     book_id: number;
-    period_id: number;
     posted_at: string;
     revision: number;
     project_id: number;

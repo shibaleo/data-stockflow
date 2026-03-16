@@ -3,7 +3,6 @@
  *
  * Creates:
  *   - General book (一般帳簿)
- *   - Fiscal period (FY2025)
  *   - Categories (journal_type x2, journal_tag x3)
  *   - Department, Counterparty, Project (defaults)
  *   - Full chart of accounts
@@ -49,21 +48,7 @@ const BOOK_ID = book.id;
 console.log(`  general → id=${BOOK_ID}`);
 
 // ============================================================
-// 2. Fiscal period
-// ============================================================
-
-console.log("\n=== 会計期間 ===");
-const period = await post("/periods", {
-  code: "FY2025",
-  name: "2025年度",
-  start_date: "2025-04-01T00:00:00Z",
-  end_date: "2026-03-31T23:59:59Z",
-  status: "open",
-});
-if (period) console.log(`  FY2025 → id=${period.id}`);
-
-// ============================================================
-// 3. Categories (all domain entities except tenant)
+// 2. Categories (all domain entities except tenant)
 // ============================================================
 
 console.log("\n=== カテゴリ ===");
@@ -80,7 +65,6 @@ async function cat(typeCode, code, name, parentId) {
 await cat("user_type", "default", "デフォルト");
 await cat("book_type", "default", "デフォルト");
 await cat("account_class", "default", "デフォルト");
-await cat("period_type", "default", "デフォルト");
 await cat("department_type", "default", "デフォルト");
 await cat("counterparty_type", "default", "デフォルト");
 await cat("project_type", "default", "デフォルト");

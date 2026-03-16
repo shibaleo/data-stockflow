@@ -26,7 +26,6 @@ export const roleKeySeq = s.sequence("role_key_seq");
 export const userKeySeq = s.sequence("user_key_seq");
 export const bookKeySeq = s.sequence("book_key_seq");
 export const accountKeySeq = s.sequence("account_key_seq");
-export const periodKeySeq = s.sequence("period_key_seq");
 export const categoryKeySeq = s.sequence("category_key_seq");
 export const departmentKeySeq = s.sequence("department_key_seq");
 export const counterpartyKeySeq = s.sequence("counterparty_key_seq");
@@ -198,43 +197,6 @@ export const account = s.table(
   ]
 );
 
-export const period = s.table(
-  "period",
-  {
-    key: bigint("key", { mode: "number" })
-      .default(sql`nextval('data_stockflow.period_key_seq')`)
-      .notNull(),
-    revision: integer("revision").default(1).notNull(),
-    created_at: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    valid_from: timestamp("valid_from", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    valid_to: timestamp("valid_to", { withTimezone: true }),
-    lines_hash: text("lines_hash").notNull(),
-    prev_revision_hash: text("prev_revision_hash").notNull(),
-    revision_hash: text("revision_hash").notNull(),
-    created_by: bigint("created_by", { mode: "number" }).notNull(),
-    tenant_key: bigint("tenant_key", { mode: "number" }).notNull(),
-    code: text("code").notNull(),
-    name: text("name").notNull(),
-    start_date: timestamp("start_date", { withTimezone: true }).notNull(),
-    end_date: timestamp("end_date", { withTimezone: true }).notNull(),
-    status: text("status").default("open").notNull(),
-    is_active: boolean("is_active").default(true).notNull(),
-    parent_period_key: bigint("parent_period_key", { mode: "number" }),
-  },
-  (t) => [
-    primaryKey({ columns: [t.key, t.revision] }),
-    uniqueIndex("period_tenant_key_code_revision_key").on(
-      t.tenant_key,
-      t.code,
-      t.revision
-    ),
-  ]
-);
-
 // ---- category_type (system seed, no revision) ----
 export const categoryType = s.table("category_type", {
   code: text("code").primaryKey(),
@@ -392,7 +354,7 @@ export const project = s.table(
 // トランザクション系
 // ============================================================
 
-// voucher: ビジネスグルーピング（posted_date, period_key は journal に移動）
+// voucher: ビジネスグルーピング（posted_date は journal に移動）
 export const voucher = s.table(
   "voucher",
   {
@@ -428,7 +390,7 @@ export const voucher = s.table(
   ]
 );
 
-// journal: posted_at + period_key をここに持つ。type keys は category system に移行。
+// journal: posted_at で期間を導出。type keys は category system に移行。
 export const journal = s.table(
   "journal",
   {
@@ -450,7 +412,6 @@ export const journal = s.table(
     tenant_key: bigint("tenant_key", { mode: "number" }).notNull(),
     voucher_key: bigint("voucher_key", { mode: "number" }).notNull(),
     book_key: bigint("book_key", { mode: "number" }).notNull(),
-    period_key: bigint("period_key", { mode: "number" }).notNull(),
     posted_at: timestamp("posted_at", { withTimezone: true }).notNull(),
     is_active: boolean("is_active").default(true).notNull(),
     project_key: bigint("project_key", { mode: "number" }).notNull(),

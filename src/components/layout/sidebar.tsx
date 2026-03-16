@@ -7,7 +7,6 @@ import {
   BarChart3,
   BookOpen,
   Building2,
-  Calendar,
   FileCode2,
   FolderKanban,
   ScrollText,
@@ -45,8 +44,7 @@ const navItems: NavItem[] = [
   { href: "/categories", label: "分類", icon: Tag },
   { href: "/tags", label: "タグ", icon: Tags },
   // 設定
-  { href: "/periods", label: "期間", icon: Calendar, separator: true },
-  { href: "/books", label: "帳簿", icon: BookOpen },
+  { href: "/books", separator: true, label: "帳簿", icon: BookOpen },
   { href: "/users", label: "ユーザー", icon: Shield },
   { href: "/audit-logs", label: "監査ログ", icon: ScrollText },
   { href: "/api-doc", label: "API", icon: FileCode2 },

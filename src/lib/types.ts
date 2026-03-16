@@ -62,18 +62,6 @@ export interface CurrentAccount extends BaseEntity {
   sign: number; // from current_account view
 }
 
-export interface CurrentPeriod extends BaseEntity {
-  created_by: number;
-  tenant_key: number;
-  code: string;
-  name: string;
-  start_date: Date;
-  end_date: Date;
-  status: string;
-  is_active: boolean;
-  parent_period_key: number | null;
-}
-
 export interface CurrentCategory extends BaseEntity {
   created_by: number;
   tenant_key: number;
@@ -134,7 +122,6 @@ export interface CurrentJournal extends BaseEntity {
   tenant_key: number;
   voucher_key: number;
   book_key: number;
-  period_key: number;
   posted_at: Date;
   is_active: boolean;
   project_key: number;

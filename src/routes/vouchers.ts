@@ -17,7 +17,7 @@ import {
   type LineHashInput,
 } from "@/lib/hash-chain";
 import { getCurrent, decodeCursor, encodeCursor } from "@/lib/append-only";
-import type { CurrentPeriod, CurrentJournal, JournalLineRow, EntityCategoryRow, VoucherRow } from "@/lib/types";
+import type { CurrentJournal, JournalLineRow, EntityCategoryRow, VoucherRow } from "@/lib/types";
 
 const S = "data_stockflow";
 const app = createApp();
@@ -130,7 +130,6 @@ app.openapi(get, async (c) => {
     }));
     return {
       id: j.key, voucher_id: j.voucher_key, book_id: j.book_key,
-      period_id: j.period_key,
       posted_at: j.posted_at instanceof Date ? j.posted_at.toISOString() : String(j.posted_at),
       revision: j.revision,
       is_active: j.is_active, project_id: j.project_key,
@@ -161,32 +160,6 @@ app.openapi(create, async (c) => {
     }
   }
 
-  // Resolve period for each journal
-  const resolvedPeriods: number[] = [];
-  for (const jInput of body.journals) {
-    if (jInput.period_id) {
-      const fp = await getCurrent<CurrentPeriod>("current_period", {
-        key: jInput.period_id,
-      });
-      if (!fp) return c.json({ error: "Period not found" }, 422);
-      if (fp.status !== "open") return c.json({ error: "Period is not open" }, 422);
-      resolvedPeriods.push(fp.key);
-    } else {
-      // Auto-resolve from posted_at
-      const { rows: fpRows } = await db.execute(sql`
-        SELECT key, status FROM ${sql.raw(`"${S}".current_period`)}
-        WHERE start_date <= ${new Date(jInput.posted_at)}::timestamptz
-          AND end_date >= ${new Date(jInput.posted_at)}::timestamptz
-        ORDER BY start_date DESC
-        LIMIT 1
-      `);
-      if (fpRows.length === 0) return c.json({ error: "No period found for posted_at" }, 422);
-      const fp = fpRows[0] as { key: number; status: string };
-      if (fp.status !== "open") return c.json({ error: "Period is not open" }, 422);
-      resolvedPeriods.push(fp.key);
-    }
-  }
-
   const result = await db.transaction(async (tx: typeof db) => {
     // Header chain
     const { nextSequenceNo, prevHeaderHash } = await acquireNextHeaderSequence(tx, tenantKey);
@@ -206,7 +179,7 @@ app.openapi(create, async (c) => {
       lines_hash: voucherLinesHash,
     });
 
-    // Insert voucher (no posted_date, no period_key)
+    // Insert voucher
     const [v] = await tx.insert(voucher).values({
       tenant_key: tenantKey, idempotency_key: body.idempotency_key,
       voucher_code: body.voucher_code ?? null,
@@ -221,8 +194,6 @@ app.openapi(create, async (c) => {
     const createdJournals = [];
     for (let i = 0; i < body.journals.length; i++) {
       const jInput = body.journals[i];
-      const periodKey = resolvedPeriods[i];
-
       const signedLines = jInput.lines.map((l) => ({
         ...l,
         amount: String(l.side === "debit" ? -l.amount : l.amount),
@@ -242,7 +213,7 @@ app.openapi(create, async (c) => {
 
       const [j] = await tx.insert(journal).values({
         tenant_key: tenantKey, voucher_key: v.key, book_key: jInput.book_id,
-        period_key: periodKey, posted_at: new Date(jInput.posted_at),
+        posted_at: new Date(jInput.posted_at),
         project_key: jInput.project_id,
         adjustment_flag: jInput.adjustment_flag ?? "none",
         description: jInput.description ?? null,
@@ -299,7 +270,6 @@ app.openapi(create, async (c) => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const journalsResponse = result.journals.map((j: any) => ({
     id: j.journal.key, voucher_id: result.voucher.key, book_id: j.journal.book_key,
-    period_id: j.journal.period_key,
     posted_at: j.journal.posted_at instanceof Date ? j.journal.posted_at.toISOString() : String(j.journal.posted_at),
     revision: 1,
     is_active: true,

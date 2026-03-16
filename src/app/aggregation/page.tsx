@@ -4,13 +4,6 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { RefreshCw, Columns2, List } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { BookSelector } from "@/components/shared/book-selector";
 import { useBooks } from "@/hooks/use-books";
@@ -27,11 +20,6 @@ interface BalanceItem {
   sign: number;
   parent_account_id: number | null;
   balance: string;
-}
-
-interface PeriodInfo {
-  id: number;
-  code: string;
 }
 
 type Tab = "bs" | "pl";
@@ -142,7 +130,6 @@ const DEFAULT_TYPE_LABELS: Record<string, string> = {
 
 export default function ReportsPage() {
   const [data, setData] = useState<BalanceItem[]>([]);
-  const [periods, setPeriods] = useState<PeriodInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>("pl");
   const [viewMode, setViewMode] = useState<ViewMode>("tree");
@@ -170,23 +157,22 @@ export default function ReportsPage() {
     };
   }, [selectedBook]);
 
-  // Period filter state
-  const [periodFrom, setPeriodFrom] = useState<string>("__all__");
-  const [periodTo, setPeriodTo] = useState<string>("__all__");
+  // Date filter state
+  const [dateFrom, setDateFrom] = useState<string>("");
+  const [dateTo, setDateTo] = useState<string>("");
 
   const fetchData = useCallback(async () => {
     if (!selectedBookId) return;
     setLoading(true);
     try {
       const params = new URLSearchParams();
-      if (periodFrom !== "__all__") params.set("period_from", periodFrom);
-      if (periodTo !== "__all__") params.set("period_to", periodTo);
+      if (dateFrom) params.set("date_from", new Date(dateFrom).toISOString());
+      if (dateTo) params.set("date_to", new Date(dateTo + "T23:59:59").toISOString());
       const qs = params.toString();
-      const res = await api.get<{ data: BalanceItem[]; periods: PeriodInfo[] }>(
+      const res = await api.get<{ data: BalanceItem[] }>(
         `/books/${selectedBookId}/reports/balances${qs ? `?${qs}` : ""}`
       );
       setData(res.data);
-      setPeriods(res.periods);
     } catch (e) {
       const msg =
         e instanceof ApiError ? e.body.error : "データの取得に失敗しました";
@@ -194,7 +180,7 @@ export default function ReportsPage() {
     } finally {
       setLoading(false);
     }
-  }, [selectedBookId, periodFrom, periodTo]);
+  }, [selectedBookId, dateFrom, dateTo]);
 
   useEffect(() => {
     fetchData();
@@ -260,36 +246,24 @@ export default function ReportsPage() {
         </div>
       </div>
 
-      {/* Period filter */}
+      {/* Date filter */}
       <div className="flex flex-wrap items-center gap-3 mb-4">
         <span className="text-sm text-muted-foreground">期間:</span>
-        <Select value={periodFrom} onValueChange={setPeriodFrom}>
-          <SelectTrigger className="w-36 h-8 text-sm">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__all__">最初から</SelectItem>
-            {periods.map((p) => (
-              <SelectItem key={p.id} value={p.code}>
-                {p.code}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <input
+          type="date"
+          value={dateFrom}
+          onChange={(e) => setDateFrom(e.target.value)}
+          className="h-8 px-2 text-sm border border-input rounded-md bg-background"
+          placeholder="開始日"
+        />
         <span className="text-muted-foreground">〜</span>
-        <Select value={periodTo} onValueChange={setPeriodTo}>
-          <SelectTrigger className="w-36 h-8 text-sm">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__all__">最新まで</SelectItem>
-            {periods.map((p) => (
-              <SelectItem key={p.id} value={p.code}>
-                {p.code}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <input
+          type="date"
+          value={dateTo}
+          onChange={(e) => setDateTo(e.target.value)}
+          className="h-8 px-2 text-sm border border-input rounded-md bg-background"
+          placeholder="終了日"
+        />
       </div>
 
       {/* Tab switcher */}

@@ -212,42 +212,6 @@ export const updateAccountSchema = z.object({
 });
 
 // ============================================================
-// Period
-// ============================================================
-
-export const periodResponseSchema = z.object({
-  id: z.number(),
-  code: z.string(),
-  name: z.string(),
-  start_date: z.string(),
-  end_date: z.string(),
-  status: z.string(),
-  is_active: z.boolean(),
-  parent_period_id: z.number().nullable(),
-  revision: z.number(),
-  created_at: z.string(),
-});
-
-export const createPeriodSchema = z.object({
-  code: zSanitized(z.string().min(1).max(50)),
-  name: zSanitized(z.string().min(1).max(200)),
-  start_date: z.string().datetime(),
-  end_date: z.string().datetime(),
-  status: z.enum(["open", "closed", "finalized"]).default("open"),
-  parent_period_id: z.number().int().positive().optional(),
-});
-
-export const updatePeriodSchema = z.object({
-  code: zSanitized(z.string().min(1).max(100)).optional(),
-  name: zSanitized(z.string().min(1).max(200)).optional(),
-  start_date: z.string().datetime().optional(),
-  end_date: z.string().datetime().optional(),
-  status: z.enum(["open", "closed", "finalized"]).optional(),
-  parent_period_id: z.number().int().positive().nullable().optional(),
-  is_active: z.boolean().optional(),
-});
-
-// ============================================================
 // Category (replaces tag, voucher_type, journal_type)
 // ============================================================
 
@@ -410,7 +374,6 @@ export const journalResponseSchema = z.object({
   id: z.number(),
   voucher_id: z.number(),
   book_id: z.number(),
-  period_id: z.number(),
   posted_at: z.string(),
   revision: z.number(),
   is_active: z.boolean(),
@@ -446,7 +409,6 @@ export const createVoucherSchema = z.object({
       z.object({
         book_id: z.number().int().positive(),
         posted_at: z.string().datetime(),
-        period_id: z.number().int().positive().optional(),
         journal_type_id: z.number().int().positive(),
         project_id: z.number().int().positive(),
         adjustment_flag: z
@@ -468,7 +430,6 @@ export const voucherDetailResponseSchema = voucherResponseSchema.extend({
 export const updateJournalSchema = z.object({
   book_id: z.number().int().positive().optional(),
   posted_at: z.string().datetime().optional(),
-  period_id: z.number().int().positive().optional(),
   journal_type_id: z.number().int().positive().optional(),
   project_id: z.number().int().positive().optional(),
   adjustment_flag: z

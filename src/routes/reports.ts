@@ -25,14 +25,13 @@ const balanceItemSchema = z.object({
 
 const balancesResponseSchema = z.object({
   data: z.array(balanceItemSchema),
-  periods: z.array(z.object({ id: z.number(), code: z.string() })),
 });
 
 // ── Query schema ──
 
 const balancesQuerySchema = z.object({
-  period_from: z.string().optional().openapi({ example: "2025-03" }),
-  period_to: z.string().optional().openapi({ example: "2025-12" }),
+  date_from: z.string().optional().openapi({ example: "2025-04-01T00:00:00Z" }),
+  date_to: z.string().optional().openapi({ example: "2026-03-31T23:59:59Z" }),
 });
 
 // ── Route definition ──
@@ -43,7 +42,7 @@ const balances = createRoute({
   tags: ["Reports"],
   summary: "Get account balances",
   description:
-    "Returns aggregated balances per account, optionally filtered by period range. " +
+    "Returns aggregated balances per account, optionally filtered by date range (posted_at). " +
     "Amounts are signed (credit=positive, debit=negative). Multiply by account.sign to get display value.",
   request: { query: balancesQuerySchema },
   responses: {
@@ -68,36 +67,23 @@ interface BalanceRow {
   balance: string;
 }
 
-interface PeriodRow {
-  key: number;
-  code: string;
-}
-
 app.openapi(balances, async (c) => {
   const bookKey = c.get("bookKey");
-  const { period_from, period_to } = c.req.valid("query");
+  const { date_from, date_to } = c.req.valid("query");
 
   const conditions = [sql`a.book_key = ${bookKey}`, sql`a.is_active = true`];
 
-  // Filter journal lines by period range via journal.period_key → period
-  const tenantKey = c.get("tenantKey");
-  let periodJoin = sql``;
-  const periodConditions: ReturnType<typeof sql>[] = [];
-
-  if (period_from) {
-    periodConditions.push(sql`fp.code >= ${period_from}`);
+  // Filter journal lines by posted_at date range
+  const dateConditions: ReturnType<typeof sql>[] = [];
+  if (date_from) {
+    dateConditions.push(sql`cj.posted_at >= ${date_from}::timestamptz`);
   }
-  if (period_to) {
-    periodConditions.push(sql`fp.code <= ${period_to}`);
+  if (date_to) {
+    dateConditions.push(sql`cj.posted_at <= ${date_to}::timestamptz`);
   }
-
-  if (periodConditions.length > 0) {
-    const periodFilter = sql.join(periodConditions, sql` AND `);
-    periodJoin = sql`
-      JOIN ${sql.raw(`"${S}".current_period`)} fp
-        ON fp.key = cj.period_key AND fp.tenant_key = ${tenantKey}
-        AND ${periodFilter}`;
-  }
+  const dateFilter = dateConditions.length > 0
+    ? sql` AND ${sql.join(dateConditions, sql` AND `)}`
+    : sql``;
 
   const whereClause = sql.join(conditions, sql` AND `);
 
@@ -116,8 +102,7 @@ app.openapi(balances, async (c) => {
       FROM ${sql.raw(`"${S}".journal_line`)} jl
       JOIN ${sql.raw(`"${S}".current_journal`)} cj
         ON cj.key = jl.journal_key AND cj.revision = jl.journal_revision
-      ${periodJoin}
-      WHERE jl.account_key = a.key
+      WHERE jl.account_key = a.key${dateFilter}
     ) bal ON true
     WHERE ${whereClause}
     ORDER BY a.code
@@ -125,13 +110,6 @@ app.openapi(balances, async (c) => {
 
   const { rows } = await db.execute(query);
   const typedRows = rows as unknown as BalanceRow[];
-
-  // Fetch available periods for the frontend selector
-  const { rows: periodRows } = await db.execute(
-    sql`SELECT key, code FROM ${sql.raw(`"${S}".current_period`)}
-     WHERE tenant_key = ${tenantKey} ORDER BY code`
-  );
-  const periods = periodRows as unknown as PeriodRow[];
 
   return c.json(
     {
@@ -144,7 +122,6 @@ app.openapi(balances, async (c) => {
         parent_account_id: r.parent_account_key,
         balance: r.balance,
       })),
-      periods: periods.map((p) => ({ id: p.key, code: p.code })),
     },
     200
   );

@@ -78,7 +78,6 @@ async function buildJournalDetail(j: CurrentJournal) {
   }));
   return {
     id: j.key, voucher_id: j.voucher_key, book_id: j.book_key,
-    period_id: j.period_key,
     posted_at: j.posted_at instanceof Date ? j.posted_at.toISOString() : String(j.posted_at),
     revision: j.revision,
     is_active: j.is_active, project_id: j.project_key,
@@ -203,8 +202,6 @@ app.openapi(updateRoute, async (c) => {
     const resolvedActive = body.is_active ?? current.is_active;
     const resolvedBookKey = body.book_id ?? current.book_key;
     const resolvedPostedAt = body.posted_at ? new Date(body.posted_at) : current.posted_at;
-    const resolvedPeriodKey = body.period_id ?? current.period_key;
-
     const linesHashInputs: LineHashInput[] = signedLines.map((l) => ({
       sort_order: l.sort_order, side: l.side, account_key: l.account_id,
       department_key: l.department_id, counterparty_key: l.counterparty_id,
@@ -220,7 +217,7 @@ app.openapi(updateRoute, async (c) => {
     const [j] = await tx.insert(journal).values({
       key: journalKey, revision: maxRev + 1,
       tenant_key: tenantKey, voucher_key: voucherKey, book_key: resolvedBookKey,
-      period_key: resolvedPeriodKey, posted_at: resolvedPostedAt,
+      posted_at: resolvedPostedAt,
       is_active: resolvedActive, project_key: resolvedProjectKey,
       adjustment_flag: resolvedAdj,
       description: resolvedDesc, metadata: resolvedMetadata,
@@ -318,7 +315,7 @@ app.openapi(deleteRoute, async (c) => {
     await tx.insert(journal).values({
       key: journalKey, revision: maxRev + 1,
       tenant_key: tenantKey, voucher_key: voucherKey, book_key: current.book_key,
-      period_key: current.period_key, posted_at: current.posted_at,
+      posted_at: current.posted_at,
       is_active: false, project_key: current.project_key,
       adjustment_flag: current.adjustment_flag,
       description: current.description, metadata: current.metadata,
@@ -348,7 +345,6 @@ app.openapi(historyRoute, async (c) => {
   return c.json({
     data: journals.map((j) => ({
       id: j.key, voucher_id: j.voucher_key, book_id: j.book_key,
-      period_id: j.period_key,
       posted_at: j.posted_at instanceof Date ? j.posted_at.toISOString() : String(j.posted_at),
       revision: j.revision,
       is_active: j.is_active, project_id: j.project_key,

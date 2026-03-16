@@ -58,7 +58,6 @@ const ENTITY_LABELS: Record<string, string> = {
   department: "部門",
   counterparty: "取引先",
   category: "分類",
-  period: "期間",
   project: "プロジェクト",
   voucher: "伝票",
   journal: "仕訳",

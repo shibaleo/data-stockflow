@@ -5,7 +5,7 @@ DROP SCHEMA IF EXISTS data_stockflow CASCADE;
 CREATE SCHEMA data_stockflow;
 
 -- ============================================================
--- SEQUENCES (12)
+-- SEQUENCES (11)
 -- ============================================================
 
 CREATE SEQUENCE data_stockflow.tenant_key_seq        START WITH 100000000000;
@@ -13,7 +13,6 @@ CREATE SEQUENCE data_stockflow.role_key_seq          START WITH 100000000000;
 CREATE SEQUENCE data_stockflow.user_key_seq          START WITH 100000000000;
 CREATE SEQUENCE data_stockflow.book_key_seq          START WITH 100000000000;
 CREATE SEQUENCE data_stockflow.account_key_seq       START WITH 100000000000;
-CREATE SEQUENCE data_stockflow.period_key_seq        START WITH 100000000000;
 CREATE SEQUENCE data_stockflow.category_key_seq      START WITH 100000000000;
 CREATE SEQUENCE data_stockflow.department_key_seq    START WITH 100000000000;
 CREATE SEQUENCE data_stockflow.counterparty_key_seq  START WITH 100000000000;
@@ -120,29 +119,6 @@ CREATE TABLE data_stockflow.account (
   parent_account_key BIGINT,
   PRIMARY KEY (key, revision),
   UNIQUE (book_key, code, revision)
-);
-
--- ---- period ----
-CREATE TABLE data_stockflow.period (
-  key              BIGINT NOT NULL DEFAULT nextval('data_stockflow.period_key_seq'),
-  revision         INTEGER NOT NULL DEFAULT 1,
-  created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
-  valid_from       TIMESTAMPTZ NOT NULL DEFAULT now(),
-  valid_to         TIMESTAMPTZ,
-  lines_hash       TEXT NOT NULL,
-  prev_revision_hash TEXT NOT NULL,
-  revision_hash    TEXT NOT NULL,
-  created_by       BIGINT NOT NULL,
-  tenant_key       BIGINT NOT NULL,
-  code             TEXT NOT NULL,
-  name             TEXT NOT NULL,
-  start_date       TIMESTAMPTZ NOT NULL,
-  end_date         TIMESTAMPTZ NOT NULL,
-  status           TEXT NOT NULL DEFAULT 'open',
-  is_active        BOOLEAN NOT NULL DEFAULT true,
-  parent_period_key BIGINT,
-  PRIMARY KEY (key, revision),
-  UNIQUE (tenant_key, code, revision)
 );
 
 -- ---- category_type (system seed, no revision) ----
@@ -267,7 +243,7 @@ CREATE UNIQUE INDEX uq_voucher_code
   ON data_stockflow.voucher (tenant_key, voucher_code)
   WHERE voucher_code IS NOT NULL;
 
--- ---- journal (posted_at + period_key moved here; type keys removed) ----
+-- ---- journal (posted_at determines period; no FK to period) ----
 CREATE TABLE data_stockflow.journal (
   key              BIGINT NOT NULL DEFAULT nextval('data_stockflow.journal_key_seq'),
   revision         INTEGER NOT NULL DEFAULT 1,
@@ -281,7 +257,6 @@ CREATE TABLE data_stockflow.journal (
   tenant_key       BIGINT NOT NULL,
   voucher_key      BIGINT NOT NULL,
   book_key         BIGINT NOT NULL,
-  period_key       BIGINT NOT NULL,
   posted_at        TIMESTAMPTZ NOT NULL,
   is_active        BOOLEAN NOT NULL DEFAULT true,
   project_key      BIGINT NOT NULL,
@@ -334,9 +309,6 @@ CREATE UNIQUE INDEX uq_entity_category_book_type
 CREATE UNIQUE INDEX uq_entity_category_account_class
   ON data_stockflow.entity_category (tenant_key, entity_key, entity_revision)
   WHERE category_type_code = 'account_class';
-CREATE UNIQUE INDEX uq_entity_category_period_type
-  ON data_stockflow.entity_category (tenant_key, entity_key, entity_revision)
-  WHERE category_type_code = 'period_type';
 CREATE UNIQUE INDEX uq_entity_category_department_type
   ON data_stockflow.entity_category (tenant_key, entity_key, entity_revision)
   WHERE category_type_code = 'department_type';
@@ -459,12 +431,6 @@ FROM data_stockflow.account
 WHERE valid_from <= now() AND (valid_to IS NULL OR valid_to > now())
 ORDER BY key, created_at DESC;
 
-CREATE VIEW data_stockflow.current_period AS
-SELECT DISTINCT ON (key) *
-FROM data_stockflow.period
-WHERE valid_from <= now() AND (valid_to IS NULL OR valid_to > now())
-ORDER BY key, created_at DESC;
-
 CREATE VIEW data_stockflow.current_category AS
 SELECT DISTINCT ON (key) *
 FROM data_stockflow.category
@@ -516,9 +482,6 @@ SELECT * FROM data_stockflow.book ORDER BY key, revision;
 CREATE VIEW data_stockflow.history_account AS
 SELECT * FROM data_stockflow.account ORDER BY key, revision;
 
-CREATE VIEW data_stockflow.history_period AS
-SELECT * FROM data_stockflow.period ORDER BY key, revision;
-
 CREATE VIEW data_stockflow.history_category AS
 SELECT * FROM data_stockflow.category ORDER BY key, revision;
 
@@ -551,7 +514,6 @@ INSERT INTO data_stockflow.category_type (code, entity_type, name, allow_multipl
   ('user_type',         'user',         'ユーザー種別',       false),
   ('book_type',         'book',         '帳簿種別',          false),
   ('account_class',     'account',      '勘定科目分類',       false),
-  ('period_type',       'period',       '会計期間種別',       false),
   ('department_type',   'department',   '部門種別',          false),
   ('counterparty_type', 'counterparty', '取引先種別',         false),
   ('project_type',      'project',      'プロジェクト種別',    false),

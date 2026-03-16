@@ -136,7 +136,6 @@ app.openapi(reverse, async (c) => {
       tenant_key: tenantKey,
       voucher_key: current.voucher_key,
       book_key: current.book_key,
-      period_key: current.period_key,
       posted_at: current.posted_at,
       project_key: current.project_key,
       adjustment_flag: current.adjustment_flag,
@@ -227,7 +226,6 @@ app.openapi(reverse, async (c) => {
   return c.json({
     data: {
       id: result.key, voucher_id: result.voucher_key, book_id: result.book_key,
-      period_id: result.period_key,
       posted_at: result.posted_at instanceof Date ? result.posted_at.toISOString() : String(result.posted_at),
       revision: 1,
       is_active: true, project_id: result.project_key,
