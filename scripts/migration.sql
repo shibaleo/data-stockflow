@@ -228,7 +228,7 @@ CREATE TABLE data_stockflow.voucher (
   revision_hash    TEXT NOT NULL,
   created_by       BIGINT NOT NULL,
   tenant_key       BIGINT NOT NULL,
-  idempotency_key  TEXT NOT NULL UNIQUE,
+  idempotency_key  TEXT NOT NULL,
   voucher_code     TEXT,
   description      TEXT,
   source_system    TEXT,
@@ -238,10 +238,15 @@ CREATE TABLE data_stockflow.voucher (
   PRIMARY KEY (key, revision)
 );
 
--- Conditional unique on voucher_code (only when non-null)
+-- Idempotency: unique per tenant on first revision only
+CREATE UNIQUE INDEX uq_voucher_idempotency
+  ON data_stockflow.voucher (tenant_key, idempotency_key)
+  WHERE revision = 1;
+
+-- Conditional unique on voucher_code (only on first revision, non-null)
 CREATE UNIQUE INDEX uq_voucher_code
   ON data_stockflow.voucher (tenant_key, voucher_code)
-  WHERE voucher_code IS NOT NULL;
+  WHERE voucher_code IS NOT NULL AND revision = 1;
 
 -- ---- journal (posted_at determines period; no FK to period) ----
 CREATE TABLE data_stockflow.journal (
@@ -455,6 +460,11 @@ FROM data_stockflow.project
 WHERE valid_from <= now() AND (valid_to IS NULL OR valid_to > now())
 ORDER BY key, created_at DESC;
 
+CREATE VIEW data_stockflow.current_voucher AS
+SELECT DISTINCT ON (key) *
+FROM data_stockflow.voucher
+ORDER BY key, revision DESC;
+
 CREATE VIEW data_stockflow.current_journal AS
 SELECT * FROM (
   SELECT DISTINCT ON (key) *
@@ -493,6 +503,9 @@ SELECT * FROM data_stockflow.counterparty ORDER BY key, revision;
 
 CREATE VIEW data_stockflow.history_project AS
 SELECT * FROM data_stockflow.project ORDER BY key, revision;
+
+CREATE VIEW data_stockflow.history_voucher AS
+SELECT * FROM data_stockflow.voucher ORDER BY key, revision;
 
 CREATE VIEW data_stockflow.history_journal AS
 SELECT * FROM data_stockflow.journal ORDER BY key, revision;

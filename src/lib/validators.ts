@@ -341,11 +341,18 @@ export const updateProjectSchema = z.object({
 
 export const voucherResponseSchema = z.object({
   id: z.number(),
+  revision: z.number(),
   idempotency_key: z.string(),
   voucher_code: z.string().nullable(),
   description: z.string().nullable(),
   source_system: z.string().nullable(),
   created_at: z.string(),
+});
+
+export const updateVoucherSchema = z.object({
+  voucher_code: z.string().nullable().optional(),
+  description: z.string().nullable().optional(),
+  source_system: z.string().nullable().optional(),
 });
 
 // ============================================================

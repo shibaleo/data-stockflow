@@ -3,7 +3,7 @@ import { createRoute, z } from "@hono/zod-openapi";
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
 import { voucher, journal, journalLine, entityCategory } from "@/lib/db/schema";
-import { errorSchema, dataSchema, paginatedSchema, listQuerySchema, voucherResponseSchema, voucherDetailResponseSchema, createVoucherSchema } from "@/lib/validators";
+import { errorSchema, dataSchema, paginatedSchema, listQuerySchema, voucherResponseSchema, voucherDetailResponseSchema, createVoucherSchema, updateVoucherSchema } from "@/lib/validators";
 import { requireTenant, requireAuth, requireRole } from "@/middleware/guards";
 import { recordAudit } from "@/lib/audit";
 import { recordEvent } from "@/lib/event-log";
@@ -12,11 +12,13 @@ import {
   acquireNextHeaderSequence,
   computeHeaderHash,
   computeRevisionHash,
+  computeVoucherContentHash,
   computeLinesHash,
   GENESIS_PREV_HASH,
   type LineHashInput,
 } from "@/lib/hash-chain";
-import { getCurrent, decodeCursor, encodeCursor } from "@/lib/append-only";
+import { bumpVoucherRevision } from "@/lib/voucher-cascade";
+import { decodeCursor, encodeCursor } from "@/lib/append-only";
 import type { CurrentJournal, JournalLineRow, EntityCategoryRow, VoucherRow } from "@/lib/types";
 
 const S = "data_stockflow";
@@ -56,6 +58,18 @@ const create = createRoute({
   },
 });
 
+const update = createRoute({
+  method: "put", path: "/{voucherId}", tags: ["Vouchers"], summary: "Update voucher (new revision)",
+  request: {
+    params: z.object({ voucherId: z.string() }),
+    body: { content: { "application/json": { schema: updateVoucherSchema } } },
+  },
+  responses: {
+    200: { description: "Updated", content: { "application/json": { schema: dataSchema(voucherDetailResponseSchema) } } },
+    404: { description: "Not found", content: { "application/json": { schema: errorSchema } } },
+  },
+});
+
 // ── Handlers ──
 
 app.openapi(list, async (c) => {
@@ -65,8 +79,8 @@ app.openapi(list, async (c) => {
   const cursor = query.cursor ? decodeCursor(query.cursor) : undefined;
   const cursorClause = cursor ? sql`AND key < ${cursor}` : sql``;
   const { rows } = await db.execute(sql`
-    SELECT * FROM ${sql.raw(`"${S}".voucher`)}
-    WHERE tenant_key = ${tenantKey} AND revision = 1
+    SELECT * FROM ${sql.raw(`"${S}".current_voucher`)}
+    WHERE tenant_key = ${tenantKey}
     ${cursorClause}
     ORDER BY key DESC
     LIMIT ${limit}
@@ -84,8 +98,8 @@ app.openapi(get, async (c) => {
   const voucherKey = Number(c.req.param("voucherId"));
 
   const { rows: vRows } = await db.execute(sql`
-    SELECT * FROM ${sql.raw(`"${S}".voucher`)}
-    WHERE tenant_key = ${tenantKey} AND key = ${voucherKey} AND revision = 1
+    SELECT * FROM ${sql.raw(`"${S}".current_voucher`)}
+    WHERE tenant_key = ${tenantKey} AND key = ${voucherKey}
     LIMIT 1
   `);
   if (vRows.length === 0) return c.json({ error: "Not found" }, 404);
@@ -170,8 +184,30 @@ app.openapi(create, async (c) => {
       created_at: headerCreatedAt,
     });
 
-    // Compute voucher hash
-    const voucherLinesHash = computeLinesHash([]);
+    // Pre-compute journal hashes to derive voucher content hash
+    const journalHashSpecs = body.journals.map((jInput) => {
+      const signedLines = jInput.lines.map((l) => ({
+        ...l,
+        amount: String(l.side === "debit" ? -l.amount : l.amount),
+      }));
+      const linesHashInputs: LineHashInput[] = signedLines.map((l) => ({
+        sort_order: l.sort_order, side: l.side, account_key: l.account_id,
+        department_key: l.department_id, counterparty_key: l.counterparty_id,
+        amount: l.amount, description: l.description,
+      }));
+      const linesHash = computeLinesHash(linesHashInputs);
+      const revisionHash = computeRevisionHash({
+        prev_revision_hash: GENESIS_PREV_HASH, journal_key: 0, revision: 1,
+        adjustment_flag: jInput.adjustment_flag ?? "none",
+        description: jInput.description ?? null, lines_hash: linesHash,
+      });
+      return { signedLines, linesHash, revisionHash };
+    });
+
+    // Compute voucher hash from journal revision hashes
+    const voucherLinesHash = computeVoucherContentHash(
+      journalHashSpecs.map((s) => s.revisionHash),
+    );
     const voucherRevisionHash = computeRevisionHash({
       prev_revision_hash: GENESIS_PREV_HASH, journal_key: 0,
       revision: 1, adjustment_flag: "none",
@@ -194,22 +230,7 @@ app.openapi(create, async (c) => {
     const createdJournals = [];
     for (let i = 0; i < body.journals.length; i++) {
       const jInput = body.journals[i];
-      const signedLines = jInput.lines.map((l) => ({
-        ...l,
-        amount: String(l.side === "debit" ? -l.amount : l.amount),
-      }));
-
-      const linesHashInputs: LineHashInput[] = signedLines.map((l) => ({
-        sort_order: l.sort_order, side: l.side, account_key: l.account_id,
-        department_key: l.department_id, counterparty_key: l.counterparty_id,
-        amount: l.amount, description: l.description,
-      }));
-      const linesHash = computeLinesHash(linesHashInputs);
-      const revisionHash = computeRevisionHash({
-        prev_revision_hash: GENESIS_PREV_HASH, journal_key: 0, revision: 1,
-        adjustment_flag: jInput.adjustment_flag ?? "none",
-        description: jInput.description ?? null, lines_hash: linesHash,
-      });
+      const { signedLines, linesHash, revisionHash } = journalHashSpecs[i];
 
       const [j] = await tx.insert(journal).values({
         tenant_key: tenantKey, voucher_key: v.key, book_key: jInput.book_id,
@@ -289,6 +310,84 @@ app.openapi(create, async (c) => {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return c.json({ data: { ...voucherResponse, journals: journalsResponse } } as any, 201);
+});
+
+// ── Update handler ──
+
+app.use(update.getRoutingPath(), requireRole("admin", "user"));
+app.openapi(update, async (c) => {
+  const tenantKey = c.get("tenantKey");
+  const userKey = c.get("userKey");
+  const voucherKey = Number(c.req.param("voucherId"));
+  const body = c.req.valid("json");
+
+  // Check existence
+  const { rows: checkRows } = await db.execute(sql`
+    SELECT key FROM ${sql.raw(`"${S}".current_voucher`)}
+    WHERE tenant_key = ${tenantKey} AND key = ${voucherKey}
+    LIMIT 1
+  `);
+  if (checkRows.length === 0) return c.json({ error: "Not found" }, 404);
+
+  const result = await db.transaction(async (tx: typeof db) => {
+    return bumpVoucherRevision(tx, voucherKey, tenantKey, userKey, {
+      voucher_code: body.voucher_code,
+      description: body.description,
+      source_system: body.source_system,
+    });
+  });
+
+  recordAudit(c, { action: "update", entityType: "voucher", entityKey: voucherKey, revision: result.revision });
+  recordEvent(c, {
+    action: "update", entityType: "voucher", entityKey: voucherKey,
+    entityName: result.voucher_code ?? undefined,
+    summary: `伝票 #${voucherKey} を更新しました`,
+  });
+
+  // Return updated voucher with journals
+  const { rows: jRows } = await db.execute(sql`
+    SELECT * FROM ${sql.raw(`"${S}".current_journal`)}
+    WHERE voucher_key = ${voucherKey}
+    ORDER BY key
+  `);
+  const journals = jRows as CurrentJournal[];
+  const journalsWithDetails = await Promise.all(journals.map(async (j) => {
+    const [linesResult, catsResult] = await Promise.all([
+      db.execute(sql`
+        SELECT * FROM ${sql.raw(`"${S}".journal_line`)}
+        WHERE journal_key = ${j.key} AND journal_revision = ${j.revision}
+        ORDER BY sort_order, side
+      `),
+      db.execute(sql`
+        SELECT * FROM ${sql.raw(`"${S}".entity_category`)}
+        WHERE entity_key = ${j.key} AND entity_revision = ${j.revision}
+      `),
+    ]);
+    const lines = (linesResult.rows as JournalLineRow[]).map((l) => ({
+      uuid: l.uuid, sort_order: l.sort_order, side: l.side,
+      account_id: l.account_key, department_id: l.department_key,
+      counterparty_id: l.counterparty_key,
+      amount: String(Math.abs(parseFloat(String(l.amount)))),
+      description: l.description,
+    }));
+    const categories = (catsResult.rows as EntityCategoryRow[]).map((ec) => ({
+      uuid: ec.uuid, category_type_code: ec.category_type_code,
+      category_key: ec.category_key,
+      created_at: ec.created_at instanceof Date ? ec.created_at.toISOString() : String(ec.created_at),
+    }));
+    return {
+      id: j.key, voucher_id: j.voucher_key, book_id: j.book_key,
+      posted_at: j.posted_at instanceof Date ? j.posted_at.toISOString() : String(j.posted_at),
+      revision: j.revision, is_active: j.is_active, project_id: j.project_key,
+      adjustment_flag: j.adjustment_flag, description: j.description,
+      metadata: (j.metadata ?? {}) as Record<string, string>,
+      created_at: j.created_at instanceof Date ? j.created_at.toISOString() : String(j.created_at),
+      lines, categories,
+    };
+  }));
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return c.json({ data: { ...mapVoucher(result as unknown as VoucherRow), journals: journalsWithDetails } } as any, 200);
 });
 
 export default app;

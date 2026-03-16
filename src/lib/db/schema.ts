@@ -374,7 +374,7 @@ export const voucher = s.table(
     revision_hash: text("revision_hash").notNull(),
     created_by: bigint("created_by", { mode: "number" }).notNull(),
     tenant_key: bigint("tenant_key", { mode: "number" }).notNull(),
-    idempotency_key: text("idempotency_key").notNull().unique(),
+    idempotency_key: text("idempotency_key").notNull(),
     voucher_code: text("voucher_code"),
     description: text("description"),
     source_system: text("source_system"),
@@ -384,9 +384,12 @@ export const voucher = s.table(
   },
   (t) => [
     primaryKey({ columns: [t.key, t.revision] }),
+    uniqueIndex("uq_voucher_idempotency")
+      .on(t.tenant_key, t.idempotency_key)
+      .where(sql`revision = 1`),
     uniqueIndex("uq_voucher_code")
       .on(t.tenant_key, t.voucher_code)
-      .where(sql`voucher_code IS NOT NULL`),
+      .where(sql`voucher_code IS NOT NULL AND revision = 1`),
   ]
 );
 

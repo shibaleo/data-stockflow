@@ -24,6 +24,7 @@ import type {
 } from "@/lib/types";
 import { recordAudit } from "@/lib/audit";
 import { recordEvent } from "@/lib/event-log";
+import { bumpVoucherRevision } from "@/lib/voucher-cascade";
 import {
   computeRevisionHash,
   computeLinesHash,
@@ -176,6 +177,9 @@ app.openapi(reverse, async (c) => {
         })),
       );
     }
+
+    // Cascade: bump voucher revision to reflect new reversal journal
+    await bumpVoucherRevision(tx, current.voucher_key, tenantKey, userKey);
 
     return j;
   });

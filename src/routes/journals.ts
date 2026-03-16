@@ -20,6 +20,7 @@ import {
 import { requireTenant, requireAuth, requireRole } from "@/middleware/guards";
 import { recordAudit } from "@/lib/audit";
 import { recordEvent } from "@/lib/event-log";
+import { bumpVoucherRevision } from "@/lib/voucher-cascade";
 import { getMaxRevision } from "@/lib/append-only";
 import {
   computeRevisionHash,
@@ -273,6 +274,9 @@ app.openapi(updateRoute, async (c) => {
       );
     }
 
+    // Cascade: bump voucher revision to reflect journal change
+    await bumpVoucherRevision(tx, voucherKey, tenantKey, userKey);
+
     return j;
   });
 
@@ -323,6 +327,9 @@ app.openapi(deleteRoute, async (c) => {
       lines_hash: linesHash, prev_revision_hash: prevRevisionHash,
       revision_hash: revisionHash,
     });
+
+    // Cascade: bump voucher revision to reflect journal deactivation
+    await bumpVoucherRevision(tx, voucherKey, tenantKey, userKey);
   });
 
   recordAudit(c, { action: "deactivate", entityType: "journal", entityKey: journalKey, revision: maxRev + 1 });

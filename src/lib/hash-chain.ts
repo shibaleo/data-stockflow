@@ -80,6 +80,13 @@ export function computeRevisionHash(input: RevisionHashInput): string {
   );
 }
 
+// ── Voucher content hash (aggregates journal revision hashes) ──
+
+export function computeVoucherContentHash(journalRevisionHashes: string[]): string {
+  if (journalRevisionHashes.length === 0) return sha256("EMPTY_JOURNALS");
+  return sha256(journalRevisionHashes.sort().join(";"));
+}
+
 // ── Header chain hash (voucher) ──
 
 export interface HeaderHashInput {
@@ -152,6 +159,30 @@ export async function getPrevRevisionHash(
   if (rows.length === 0) {
     throw new Error(
       `Missing previous revision ${currentRevision - 1} for journal key ${journalKey}`
+    );
+  }
+
+  return (rows[0] as { revision_hash: string }).revision_hash;
+}
+
+export async function getPrevVoucherRevisionHash(
+  tx: Tx,
+  voucherKey: number,
+  currentRevision: number
+): Promise<string> {
+  if (currentRevision === 1) return GENESIS_PREV_HASH;
+
+  const { rows } = await tx.execute(sql`
+    SELECT revision_hash
+    FROM ${sql.raw(`"${S}".voucher`)}
+    WHERE key = ${voucherKey}
+      AND revision = ${currentRevision - 1}
+    LIMIT 1
+  `);
+
+  if (rows.length === 0) {
+    throw new Error(
+      `Missing previous revision ${currentRevision - 1} for voucher key ${voucherKey}`
     );
   }
 
