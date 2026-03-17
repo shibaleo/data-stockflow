@@ -171,10 +171,8 @@ await acct({ code: "3100", name: "資本仮勘定", account_type: "equity", pare
 // ── 4000 経常収益 ──
 console.log("\n=== 経常収益 ===");
 const a4000 = await acct({ code: "4000", name: "経常収益", account_type: "revenue" });
-const a4100 = await acct({ code: "4100", name: "基本給", account_type: "revenue", parent_account_id: a4000 });
-await acct({ code: "4110", name: "残業手当", account_type: "revenue", parent_account_id: a4000 });
+const a4100 = await acct({ code: "4100", name: "給与", account_type: "revenue", parent_account_id: a4000 });
 await acct({ code: "4120", name: "通勤手当", account_type: "revenue", parent_account_id: a4000 });
-await acct({ code: "4130", name: "その他手当", account_type: "revenue", parent_account_id: a4000 });
 
 // ── 4500 特別収益 ──
 console.log("\n=== 特別収益 ===");
@@ -218,7 +216,7 @@ await acct({ code: "5396", name: "情報サービス", account_type: "expense", 
 await acct({ code: "5397", name: "美容費", account_type: "expense", parent_account_id: a5300 });
 
 const a5400 = await acct({ code: "5400", name: "公課", account_type: "expense", parent_account_id: a5000 });
-const a5410 = await acct({ code: "5410", name: "税金費用", account_type: "expense", parent_account_id: a5400 });
+const a5410 = await acct({ code: "5410", name: "租税公課", account_type: "expense", parent_account_id: a5400 });
 await acct({ code: "5411", name: "所得税", account_type: "expense", parent_account_id: a5410 });
 await acct({ code: "5412", name: "住民税", account_type: "expense", parent_account_id: a5410 });
 
@@ -233,7 +231,54 @@ const a5500 = await acct({ code: "5500", name: "特別費用", account_type: "ex
 await acct({ code: "5510", name: "雑損", account_type: "expense", parent_account_id: a5500 });
 
 // ============================================================
-// 6. Sample vouchers
+// 6. Display accounts (表示科目 — tenant authority, bootstrap)
+// ============================================================
+
+async function dacct(body) {
+  const d = await post(`/books/${BOOK_ID}/display-accounts`, body);
+  if (d) console.log(`  DA:${d.code} ${d.name} → id=${d.id}`);
+  return d?.id;
+}
+
+console.log("\n=== 表示科目 ===");
+
+// BS: 資産
+const da1000 = await dacct({ code: "DA-1000", name: "資産", account_type: "asset", sort_order: 100, authority_level: "tenant" });
+const da1100 = await dacct({ code: "DA-1100", name: "現金・預金", account_type: "asset", parent_id: da1000, sort_order: 110, authority_level: "tenant" });
+const da1300 = await dacct({ code: "DA-1300", name: "その他流動資産", account_type: "asset", parent_id: da1000, sort_order: 130, authority_level: "tenant" });
+const da1500 = await dacct({ code: "DA-1500", name: "固定資産・預金", account_type: "asset", parent_id: da1000, sort_order: 150, authority_level: "tenant" });
+
+// BS: 負債
+const da2000 = await dacct({ code: "DA-2000", name: "負債", account_type: "liability", sort_order: 200, authority_level: "tenant" });
+const da2100 = await dacct({ code: "DA-2100", name: "未払金・クレジット", account_type: "liability", parent_id: da2000, sort_order: 210, authority_level: "tenant" });
+const da2500 = await dacct({ code: "DA-2500", name: "借入金", account_type: "liability", parent_id: da2000, sort_order: 250, authority_level: "tenant" });
+
+// BS: 純資産
+const da3000 = await dacct({ code: "DA-3000", name: "純資産", account_type: "equity", sort_order: 300, authority_level: "tenant" });
+
+// PL: 収益
+const da4000 = await dacct({ code: "DA-4000", name: "収益", account_type: "revenue", sort_order: 400, authority_level: "tenant" });
+const da4100 = await dacct({ code: "DA-4100", name: "給与収入", account_type: "revenue", parent_id: da4000, sort_order: 410, authority_level: "tenant" });
+const da4500 = await dacct({ code: "DA-4500", name: "その他収益", account_type: "revenue", parent_id: da4000, sort_order: 450, authority_level: "tenant" });
+
+// PL: 費用
+const da5000 = await dacct({ code: "DA-5000", name: "費用", account_type: "expense", sort_order: 500, authority_level: "tenant" });
+const daFood     = await dacct({ code: "DA-5010", name: "食費", account_type: "expense", parent_id: da5000, sort_order: 501, authority_level: "tenant" });
+const daLiving   = await dacct({ code: "DA-5020", name: "住居・光熱", account_type: "expense", parent_id: da5000, sort_order: 502, authority_level: "tenant" });
+const daDaily     = await dacct({ code: "DA-5030", name: "日用・被服", account_type: "expense", parent_id: da5000, sort_order: 503, authority_level: "tenant" });
+const daTransport = await dacct({ code: "DA-5040", name: "交通・車両", account_type: "expense", parent_id: da5000, sort_order: 504, authority_level: "tenant" });
+const daSocial    = await dacct({ code: "DA-5050", name: "交際・娯楽", account_type: "expense", parent_id: da5000, sort_order: 505, authority_level: "tenant" });
+const daHealth    = await dacct({ code: "DA-5060", name: "医療・美容", account_type: "expense", parent_id: da5000, sort_order: 506, authority_level: "tenant" });
+const daEduc      = await dacct({ code: "DA-5070", name: "教育・仕事", account_type: "expense", parent_id: da5000, sort_order: 507, authority_level: "tenant" });
+const daTax       = await dacct({ code: "DA-5080", name: "租税・社会保険", account_type: "expense", parent_id: da5000, sort_order: 508, authority_level: "tenant" });
+const daOther     = await dacct({ code: "DA-5090", name: "その他費用", account_type: "expense", parent_id: da5000, sort_order: 509, authority_level: "tenant" });
+
+// NOTE: 勘定科目 → 表示科目のマッピング (display_account_id) は
+// シード実行後に PUT /books/{bookId}/accounts/{id} で設定するか、
+// 別途マッピングスクリプトで一括設定する。
+
+// ============================================================
+// 7. Sample vouchers
 // ============================================================
 
 if (!catNormal || !dept || !cp || !proj || !a1210 || !a4100 || !a5370 || !a1110) {

@@ -9,6 +9,7 @@ import {
   Building2,
   FileCode2,
   FolderKanban,
+  Layers,
   ScrollText,
   List,
   PanelLeftClose,
@@ -38,6 +39,7 @@ const navItems: NavItem[] = [
   { href: "/aggregation", label: "集計", icon: BarChart3 },
   // マスタ管理
   { href: "/accounts", label: "科目", icon: List, separator: true },
+  { href: "/display-accounts", label: "表示科目", icon: Layers },
   { href: "/departments", label: "部門", icon: Building2 },
   { href: "/counterparties", label: "取引先", icon: Users },
   { href: "/projects", label: "プロジェクト", icon: FolderKanban },

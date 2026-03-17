@@ -25,6 +25,7 @@ export type AuditEntityType =
   | "role"
   | "user"
   | "project"
+  | "display_account"
   | "api_key";
 
 interface AuditEntry {

@@ -183,31 +183,67 @@ export const accountResponseSchema = z.object({
   account_type: z.string(),
   is_active: z.boolean(),
   parent_account_id: z.number().nullable(),
+  display_account_id: z.number().nullable(),
   sign: z.number(),
   revision: z.number(),
   created_at: z.string(),
 });
 
+const accountTypeEnum = z.enum([
+  "asset", "liability", "equity", "revenue", "expense",
+]);
+
 export const createAccountSchema = z.object({
   code: zSanitized(z.string().min(1).max(50)),
   name: zSanitized(z.string().min(1).max(200)),
-  account_type: z.enum([
-    "asset",
-    "liability",
-    "equity",
-    "revenue",
-    "expense",
-  ]),
+  account_type: accountTypeEnum,
   parent_account_id: z.number().int().positive().optional(),
+  display_account_id: z.number().int().positive().optional(),
 });
 
 export const updateAccountSchema = z.object({
   code: zSanitized(z.string().min(1).max(100)).optional(),
   name: zSanitized(z.string().min(1).max(200)).optional(),
-  account_type: z
-    .enum(["asset", "liability", "equity", "revenue", "expense"])
-    .optional(),
+  account_type: accountTypeEnum.optional(),
   parent_account_id: z.number().int().positive().nullable().optional(),
+  display_account_id: z.number().int().positive().nullable().optional(),
+  is_active: z.boolean().optional(),
+});
+
+// ============================================================
+// Display Account (表示科目)
+// ============================================================
+
+const authorityLevelEnum = z.enum(["tenant", "admin", "user"]);
+
+export const displayAccountResponseSchema = z.object({
+  id: z.number(),
+  book_id: z.number(),
+  code: z.string(),
+  name: z.string(),
+  account_type: z.string(),
+  parent_id: z.number().nullable(),
+  sort_order: z.number(),
+  authority_level: z.string(),
+  is_active: z.boolean(),
+  revision: z.number(),
+  created_at: z.string(),
+});
+
+export const createDisplayAccountSchema = z.object({
+  code: zSanitized(z.string().min(1).max(50)),
+  name: zSanitized(z.string().min(1).max(200)),
+  account_type: accountTypeEnum,
+  parent_id: z.number().int().positive().optional(),
+  sort_order: z.number().int().optional(),
+});
+
+export const updateDisplayAccountSchema = z.object({
+  code: zSanitized(z.string().min(1).max(100)).optional(),
+  name: zSanitized(z.string().min(1).max(200)).optional(),
+  account_type: accountTypeEnum.optional(),
+  parent_id: z.number().int().positive().nullable().optional(),
+  sort_order: z.number().int().optional(),
   is_active: z.boolean().optional(),
 });
 

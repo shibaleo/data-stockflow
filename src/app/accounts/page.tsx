@@ -1,9 +1,18 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { MasterPage, type ExtraField } from "@/components/shared/master-page";
 import { BookSelector } from "@/components/shared/book-selector";
 import { useBooks } from "@/hooks/use-books";
+import { fetchAllPages } from "@/lib/api-client";
+
+interface DisplayAccountRow {
+  id: number;
+  code: string;
+  name: string;
+  account_type: string;
+  parent_id: number | null;
+}
 
 const TYPE_KEYS = ["asset", "liability", "equity", "revenue", "expense"] as const;
 
@@ -17,6 +26,14 @@ const DEFAULT_TYPE_LABELS: Record<string, string> = {
 
 export default function AccountsPage() {
   const { books, selectedBookId, setSelectedBookId, selectedBook } = useBooks();
+  const [displayAccounts, setDisplayAccounts] = useState<DisplayAccountRow[]>([]);
+
+  useEffect(() => {
+    if (!selectedBookId) return;
+    fetchAllPages<DisplayAccountRow>(`/books/${selectedBookId}/display-accounts`)
+      .then(setDisplayAccounts)
+      .catch(() => setDisplayAccounts([]));
+  }, [selectedBookId]);
 
   const typeLabels = selectedBook?.type_labels ?? {};
 
@@ -36,15 +53,68 @@ export default function AccountsPage() {
     [typeLabels],
   );
 
-  const dialogExtraFields = useMemo<ExtraField[]>(
+  // Only leaf display accounts (no children) can be mapped to accounts
+  const leafDisplayAccounts = useMemo(() => {
+    const parentIds = new Set(
+      displayAccounts.map((da) => String(da.parent_id)).filter((v) => v !== "null"),
+    );
+    return displayAccounts.filter((da) => !parentIds.has(String(da.id)));
+  }, [displayAccounts]);
+
+  const displayAccountOptions = useMemo(
+    () => leafDisplayAccounts.map((da) => ({
+      value: String(da.id),
+      label: `${da.code} ${da.name}`,
+    })),
+    [leafDisplayAccounts],
+  );
+
+  const displayAccountMap = useMemo(
+    () => new Map(displayAccounts.map((da) => [String(da.id), da])),
+    [displayAccounts],
+  );
+
+  const extraFields = useMemo<ExtraField[]>(
     () => [{
-      key: "account_type",
-      label: "分類",
-      type: "select",
-      options: typeOptions,
-      format: (v) => typeOptions.find((t) => t.value === v)?.label ?? String(v),
+      key: "display_account_id",
+      label: "表示科目",
+      type: "select" as const,
+      options: displayAccountOptions,
+      nullable: true,
+      format: (v) => {
+        if (v == null) return "";
+        const da = displayAccountMap.get(String(v));
+        return da ? da.name : "";
+      },
+      badge: true,
+      badgeClassName: () => "border-emerald-600/50 text-emerald-400",
     }],
-    [typeOptions],
+    [displayAccountOptions, displayAccountMap],
+  );
+
+  const dialogExtraFields = useMemo<ExtraField[]>(
+    () => [
+      {
+        key: "account_type",
+        label: "分類",
+        type: "select" as const,
+        options: typeOptions,
+        format: (v) => typeOptions.find((t) => t.value === v)?.label ?? String(v),
+      },
+      {
+        key: "display_account_id",
+        label: "表示科目",
+        type: "select" as const,
+        options: displayAccountOptions,
+        nullable: true,
+        format: (v) => {
+          if (v == null) return "なし";
+          const da = displayAccountMap.get(String(v));
+          return da ? `${da.code} ${da.name}` : "なし";
+        },
+      },
+    ],
+    [typeOptions, displayAccountOptions, displayAccountMap],
   );
 
   const config = useMemo(
@@ -56,9 +126,10 @@ export default function AccountsPage() {
       codePlaceholder: "例: 1000",
       namePlaceholder: "例: 現金",
       groupBy: { field: "account_type", sections },
+      extraFields,
       dialogExtraFields,
     }),
-    [selectedBookId, sections, dialogExtraFields],
+    [selectedBookId, sections, extraFields, dialogExtraFields],
   );
 
   if (!selectedBookId) {

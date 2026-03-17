@@ -11,6 +11,7 @@ import roles from "@/routes/roles";
 import users from "@/routes/users";
 import books from "@/routes/books";
 import accounts from "@/routes/accounts";
+import displayAccounts from "@/routes/display-accounts";
 import categoryTypes from "@/routes/category-types";
 import categories from "@/routes/categories";
 import departments from "@/routes/departments";
@@ -70,6 +71,7 @@ app.route("/projects", projects);
 
 // Book-scoped master routes (requireBook middleware is inside each route)
 app.route("/books/:bookId/accounts", accounts);
+app.route("/books/:bookId/display-accounts", displayAccounts);
 app.route("/books/:bookId/reports", reports);
 
 // Transaction routes (tenant-scoped)

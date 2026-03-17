@@ -59,7 +59,20 @@ export interface CurrentAccount extends BaseEntity {
   account_type: string;
   is_active: boolean;
   parent_account_key: number | null;
+  display_account_key: number | null;
   sign: number; // from current_account view
+}
+
+export interface CurrentDisplayAccount extends BaseEntity {
+  created_by: number;
+  book_key: number;
+  code: string;
+  name: string;
+  account_type: string;
+  parent_key: number | null;
+  sort_order: number;
+  authority_level: string;
+  is_active: boolean;
 }
 
 export interface CurrentCategory extends BaseEntity {

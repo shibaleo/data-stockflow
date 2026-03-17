@@ -55,6 +55,8 @@ export interface ExtraField {
   badge?: boolean;
   /** Dynamic className for badge based on value */
   badgeClassName?: (value: unknown) => string;
+  /** If true, adds a "none" option and sends null when selected */
+  nullable?: boolean;
 }
 
 export interface GroupConfig {
@@ -82,6 +84,10 @@ export interface MasterPageConfig {
   defaultExtraValues?: Record<string, string>;
   /** Client-side filter applied after fetch */
   clientFilter?: (item: MasterRow) => boolean;
+  /** If true, renders dialogExtraFields before the parent selector */
+  extraFieldsFirst?: boolean;
+  /** Filter parent candidates based on current dialog extras state */
+  parentFilter?: (candidate: MasterRow, extras: Record<string, string>) => boolean;
 }
 
 // ── Tree ──
@@ -187,24 +193,26 @@ export function MasterTreeSection({
                     )}
                     <span className="font-mono text-xs text-muted-foreground mr-2">{node.code}</span>
                     <span className={node.hasChildren ? "font-medium" : ""}>{node.name}</span>
-                    {!node.isActive && (
-                      <Badge className="ml-2 bg-red-900/30 text-red-400 border-red-800/50 text-xs py-0">無効</Badge>
-                    )}
-                    {extraFields?.map((field) => {
-                      const val = node.data[field.key];
-                      if (val == null) return null;
-                      const text = field.format ? field.format(val) : String(val);
-                      if (!text) return null;
-                      if (field.badge === false) {
-                        return <span key={field.key} className="ml-2 text-xs text-muted-foreground">{text}</span>;
-                      }
-                      const badgeCls = field.badgeClassName ? field.badgeClassName(val) : "";
-                      return (
-                        <Badge key={field.key} variant="outline" className={`ml-2 text-xs py-0 ${badgeCls}`}>
-                          {text}
-                        </Badge>
-                      );
-                    })}
+                    <span className="ml-auto flex items-center gap-1.5">
+                      {!node.isActive && (
+                        <Badge className="bg-red-900/30 text-red-400 border-red-800/50 text-xs py-0">無効</Badge>
+                      )}
+                      {extraFields?.map((field) => {
+                        const val = node.data[field.key];
+                        if (val == null) return null;
+                        const text = field.format ? field.format(val) : String(val);
+                        if (!text) return null;
+                        if (field.badge === false) {
+                          return <span key={field.key} className="text-xs text-muted-foreground">{text}</span>;
+                        }
+                        const badgeCls = field.badgeClassName ? field.badgeClassName(val) : "";
+                        return (
+                          <Badge key={field.key} variant="outline" className={`text-xs py-0 ${badgeCls}`}>
+                            {text}
+                          </Badge>
+                        );
+                      })}
+                    </span>
                   </div>
                 </td>
               </tr>
@@ -213,6 +221,39 @@ export function MasterTreeSection({
         </table>
       </div>
     </div>
+  );
+}
+
+// ── Extra Fields Block ──
+
+function ExtraFieldsBlock({ fields, extras, setExtras }: {
+  fields: ExtraField[];
+  extras: Record<string, string>;
+  setExtras: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+}) {
+  return (
+    <>
+      {fields.map((field) => (
+        <div key={field.key} className="space-y-2">
+          <Label>{field.label}</Label>
+          {field.type === "select" && field.options ? (
+            <Select value={extras[field.key] || ""} onValueChange={(v) => setExtras((prev) => ({ ...prev, [field.key]: v }))}>
+              <SelectTrigger><SelectValue placeholder={field.placeholder ?? "選択"} /></SelectTrigger>
+              <SelectContent>
+                {field.nullable && <SelectItem value="__none__">なし</SelectItem>}
+                {field.options.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <Input type={field.type === "date" ? "date" : "text"} value={extras[field.key] || ""}
+              onChange={(e) => setExtras((prev) => ({ ...prev, [field.key]: e.target.value }))}
+              placeholder={field.placeholder} />
+          )}
+        </div>
+      ))}
+    </>
   );
 }
 
@@ -265,7 +306,8 @@ export function MasterItemDialog({
       const ex: Record<string, string> = {};
       for (const field of allExtraFields) {
         const val = item[field.key];
-        if (field.type === "date" && val) { ex[field.key] = String(val).slice(0, 10); }
+        if (field.nullable && val == null) { ex[field.key] = "__none__"; }
+        else if (field.type === "date" && val) { ex[field.key] = String(val).slice(0, 10); }
         else { ex[field.key] = val ? String(val) : ""; }
       }
       setExtras(ex);
@@ -292,7 +334,8 @@ export function MasterItemDialog({
       for (const field of fieldsToSend) {
         const apiKey = field.apiKey ?? field.key;
         const val = extras[field.key];
-        if (field.type === "date" && val) { payload[apiKey] = new Date(val).toISOString(); }
+        if (field.nullable && val === "__none__") { payload[apiKey] = null; }
+        else if (field.type === "date" && val) { payload[apiKey] = new Date(val).toISOString(); }
         else if (field.type === "select" && val && /^\d+$/.test(val)) { payload[apiKey] = Number(val); }
         else if (val) { payload[apiKey] = val; }
       }
@@ -336,6 +379,8 @@ export function MasterItemDialog({
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={config.namePlaceholder ?? "例: 名前"} />
           </div>
 
+          {config.extraFieldsFirst && <ExtraFieldsBlock fields={allExtraFields} extras={extras} setExtras={setExtras} />}
+
           {config.parentKey && (
             <div className="space-y-2">
               <Label>親（任意）</Label>
@@ -343,7 +388,11 @@ export function MasterItemDialog({
                 <SelectTrigger><SelectValue placeholder="なし" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__none__">なし</SelectItem>
-                  {items.filter((a) => a.is_active && a.id !== item?.id).map((a) => (
+                  {items.filter((a) => {
+                    if (!a.is_active || a.id === item?.id) return false;
+                    if (config.parentFilter && !config.parentFilter(a, extras)) return false;
+                    return true;
+                  }).map((a) => (
                     <SelectItem key={a.id} value={String(a.id)}>{a.code} {a.name}</SelectItem>
                   ))}
                 </SelectContent>
@@ -351,25 +400,7 @@ export function MasterItemDialog({
             </div>
           )}
 
-          {allExtraFields.map((field) => (
-            <div key={field.key} className="space-y-2">
-              <Label>{field.label}</Label>
-              {field.type === "select" && field.options ? (
-                <Select value={extras[field.key] || ""} onValueChange={(v) => setExtras((prev) => ({ ...prev, [field.key]: v }))}>
-                  <SelectTrigger><SelectValue placeholder={field.placeholder ?? "選択"} /></SelectTrigger>
-                  <SelectContent>
-                    {field.options.map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ) : (
-                <Input type={field.type === "date" ? "date" : "text"} value={extras[field.key] || ""}
-                  onChange={(e) => setExtras((prev) => ({ ...prev, [field.key]: e.target.value }))}
-                  placeholder={field.placeholder} />
-              )}
-            </div>
-          ))}
+          {!config.extraFieldsFirst && <ExtraFieldsBlock fields={allExtraFields} extras={extras} setExtras={setExtras} />}
 
           {/* Extra detail content (read-only info like email, external_id) */}
           {!isCreate && detailExtra}

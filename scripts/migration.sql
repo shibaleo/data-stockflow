@@ -19,6 +19,7 @@ CREATE SEQUENCE data_stockflow.counterparty_key_seq  START WITH 100000000000;
 CREATE SEQUENCE data_stockflow.voucher_key_seq       START WITH 100000000000;
 CREATE SEQUENCE data_stockflow.journal_key_seq       START WITH 100000000000;
 CREATE SEQUENCE data_stockflow.project_key_seq       START WITH 100000000000;
+CREATE SEQUENCE data_stockflow.display_account_key_seq START WITH 200000000000;
 
 -- ============================================================
 -- TABLES
@@ -117,6 +118,30 @@ CREATE TABLE data_stockflow.account (
   account_type     TEXT NOT NULL,
   is_active        BOOLEAN NOT NULL DEFAULT true,
   parent_account_key BIGINT,
+  display_account_key BIGINT,
+  PRIMARY KEY (key, revision),
+  UNIQUE (book_key, code, revision)
+);
+
+-- ---- display_account (表示科目 — 勘定科目とは独立した帳票表示用グルーピング) ----
+CREATE TABLE data_stockflow.display_account (
+  key              BIGINT NOT NULL DEFAULT nextval('data_stockflow.display_account_key_seq'),
+  revision         INTEGER NOT NULL DEFAULT 1,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  valid_from       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  valid_to         TIMESTAMPTZ,
+  lines_hash       TEXT NOT NULL,
+  prev_revision_hash TEXT NOT NULL,
+  revision_hash    TEXT NOT NULL,
+  created_by       BIGINT NOT NULL,
+  book_key         BIGINT NOT NULL,
+  code             TEXT NOT NULL,
+  name             TEXT NOT NULL,
+  account_type     TEXT NOT NULL,
+  parent_key       BIGINT,
+  sort_order       INTEGER NOT NULL DEFAULT 0,
+  authority_level  TEXT NOT NULL DEFAULT 'user',
+  is_active        BOOLEAN NOT NULL DEFAULT true,
   PRIMARY KEY (key, revision),
   UNIQUE (book_key, code, revision)
 );
@@ -436,6 +461,12 @@ FROM data_stockflow.account
 WHERE valid_from <= now() AND (valid_to IS NULL OR valid_to > now())
 ORDER BY key, created_at DESC;
 
+CREATE VIEW data_stockflow.current_display_account AS
+SELECT DISTINCT ON (key) *
+FROM data_stockflow.display_account
+WHERE valid_from <= now() AND (valid_to IS NULL OR valid_to > now())
+ORDER BY key, created_at DESC;
+
 CREATE VIEW data_stockflow.current_category AS
 SELECT DISTINCT ON (key) *
 FROM data_stockflow.category
@@ -491,6 +522,9 @@ SELECT * FROM data_stockflow.book ORDER BY key, revision;
 
 CREATE VIEW data_stockflow.history_account AS
 SELECT * FROM data_stockflow.account ORDER BY key, revision;
+
+CREATE VIEW data_stockflow.history_display_account AS
+SELECT * FROM data_stockflow.display_account ORDER BY key, revision;
 
 CREATE VIEW data_stockflow.history_category AS
 SELECT * FROM data_stockflow.category ORDER BY key, revision;
