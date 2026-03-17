@@ -38,6 +38,7 @@ export function dataSchema<T extends z.ZodType>(itemSchema: T) {
 export const listQuerySchema = z.object({
   limit: z.string().optional().openapi({ example: "100" }),
   cursor: z.string().optional().openapi({ description: "Last key from previous page" }),
+  include_inactive: z.string().optional().openapi({ description: "Include inactive items" }),
 });
 
 // v2: id path param (BIGINT key exposed as "id")
@@ -87,7 +88,6 @@ export const createRoleSchema = z.object({
 export const updateRoleSchema = z.object({
   code: zSanitized(z.string().min(1).max(100)).optional(),
   name: zSanitized(z.string().min(1).max(200)).optional(),
-  is_active: z.boolean().optional(),
 });
 
 // ============================================================
@@ -168,7 +168,6 @@ export const updateBookSchema = z.object({
   unit_symbol: zSanitized(z.string().max(20)).optional(),
   unit_position: z.enum(["left", "right"]).optional(),
   type_labels: typeLabelsSchema.optional(),
-  is_active: z.boolean().optional(),
 });
 
 // ============================================================
@@ -207,7 +206,6 @@ export const updateAccountSchema = z.object({
   account_type: accountTypeEnum.optional(),
   parent_account_id: z.number().int().positive().nullable().optional(),
   display_account_id: z.number().int().positive().nullable().optional(),
-  is_active: z.boolean().optional(),
 });
 
 // ============================================================
@@ -244,7 +242,6 @@ export const updateDisplayAccountSchema = z.object({
   account_type: accountTypeEnum.optional(),
   parent_id: z.number().int().positive().nullable().optional(),
   sort_order: z.number().int().optional(),
-  is_active: z.boolean().optional(),
 });
 
 // ============================================================
@@ -273,7 +270,6 @@ export const updateCategorySchema = z.object({
   code: zSanitized(z.string().min(1).max(100)).optional(),
   name: zSanitized(z.string().min(1).max(200)).optional(),
   parent_category_id: z.number().int().positive().nullable().optional(),
-  is_active: z.boolean().optional(),
 });
 
 // ============================================================
@@ -303,7 +299,6 @@ export const updateDepartmentSchema = z.object({
   name: zSanitized(z.string().min(1).max(200)).optional(),
   parent_department_id: z.number().int().positive().nullable().optional(),
   department_type: z.string().nullable().optional(),
-  is_active: z.boolean().optional(),
 });
 
 // ============================================================
@@ -330,7 +325,6 @@ export const updateCounterpartySchema = z.object({
   code: zSanitized(z.string().min(1).max(100)).optional(),
   name: zSanitized(z.string().min(1).max(200)).optional(),
   parent_counterparty_id: z.number().int().positive().nullable().optional(),
-  is_active: z.boolean().optional(),
 });
 
 // (voucher_type and journal_type removed — now handled by category system)
@@ -368,7 +362,6 @@ export const updateProjectSchema = z.object({
   start_date: z.string().datetime().nullable().optional(),
   end_date: z.string().datetime().nullable().optional(),
   parent_project_id: z.number().int().positive().nullable().optional(),
-  is_active: z.boolean().optional(),
 });
 
 // ============================================================

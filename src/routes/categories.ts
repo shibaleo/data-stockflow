@@ -3,6 +3,7 @@ import { category } from "@/lib/db/schema";
 import { requireTenant, requireAuth } from "@/middleware/guards";
 import { categoryResponseSchema, createCategorySchema, updateCategorySchema } from "@/lib/validators";
 import { createMapper, defineCrudRoutes, registerCrudHandlers } from "@/lib/crud-factory";
+import { checkReferences } from "@/lib/append-only";
 import type { CurrentCategory } from "@/lib/types";
 
 const app = createApp();
@@ -48,6 +49,7 @@ registerCrudHandlers<CurrentCategory>(app, routes, {
     category_type_code: cur.category_type_code,
     code: cur.code, name: cur.name,
   }),
+  canPurge: (key) => checkReferences("category_key", key, ["category"]),
 });
 
 export default app;

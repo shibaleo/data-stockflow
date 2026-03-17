@@ -545,6 +545,20 @@ export const apiKey = s.table(
 );
 
 // ============================================================
+// 装飾系 (mutable, no revision tracking)
+// ============================================================
+
+export const entityColor = s.table(
+  "entity_color",
+  {
+    entity_type: text("entity_type").notNull(),
+    entity_key: bigint("entity_key", { mode: "number" }).notNull(),
+    color: text("color").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.entity_type, t.entity_key] })]
+);
+
+// ============================================================
 // ログ系
 // ============================================================
 

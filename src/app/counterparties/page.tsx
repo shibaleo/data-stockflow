@@ -12,6 +12,8 @@ export default function CounterpartiesPage() {
         entityName: "取引先",
         codePlaceholder: "例: vendor-001",
         namePlaceholder: "例: 株式会社サンプル",
+        hasColor: true,
+        entityType: "counterparty",
       }}
     />
   );

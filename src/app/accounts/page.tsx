@@ -12,6 +12,7 @@ interface DisplayAccountRow {
   name: string;
   account_type: string;
   parent_id: number | null;
+  color_hex?: string | null;
 }
 
 const TYPE_KEYS = ["asset", "liability", "equity", "revenue", "expense"] as const;
@@ -24,8 +25,17 @@ const DEFAULT_TYPE_LABELS: Record<string, string> = {
   expense: "費用の部",
 };
 
+const AUTHORITY_LABELS: Record<string, string> = {
+  tenant: "テナント",
+  admin: "管理者",
+  user: "ユーザー",
+};
+
+type TabKey = "accounts" | "display-accounts";
+
 export default function AccountsPage() {
   const { books, selectedBookId, setSelectedBookId, selectedBook } = useBooks();
+  const [tab, setTab] = useState<TabKey>("accounts");
   const [displayAccounts, setDisplayAccounts] = useState<DisplayAccountRow[]>([]);
 
   useEffect(() => {
@@ -53,7 +63,8 @@ export default function AccountsPage() {
     [typeLabels],
   );
 
-  // Only leaf display accounts (no children) can be mapped to accounts
+  // ── 勘定科目タブ用 ──
+
   const leafDisplayAccounts = useMemo(() => {
     const parentIds = new Set(
       displayAccounts.map((da) => String(da.parent_id)).filter((v) => v !== "null"),
@@ -74,7 +85,7 @@ export default function AccountsPage() {
     [displayAccounts],
   );
 
-  const extraFields = useMemo<ExtraField[]>(
+  const accountExtraFields = useMemo<ExtraField[]>(
     () => [{
       key: "display_account_id",
       label: "表示科目",
@@ -87,12 +98,16 @@ export default function AccountsPage() {
         return da ? da.name : "";
       },
       badge: true,
-      badgeClassName: () => "border-emerald-600/50 text-emerald-400",
+      badgeColor: (v) => {
+        if (v == null) return undefined;
+        const da = displayAccountMap.get(String(v));
+        return da?.color_hex ?? undefined;
+      },
     }],
     [displayAccountOptions, displayAccountMap],
   );
 
-  const dialogExtraFields = useMemo<ExtraField[]>(
+  const accountDialogExtraFields = useMemo<ExtraField[]>(
     () => [
       {
         key: "account_type",
@@ -112,12 +127,18 @@ export default function AccountsPage() {
           const da = displayAccountMap.get(String(v));
           return da ? `${da.code} ${da.name}` : "なし";
         },
+        optionFilter: (optionValue, extras) => {
+          const selectedType = extras.account_type;
+          if (!selectedType) return true;
+          const da = displayAccountMap.get(optionValue);
+          return da ? da.account_type === selectedType : true;
+        },
       },
     ],
     [typeOptions, displayAccountOptions, displayAccountMap],
   );
 
-  const config = useMemo(
+  const accountConfig = useMemo(
     () => ({
       title: "科目",
       endpoint: `/books/${selectedBookId}/accounts`,
@@ -126,27 +147,115 @@ export default function AccountsPage() {
       codePlaceholder: "例: 1000",
       namePlaceholder: "例: 現金",
       groupBy: { field: "account_type", sections },
-      extraFields,
-      dialogExtraFields,
+      extraFields: accountExtraFields,
+      dialogExtraFields: accountDialogExtraFields,
+      hasColor: true,
+      entityType: "account",
     }),
-    [selectedBookId, sections, extraFields, dialogExtraFields],
+    [selectedBookId, sections, accountExtraFields, accountDialogExtraFields],
+  );
+
+  // ── 表示科目タブ用 ──
+
+  const daExtraFields = useMemo<ExtraField[]>(
+    () => [{
+      key: "authority_level",
+      label: "権限",
+      type: "select" as const,
+      options: Object.entries(AUTHORITY_LABELS).map(([value, label]) => ({ value, label })),
+      format: (v) => AUTHORITY_LABELS[String(v)] ?? String(v),
+      badgeClassName: (v) =>
+        v === "tenant" ? "border-amber-600/50 text-amber-400" :
+        v === "admin" ? "border-blue-600/50 text-blue-400" : "",
+    }],
+    [],
+  );
+
+  const daDialogExtraFields = useMemo<ExtraField[]>(
+    () => [
+      {
+        key: "account_type",
+        label: "分類",
+        type: "select" as const,
+        options: typeOptions,
+        format: (v) => typeOptions.find((t) => t.value === v)?.label ?? String(v),
+      },
+      {
+        key: "sort_order",
+        label: "表示順",
+        type: "number" as const,
+        placeholder: "0",
+      },
+    ],
+    [typeOptions],
+  );
+
+  const daConfig = useMemo(
+    () => ({
+      title: "科目",
+      endpoint: `/books/${selectedBookId}/display-accounts`,
+      parentKey: "parent_id" as const,
+      entityName: "表示科目",
+      codePlaceholder: "例: DA-5010",
+      namePlaceholder: "例: 食費",
+      groupBy: { field: "account_type", sections },
+      extraFields: daExtraFields,
+      dialogExtraFields: daDialogExtraFields,
+      extraFieldsFirst: true,
+      parentFilter: (candidate: { [key: string]: unknown }, extras: Record<string, string>) => {
+        const selectedType = extras.account_type;
+        if (!selectedType) return true;
+        return candidate.account_type === selectedType;
+      },
+      hasColor: true,
+      entityType: "display_account",
+    }),
+    [selectedBookId, sections, daExtraFields, daDialogExtraFields],
   );
 
   if (!selectedBookId) {
     return <div className="p-6 text-center text-muted-foreground">帳簿を読み込み中...</div>;
   }
 
+  const config = tab === "accounts" ? accountConfig : daConfig;
+
+  const headerSlot = (
+    <div className="flex items-center gap-3">
+      <BookSelector
+        books={books}
+        selectedBookId={selectedBookId}
+        onValueChange={setSelectedBookId}
+      />
+      <div className="flex rounded-md border border-border bg-muted/50 p-0.5">
+        <button
+          onClick={() => setTab("accounts")}
+          className={`px-3 py-1 text-xs font-medium rounded-sm transition-colors ${
+            tab === "accounts"
+              ? "bg-background text-foreground shadow-sm"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          勘定科目
+        </button>
+        <button
+          onClick={() => setTab("display-accounts")}
+          className={`px-3 py-1 text-xs font-medium rounded-sm transition-colors ${
+            tab === "display-accounts"
+              ? "bg-background text-foreground shadow-sm"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          表示科目
+        </button>
+      </div>
+    </div>
+  );
+
   return (
     <MasterPage
-      key={selectedBookId}
+      key={`${selectedBookId}-${tab}`}
       config={config}
-      headerSlot={
-        <BookSelector
-          books={books}
-          selectedBookId={selectedBookId}
-          onValueChange={setSelectedBookId}
-        />
-      }
+      headerSlot={headerSlot}
     />
   );
 }

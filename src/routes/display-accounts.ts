@@ -3,6 +3,7 @@ import { displayAccount } from "@/lib/db/schema";
 import { requireAuth, requireBook } from "@/middleware/guards";
 import { displayAccountResponseSchema, createDisplayAccountSchema, updateDisplayAccountSchema } from "@/lib/validators";
 import { createMapper, defineCrudRoutes, registerCrudHandlers } from "@/lib/crud-factory";
+import { checkReferences } from "@/lib/append-only";
 import type { CurrentDisplayAccount } from "@/lib/types";
 import type { UserRole } from "@/middleware/context";
 
@@ -71,6 +72,7 @@ registerCrudHandlers<CurrentDisplayAccount>(app, routes, {
   hashDeactivate: (cur) => ({
     code: cur.code, name: cur.name, account_type: cur.account_type,
   }),
+  canPurge: (key) => checkReferences("display_account_key", key, ["display_account"]),
 });
 
 export default app;

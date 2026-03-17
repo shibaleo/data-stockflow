@@ -14,6 +14,8 @@
  */
 
 import "dotenv/config";
+import * as fs from "node:fs";
+import * as path from "node:path";
 import { createApiKey } from "@/lib/api-keys";
 
 const BASE = process.env.BASE_URL || "http://localhost:3000";
@@ -45,6 +47,14 @@ async function apiPost<T>(
     throw new Error(`POST ${path} failed (${res.status}): ${JSON.stringify(json)}`);
   }
   return (json as { data: T }).data;
+}
+
+function upsertEnvVar(content: string, key: string, value: string): string {
+  const re = new RegExp(`^${key}=.*$`, "m");
+  if (re.test(content)) {
+    return content.replace(re, `${key}=${value}`);
+  }
+  return content.trimEnd() + `\n${key}=${value}\n`;
 }
 
 // ── Main ──
@@ -93,6 +103,13 @@ async function main() {
   });
   console.log("   done.");
 
+  // Write keys to .env
+  const envPath = path.resolve(__dirname, "../.env");
+  let envContent = fs.readFileSync(envPath, "utf-8");
+  envContent = upsertEnvVar(envContent, "PLATFORM_API_KEY", platformKey);
+  envContent = upsertEnvVar(envContent, "ADMIN_API_KEY", adminKey);
+  fs.writeFileSync(envPath, envContent, "utf-8");
+
   // Summary
   console.log("\n========================================");
   console.log("  Bootstrap complete");
@@ -101,8 +118,7 @@ async function main() {
   console.log(`ADMIN_API_KEY=${adminKey}`);
   console.log(`\nTenant: ${TENANT_NAME} (id=${tenant.id})`);
   console.log(`Admin:  ${ADMIN_EMAIL} (id=${user.id})`);
-  console.log("\nAdd these keys to .env, then run seed scripts.");
-  console.log("These keys will NOT be shown again.\n");
+  console.log(`\n.env updated automatically.`);
 
   process.exit(0);
 }

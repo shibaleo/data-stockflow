@@ -34,6 +34,7 @@ interface Account {
   code: string;
   name: string;
   book_id: number;
+  color_hex?: string | null;
 }
 
 interface Department extends EntityRow {}
@@ -349,11 +350,11 @@ export function JournalForm({ editId, onSuccess, onCancel }: Props) {
   );
 
   const journalTypeOptions: ComboOption[] = useMemo(
-    () => journalTypeItems.map((c) => ({ value: String(c.id), label: `${c.code} ${c.name}`, displayLabel: c.name })),
+    () => journalTypeItems.map((c) => ({ value: String(c.id), label: `${c.code} ${c.name}`, displayLabel: c.name, color: c.color_hex ?? undefined })),
     [journalTypeItems],
   );
   const tagOptions: ComboOption[] = useMemo(
-    () => tagItems.map((c) => ({ value: String(c.id), label: c.name })),
+    () => tagItems.map((c) => ({ value: String(c.id), label: c.name, color: c.color_hex ?? undefined })),
     [tagItems],
   );
 
@@ -617,7 +618,7 @@ export function JournalForm({ editId, onSuccess, onCancel }: Props) {
     (bookId: string): ComboOption[] => {
       return accounts
         .filter((a) => String(a.book_id) === bookId)
-        .map((a) => ({ value: String(a.id), label: `${a.code} ${a.name}`, displayLabel: a.name }));
+        .map((a) => ({ value: String(a.id), label: `${a.code} ${a.name}`, displayLabel: a.name, color: a.color_hex ?? undefined }));
     },
     [accounts]
   );

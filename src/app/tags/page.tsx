@@ -14,6 +14,8 @@ export default function TagsPage() {
         namePlaceholder: "例: 固定費",
         defaultExtraValues: { category_type_code: "journal_tag" },
         clientFilter: (item) => item.category_type_code === "journal_tag",
+        hasColor: true,
+        entityType: "category",
       }}
     />
   );

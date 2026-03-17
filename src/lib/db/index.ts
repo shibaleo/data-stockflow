@@ -3,6 +3,10 @@ import { drizzle as drizzlePg } from "drizzle-orm/node-postgres";
 import { Pool as NeonPool, neonConfig } from "@neondatabase/serverless";
 import pg from "pg";
 
+// node-pg returns BIGINT (OID 20) as string by default.
+// Parse as Number since all keys in this system are within safe integer range.
+pg.types.setTypeParser(20, (val) => Number(val));
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const globalForDb = globalThis as unknown as { db: any };
 

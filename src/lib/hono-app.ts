@@ -23,6 +23,7 @@ import auditLogs from "@/routes/ops/audit-logs";
 import eventLogs from "@/routes/ops/event-logs";
 import integrity from "@/routes/ops/integrity";
 import projects from "@/routes/projects";
+import entityColors from "@/routes/entity-colors";
 import reports from "@/routes/reports";
 
 // ────────────────────────────────────────────
@@ -68,6 +69,9 @@ app.route("/categories", categories);
 app.route("/departments", departments);
 app.route("/counterparties", counterparties);
 app.route("/projects", projects);
+
+// Cross-cutting (entity_type + entity_key)
+app.route("/entity-colors", entityColors);
 
 // Book-scoped master routes (requireBook middleware is inside each route)
 app.route("/books/:bookId/accounts", accounts);

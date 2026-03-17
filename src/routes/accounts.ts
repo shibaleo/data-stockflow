@@ -3,6 +3,7 @@ import { account } from "@/lib/db/schema";
 import { requireAuth, requireBook } from "@/middleware/guards";
 import { accountResponseSchema, createAccountSchema, updateAccountSchema } from "@/lib/validators";
 import { createMapper, defineCrudRoutes, registerCrudHandlers } from "@/lib/crud-factory";
+import { checkReferences } from "@/lib/append-only";
 import type { CurrentAccount } from "@/lib/types";
 
 const app = createApp();
@@ -39,6 +40,7 @@ registerCrudHandlers<CurrentAccount>(app, routes, {
     created_by: c.get("userKey"),
   }),
   hashDeactivate: (cur) => ({ code: cur.code, name: cur.name, account_type: cur.account_type }),
+  canPurge: (key) => checkReferences("account_key", key, ["account"]),
 });
 
 export default app;

@@ -3,6 +3,7 @@ import { project } from "@/lib/db/schema";
 import { requireTenant, requireAuth } from "@/middleware/guards";
 import { projectResponseSchema, createProjectSchema, updateProjectSchema } from "@/lib/validators";
 import { createMapper, defineCrudRoutes, registerCrudHandlers } from "@/lib/crud-factory";
+import { checkReferences } from "@/lib/append-only";
 import type { CurrentProject } from "@/lib/types";
 
 const app = createApp();
@@ -42,6 +43,7 @@ registerCrudHandlers<CurrentProject>(app, routes, {
     created_by: c.get("userKey"),
   }),
   hashDeactivate: (cur) => ({ code: cur.code, name: cur.name }),
+  canPurge: (key) => checkReferences("project_key", key, ["project"]),
 });
 
 export default app;

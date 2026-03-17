@@ -10,6 +10,7 @@ import {
   ChevronDown,
   Eye,
   EyeOff,
+  XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -32,6 +33,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { api, ApiError, fetchAllPages } from "@/lib/api-client";
+import { ColorBadge } from "@/components/shared/color-badge";
 
 // ── Types ──
 
@@ -46,7 +48,7 @@ export interface MasterRow {
 export interface ExtraField {
   key: string;
   label: string;
-  type: "text" | "date" | "select";
+  type: "text" | "number" | "date" | "select";
   placeholder?: string;
   options?: { value: string; label: string }[];
   format?: (value: unknown) => string;
@@ -55,6 +57,10 @@ export interface ExtraField {
   badge?: boolean;
   /** Dynamic className for badge based on value */
   badgeClassName?: (value: unknown) => string;
+  /** Dynamic HEX color for badge (inline style, takes priority over badgeClassName) */
+  badgeColor?: (value: unknown) => string | undefined;
+  /** Filter select options based on current extras state */
+  optionFilter?: (optionValue: string, extras: Record<string, string>) => boolean;
   /** If true, adds a "none" option and sends null when selected */
   nullable?: boolean;
 }
@@ -88,7 +94,18 @@ export interface MasterPageConfig {
   extraFieldsFirst?: boolean;
   /** Filter parent candidates based on current dialog extras state */
   parentFilter?: (candidate: MasterRow, extras: Record<string, string>) => boolean;
+  /** Enable color assignment for this entity type */
+  hasColor?: boolean;
+  /** entity_type value for entity_color table (required when hasColor=true) */
+  entityType?: string;
+  /** Preset colors for the palette */
+  colorPresets?: string[];
 }
+
+const DEFAULT_COLOR_PRESETS = [
+  "#EF4444", "#F97316", "#EAB308", "#22C55E",
+  "#14B8A6", "#3B82F6", "#8B5CF6", "#EC4899",
+];
 
 // ── Tree ──
 
@@ -151,6 +168,7 @@ export function MasterTreeSection({
   onToggleCollapse,
   onSelect,
   extraFields,
+  colorMap,
 }: {
   title?: string;
   nodes: TreeNode[];
@@ -158,6 +176,7 @@ export function MasterTreeSection({
   onToggleCollapse: (id: number) => void;
   onSelect: (id: number) => void;
   extraFields?: ExtraField[];
+  colorMap?: Map<number, string>;
 }) {
   return (
     <div>
@@ -191,6 +210,12 @@ export function MasterTreeSection({
                     ) : (
                       <span className="mr-1.5 w-4" />
                     )}
+                    {colorMap?.get(node.id) && (
+                      <span
+                        className="inline-block w-2.5 h-2.5 rounded-full mr-1.5 shrink-0"
+                        style={{ backgroundColor: colorMap.get(node.id) }}
+                      />
+                    )}
                     <span className="font-mono text-xs text-muted-foreground mr-2">{node.code}</span>
                     <span className={node.hasChildren ? "font-medium" : ""}>{node.name}</span>
                     <span className="ml-auto flex items-center gap-1.5">
@@ -205,9 +230,18 @@ export function MasterTreeSection({
                         if (field.badge === false) {
                           return <span key={field.key} className="text-xs text-muted-foreground">{text}</span>;
                         }
+                        const color = field.badgeColor?.(val);
                         const badgeCls = field.badgeClassName ? field.badgeClassName(val) : "";
-                        return (
-                          <Badge key={field.key} variant="outline" className={`text-xs py-0 ${badgeCls}`}>
+                        return color ? (
+                          <ColorBadge key={field.key} color={color}>
+                            {text}
+                          </ColorBadge>
+                        ) : (
+                          <Badge
+                            key={field.key}
+                            variant="outline"
+                            className={`text-xs py-0 ${badgeCls}`}
+                          >
                             {text}
                           </Badge>
                         );
@@ -241,13 +275,16 @@ function ExtraFieldsBlock({ fields, extras, setExtras }: {
               <SelectTrigger><SelectValue placeholder={field.placeholder ?? "選択"} /></SelectTrigger>
               <SelectContent>
                 {field.nullable && <SelectItem value="__none__">なし</SelectItem>}
-                {field.options.map((opt) => (
+                {(field.optionFilter
+                  ? field.options.filter((opt) => field.optionFilter!(opt.value, extras))
+                  : field.options
+                ).map((opt) => (
                   <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
           ) : (
-            <Input type={field.type === "date" ? "date" : "text"} value={extras[field.key] || ""}
+            <Input type={field.type === "date" ? "date" : field.type === "number" ? "number" : "text"} value={extras[field.key] || ""}
               onChange={(e) => setExtras((prev) => ({ ...prev, [field.key]: e.target.value }))}
               placeholder={field.placeholder} />
           )}
@@ -269,8 +306,12 @@ export function MasterItemDialog({
   onSaved,
   onDeleted,
   onRestored,
+  onPurged,
   canDelete = true,
+  canPurge,
   detailExtra,
+  colorMap,
+  onColorSaved,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -280,8 +321,12 @@ export function MasterItemDialog({
   onSaved: () => void;
   onDeleted: () => void;
   onRestored: () => void;
+  onPurged?: () => void;
   canDelete?: boolean;
+  canPurge?: boolean;
   detailExtra?: ReactNode;
+  colorMap?: Map<number, string>;
+  onColorSaved?: () => void;
 }) {
   const isCreate = item === null;
   const [saving, setSaving] = useState(false);
@@ -290,6 +335,8 @@ export function MasterItemDialog({
   const [name, setName] = useState("");
   const [parentId, setParentId] = useState("__none__");
   const [extras, setExtras] = useState<Record<string, string>>({});
+  const [color, setColor] = useState<string | null>(null);
+  const [hexInput, setHexInput] = useState("");
 
   const parentKey = config.parentKey ?? "parent_id";
   const allExtraFields = config.dialogExtraFields ?? config.extraFields ?? [];
@@ -311,8 +358,12 @@ export function MasterItemDialog({
         else { ex[field.key] = val ? String(val) : ""; }
       }
       setExtras(ex);
+      const c = colorMap?.get(item.id) ?? null;
+      setColor(c);
+      setHexInput(c ?? "");
     } else {
       setCode(""); setName(""); setParentId("__none__"); setExtras({});
+      setColor(null); setHexInput("");
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -336,14 +387,29 @@ export function MasterItemDialog({
         const val = extras[field.key];
         if (field.nullable && val === "__none__") { payload[apiKey] = null; }
         else if (field.type === "date" && val) { payload[apiKey] = new Date(val).toISOString(); }
+        else if (field.type === "number" && val) { payload[apiKey] = Number(val); }
         else if (field.type === "select" && val && /^\d+$/.test(val)) { payload[apiKey] = Number(val); }
         else if (val) { payload[apiKey] = val; }
       }
+      let entityKey: number;
       if (item) {
         await api.put(`${config.endpoint}/${item.id}`, payload);
+        entityKey = item.id;
       } else {
         if (config.defaultExtraValues) Object.assign(payload, config.defaultExtraValues);
-        await api.post(config.endpoint, payload);
+        const res = await api.post<{ data: { id: number } }>(config.endpoint, payload);
+        entityKey = res.data.id;
+      }
+      if (config.hasColor && config.entityType) {
+        const prevColor = item ? (colorMap?.get(item.id) ?? null) : null;
+        if (color !== prevColor) {
+          await api.put("/entity-colors", {
+            entity_type: config.entityType,
+            entity_key: entityKey,
+            color,
+          });
+          onColorSaved?.();
+        }
       }
       onSaved();
     } catch (e) {
@@ -402,6 +468,45 @@ export function MasterItemDialog({
 
           {!config.extraFieldsFirst && <ExtraFieldsBlock fields={allExtraFields} extras={extras} setExtras={setExtras} />}
 
+          {config.hasColor && (
+            <div className="space-y-2">
+              <Label>色</Label>
+              <div className="flex flex-wrap gap-1.5">
+                {(config.colorPresets ?? DEFAULT_COLOR_PRESETS).map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    className={`w-7 h-7 rounded-md border-2 transition-all ${
+                      color === preset ? "border-foreground scale-110" : "border-transparent hover:border-muted-foreground/50"
+                    }`}
+                    style={{ backgroundColor: preset }}
+                    onClick={() => { setColor(preset); setHexInput(preset); }}
+                  />
+                ))}
+                <button
+                  type="button"
+                  className={`w-7 h-7 rounded-md border-2 transition-all flex items-center justify-center text-xs text-muted-foreground ${
+                    color === null ? "border-foreground" : "border-dashed border-muted-foreground/50 hover:border-muted-foreground"
+                  }`}
+                  onClick={() => { setColor(null); setHexInput(""); }}
+                  title="色を解除"
+                >
+                  ×
+                </button>
+              </div>
+              <Input
+                value={hexInput}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setHexInput(v);
+                  if (/^#[0-9a-fA-F]{6}$/.test(v)) setColor(v);
+                }}
+                placeholder="#FF5733"
+                className="font-mono text-xs w-32"
+              />
+            </div>
+          )}
+
           {/* Extra detail content (read-only info like email, external_id) */}
           {!isCreate && detailExtra}
 
@@ -415,9 +520,16 @@ export function MasterItemDialog({
             </Button>
           )}
           {!isCreate && !item.is_active && (
-            <Button variant="outline" size="sm" className="mr-auto" onClick={onRestored}>
-              <Undo2 className="h-3.5 w-3.5 mr-1 text-green-400" />復元
-            </Button>
+            <div className="flex gap-1 mr-auto">
+              <Button variant="outline" size="sm" onClick={onRestored}>
+                <Undo2 className="h-3.5 w-3.5 mr-1 text-green-400" />復元
+              </Button>
+              {canPurge && onPurged && (
+                <Button variant="outline" size="sm" className="text-destructive hover:text-destructive" onClick={onPurged}>
+                  <XCircle className="h-3.5 w-3.5 mr-1" />完全削除
+                </Button>
+              )}
+            </div>
           )}
           {isCreate && <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>キャンセル</Button>}
           <Button onClick={handleSubmit} disabled={saving}>{saving ? "保存中..." : isCreate ? "作成" : "更新"}</Button>
@@ -454,8 +566,22 @@ export function MasterPage({ config, headerSlot, afterContent, canDelete, detail
   const [dialogItem, setDialogItem] = useState<MasterRow | null>(null);
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
   const [showInactive, setShowInactive] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<{ type: "delete" | "purge"; id: number; name: string } | null>(null);
 
   const parentKey = config.parentKey ?? "parent_id";
+
+  // Derive colorMap from items' color_hex (returned by API)
+  const colorMap = useMemo(
+    () => {
+      const m = new Map<number, string>();
+      for (const item of items) {
+        const hex = (item as MasterRow & { color_hex?: string | null }).color_hex;
+        if (hex) m.set(item.id, hex);
+      }
+      return m;
+    },
+    [items],
+  );
 
   const fetchItems = useCallback(async () => {
     setLoading(true);
@@ -495,14 +621,29 @@ export function MasterPage({ config, headerSlot, afterContent, canDelete, detail
     setDialogItem(found);
     setDialogOpen(true);
   };
-  const handleDelete = async (id: number) => {
-    if (!confirm(`この${config.entityName}を無効化しますか？`)) return;
+  const requestDelete = (item: MasterRow) => {
+    setConfirmAction({ type: "delete", id: item.id, name: item.name });
+  };
+  const requestPurge = (item: MasterRow) => {
+    setConfirmAction({ type: "purge", id: item.id, name: item.name });
+  };
+  const executeConfirmAction = async () => {
+    if (!confirmAction) return;
+    const { type, id } = confirmAction;
+    setConfirmAction(null);
     try {
-      await api.delete(`${config.endpoint}/${id}`);
-      toast.success(`${config.entityName}を無効化しました`);
+      if (type === "delete") {
+        await api.delete(`${config.endpoint}/${id}`);
+        toast.success(`${config.entityName}を無効化しました`);
+      } else {
+        await api.post(`${config.endpoint}/${id}/purge`, {});
+        toast.success(`${config.entityName}を完全削除しました`);
+      }
       setDialogOpen(false);
       fetchItems();
-    } catch (e) { toast.error(e instanceof ApiError ? e.body.error : "無効化に失敗しました"); }
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.body.error : `${type === "delete" ? "無効化" : "完全削除"}に失敗しました`);
+    }
   };
   const handleRestore = async (id: number) => {
     try {
@@ -554,6 +695,7 @@ export function MasterPage({ config, headerSlot, afterContent, canDelete, detail
                 onToggleCollapse={toggleCollapse}
                 onSelect={handleRowClick}
                 extraFields={config.extraFields}
+                colorMap={config.hasColor ? colorMap : undefined}
               />
             );
           })}
@@ -573,11 +715,39 @@ export function MasterPage({ config, headerSlot, afterContent, canDelete, detail
         items={items}
         config={config}
         onSaved={handleSaved}
-        onDeleted={() => dialogItem && handleDelete(dialogItem.id)}
+        onDeleted={() => dialogItem && requestDelete(dialogItem)}
         onRestored={() => dialogItem && handleRestore(dialogItem.id)}
+        onPurged={() => dialogItem && requestPurge(dialogItem)}
         canDelete={dialogItem && canDelete ? canDelete(dialogItem) : true}
+        canPurge
         detailExtra={dialogItem && detailExtra ? detailExtra(dialogItem) : undefined}
+        colorMap={config.hasColor ? colorMap : undefined}
+        onColorSaved={fetchItems}
       />
+
+      <Dialog open={confirmAction !== null} onOpenChange={(open: boolean) => { if (!open) setConfirmAction(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>
+              {confirmAction?.type === "purge" ? "完全削除の確認" : "無効化の確認"}
+            </DialogTitle>
+            <DialogDescription>
+              {confirmAction?.type === "purge"
+                ? `「${confirmAction.name}」を完全に削除します。この操作は元に戻せません。`
+                : `「${confirmAction?.name}」を無効化しますか？`}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmAction(null)}>キャンセル</Button>
+            <Button
+              variant={confirmAction?.type === "purge" ? "destructive" : "default"}
+              onClick={executeConfirmAction}
+            >
+              {confirmAction?.type === "purge" ? "完全削除" : "無効化"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

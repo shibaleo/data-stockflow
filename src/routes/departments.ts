@@ -3,6 +3,7 @@ import { department } from "@/lib/db/schema";
 import { requireTenant, requireAuth } from "@/middleware/guards";
 import { departmentResponseSchema, createDepartmentSchema, updateDepartmentSchema } from "@/lib/validators";
 import { createMapper, defineCrudRoutes, registerCrudHandlers } from "@/lib/crud-factory";
+import { checkReferences } from "@/lib/append-only";
 import type { CurrentDepartment } from "@/lib/types";
 
 const app = createApp();
@@ -36,6 +37,7 @@ registerCrudHandlers<CurrentDepartment>(app, routes, {
     parent_department_key: cur.parent_department_key, created_by: c.get("userKey"),
   }),
   hashDeactivate: (cur) => ({ code: cur.code, name: cur.name }),
+  canPurge: (key) => checkReferences("department_key", key, ["department"]),
 });
 
 export default app;

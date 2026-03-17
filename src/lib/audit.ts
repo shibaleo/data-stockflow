@@ -8,6 +8,7 @@ export type AuditAction =
   | "update"
   | "delete"
   | "deactivate"
+  | "purge"
   | "restore"
   | "reverse"
   | "close"

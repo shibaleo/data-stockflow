@@ -10,6 +10,7 @@ export interface EntityRow {
   code: string;
   name: string;
   is_active: boolean;
+  color_hex?: string | null;
 }
 
 /** Generate a random 6-char alphanumeric code */
@@ -41,6 +42,7 @@ interface UseEntityManagerReturn<T extends EntityRow> {
 /**
  * Generic hook for managing a master entity list with inline create/rename.
  * Works with any entity that follows the { id, code, name, is_active } pattern.
+ * color_hex is automatically picked up from the API response if present.
  */
 export function useEntityManager<T extends EntityRow>(
   opts: UseEntityManagerOptions,
@@ -68,6 +70,7 @@ export function useEntityManager<T extends EntityRow>(
         value: String(r.id),
         label: showCode ? `${r.code} ${r.name}` : r.name,
         displayLabel: r.name,
+        color: r.color_hex ?? undefined,
       })),
     [items, showCode],
   );

@@ -3,6 +3,7 @@ import { counterparty } from "@/lib/db/schema";
 import { requireTenant, requireAuth } from "@/middleware/guards";
 import { counterpartyResponseSchema, createCounterpartySchema, updateCounterpartySchema } from "@/lib/validators";
 import { createMapper, defineCrudRoutes, registerCrudHandlers } from "@/lib/crud-factory";
+import { checkReferences } from "@/lib/append-only";
 import type { CurrentCounterparty } from "@/lib/types";
 
 const app = createApp();
@@ -34,6 +35,7 @@ registerCrudHandlers<CurrentCounterparty>(app, routes, {
     created_by: c.get("userKey"),
   }),
   hashDeactivate: (cur) => ({ code: cur.code, name: cur.name }),
+  canPurge: (key) => checkReferences("counterparty_key", key, ["counterparty"]),
 });
 
 export default app;

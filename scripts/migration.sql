@@ -426,70 +426,83 @@ CREATE INDEX idx_event_log_tenant_created
 CREATE INDEX idx_event_log_entity
   ON data_stockflow.event_log (entity_type, entity_key);
 
+-- ---- entity_color (mutable, no revision tracking) ----
+CREATE TABLE data_stockflow.entity_color (
+  entity_type      TEXT NOT NULL,
+  entity_key       BIGINT NOT NULL,
+  color            TEXT NOT NULL,
+  PRIMARY KEY (entity_type, entity_key)
+);
+
 -- ============================================================
 -- VIEWS: current_* (latest valid revision)
 -- ============================================================
 
+-- current_* views: first get latest revision per key, then filter by temporal validity.
+-- This ensures purged entities (valid_to set on latest revision) are excluded,
+-- even when older revisions have valid_to IS NULL.
+
 CREATE VIEW data_stockflow.current_tenant AS
-SELECT DISTINCT ON (key) *
-FROM data_stockflow.tenant
-WHERE valid_from <= now() AND (valid_to IS NULL OR valid_to > now())
-ORDER BY key, created_at DESC;
+SELECT * FROM (
+  SELECT DISTINCT ON (key) * FROM data_stockflow.tenant ORDER BY key, created_at DESC
+) latest
+WHERE valid_from <= now() AND (valid_to IS NULL OR valid_to > now());
 
 CREATE VIEW data_stockflow.current_role AS
-SELECT DISTINCT ON (key) *
-FROM data_stockflow.role
-WHERE valid_from <= now() AND (valid_to IS NULL OR valid_to > now())
-ORDER BY key, created_at DESC;
+SELECT * FROM (
+  SELECT DISTINCT ON (key) * FROM data_stockflow.role ORDER BY key, created_at DESC
+) latest
+WHERE valid_from <= now() AND (valid_to IS NULL OR valid_to > now());
 
 CREATE VIEW data_stockflow.current_user AS
-SELECT DISTINCT ON (key) *
-FROM data_stockflow."user"
-WHERE valid_from <= now() AND (valid_to IS NULL OR valid_to > now())
-ORDER BY key, created_at DESC;
+SELECT * FROM (
+  SELECT DISTINCT ON (key) * FROM data_stockflow."user" ORDER BY key, created_at DESC
+) latest
+WHERE valid_from <= now() AND (valid_to IS NULL OR valid_to > now());
 
 CREATE VIEW data_stockflow.current_book AS
-SELECT DISTINCT ON (key) *
-FROM data_stockflow.book
-WHERE valid_from <= now() AND (valid_to IS NULL OR valid_to > now())
-ORDER BY key, created_at DESC;
+SELECT * FROM (
+  SELECT DISTINCT ON (key) * FROM data_stockflow.book ORDER BY key, created_at DESC
+) latest
+WHERE valid_from <= now() AND (valid_to IS NULL OR valid_to > now());
 
 CREATE VIEW data_stockflow.current_account AS
-SELECT DISTINCT ON (key) *,
+SELECT *,
   CASE WHEN account_type IN ('asset', 'expense') THEN -1 ELSE 1 END AS sign
-FROM data_stockflow.account
-WHERE valid_from <= now() AND (valid_to IS NULL OR valid_to > now())
-ORDER BY key, created_at DESC;
+FROM (
+  SELECT DISTINCT ON (key) * FROM data_stockflow.account ORDER BY key, created_at DESC
+) latest
+WHERE valid_from <= now() AND (valid_to IS NULL OR valid_to > now());
 
 CREATE VIEW data_stockflow.current_display_account AS
-SELECT DISTINCT ON (key) *
-FROM data_stockflow.display_account
-WHERE valid_from <= now() AND (valid_to IS NULL OR valid_to > now())
-ORDER BY key, created_at DESC;
+SELECT * FROM (
+  SELECT DISTINCT ON (key) * FROM data_stockflow.display_account ORDER BY key, created_at DESC
+) latest
+WHERE valid_from <= now() AND (valid_to IS NULL OR valid_to > now());
 
 CREATE VIEW data_stockflow.current_category AS
-SELECT DISTINCT ON (key) *
-FROM data_stockflow.category
-WHERE valid_from <= now() AND (valid_to IS NULL OR valid_to > now())
-ORDER BY key, created_at DESC;
+SELECT * FROM (
+  SELECT DISTINCT ON (key) * FROM data_stockflow.category ORDER BY key, created_at DESC
+) latest
+WHERE valid_from <= now() AND (valid_to IS NULL OR valid_to > now());
 
 CREATE VIEW data_stockflow.current_department AS
-SELECT DISTINCT ON (key) *
-FROM data_stockflow.department
-WHERE valid_from <= now() AND (valid_to IS NULL OR valid_to > now())
-ORDER BY key, created_at DESC;
+SELECT * FROM (
+  SELECT DISTINCT ON (key) * FROM data_stockflow.department ORDER BY key, created_at DESC
+) latest
+WHERE valid_from <= now() AND (valid_to IS NULL OR valid_to > now());
 
 CREATE VIEW data_stockflow.current_counterparty AS
-SELECT DISTINCT ON (key) *
-FROM data_stockflow.counterparty
-WHERE valid_from <= now() AND (valid_to IS NULL OR valid_to > now())
-ORDER BY key, created_at DESC;
+SELECT * FROM (
+  SELECT DISTINCT ON (key) * FROM data_stockflow.counterparty ORDER BY key, created_at DESC
+) latest
+WHERE valid_from <= now() AND (valid_to IS NULL OR valid_to > now());
 
 CREATE VIEW data_stockflow.current_project AS
-SELECT DISTINCT ON (key) *
-FROM data_stockflow.project
-WHERE valid_from <= now() AND (valid_to IS NULL OR valid_to > now())
-ORDER BY key, created_at DESC;
+SELECT * FROM (
+  SELECT DISTINCT ON (key) * FROM data_stockflow.project ORDER BY key, created_at DESC
+) latest
+WHERE valid_from <= now() AND (valid_to IS NULL OR valid_to > now());
 
 CREATE VIEW data_stockflow.current_voucher AS
 SELECT DISTINCT ON (key) *

@@ -61,6 +61,8 @@ export default function CategoriesPage() {
         extraFields,
         dialogExtraFields: extraFields,
         groupBy,
+        hasColor: true,
+        entityType: "category",
       }}
     />
   );

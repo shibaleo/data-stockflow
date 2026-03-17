@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Check, ChevronsUpDown, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ColorBadge } from "@/components/shared/color-badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Command,
@@ -18,6 +19,8 @@ export interface ComboOption {
   label: string;
   /** Optional shorter label shown on the trigger button (defaults to label) */
   displayLabel?: string;
+  /** Optional HEX color for color dot indicator */
+  color?: string;
 }
 
 interface Props {
@@ -130,7 +133,15 @@ export function MasterCombobox({
           )}
         >
           <span className="truncate">
-            {selected ? (selected.displayLabel ?? selected.label) : placeholder}
+            {selected ? (
+              selected.color ? (
+                <ColorBadge color={selected.color}>
+                  {selected.displayLabel ?? selected.label}
+                </ColorBadge>
+              ) : (
+                selected.displayLabel ?? selected.label
+              )
+            ) : placeholder}
           </span>
           <ChevronsUpDown className="ml-1 size-3 shrink-0 opacity-50" />
         </button>
@@ -175,7 +186,13 @@ export function MasterCombobox({
                       value === o.value ? "opacity-100" : "opacity-0"
                     )}
                   />
-                  {o.label}
+                  {o.color ? (
+                    <ColorBadge color={o.color}>
+                      {o.label}
+                    </ColorBadge>
+                  ) : (
+                    o.label
+                  )}
                 </CommandItem>
               ))}
             </CommandGroup>
