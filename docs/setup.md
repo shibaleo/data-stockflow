@@ -3,7 +3,8 @@
 ## 前提条件
 
 - Node.js 20+
-- PostgreSQL (Neon Serverless 推奨)
+- pnpm 10+
+- PostgreSQL 15+（TCP 接続可能な任意のインスタンス）
 - Clerk アカウント (Google OAuth 設定済み)
 
 ## 環境変数
@@ -11,26 +12,36 @@
 `.env` に以下を設定:
 
 ```env
-DATABASE_URL=postgresql://...
-JWT_SECRET=<ランダム文字列>
-AUTH_SECRET=<ランダム文字列>
+# PostgreSQL（search_path に data_stockflow を指定）
+DATABASE_URL=postgresql://user:password@host:5432/dbname?search_path=data_stockflow
+
+# Clerk
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_...
 CLERK_SECRET_KEY=sk_...
+
+# JWT Secret（API Key 署名用）
+JWT_SECRET=<ランダム文字列>
+
+# Platform API Key（bootstrap で生成後に設定）
+PLATFORM_API_KEY=sf_...
+
 BASE_URL=http://localhost:3000
 ```
+
+> SSL が必要な場合は `?sslmode=require&search_path=data_stockflow` のように接続文字列に追記。
 
 ## フロー図
 
 ```
-migration.sql → npm run dev → bootstrap.ts → seed-accounting.mjs → Clerk Login
-  (build)       (server)      (bootstrap)       (seed)              (利用開始)
+migration.sql → pnpm dev → bootstrap.ts → seed-accounting.mjs → Clerk Login
+  (build)       (server)    (bootstrap)     (seed)               (利用開始)
 ```
 
 | フェーズ | スコープ | 内容 |
 |----------|----------|------|
 | build | なし | スキーマ作成、ロール seed |
 | bootstrap | platform | テナント・ユーザー作成、API key 発行 |
-| seed | admin | 帳簿・勘定科目・期間・デモデータ投入 |
+| seed | admin | 帳簿・勘定科目・デモデータ投入 |
 
 ## 1. 依存関係インストール
 
@@ -65,7 +76,7 @@ API ドキュメント: http://localhost:3000/api/reference
 
 1. Platform API key 発行 (platform スコープ)
 2. テナント作成 (`POST /tenants`)
-3. 管理者ユーザー登録 (`POST /tenants/{id}/users`)
+3. 管理者ユーザー登録 (`POST /users`)
 4. Admin API key 発行 (admin スコープ)
 
 ```bash
@@ -86,7 +97,7 @@ npx tsx scripts/bootstrap.ts
 
 ## 5. デモデータ投入 (seed)
 
-admin API key を使い、帳簿・勘定科目・会計期間・マスタ・サンプル伝票を投入する。
+admin API key を使い、帳簿・勘定科目・マスタ・サンプル伝票を投入する。
 
 ```bash
 # 一般帳簿 + 全勘定科目 + 基盤マスタ + サンプル伝票
