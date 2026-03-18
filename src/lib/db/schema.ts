@@ -489,7 +489,7 @@ export const journalLine = s.table(
     account_key: bigint("account_key", { mode: "number" }).notNull(),
     department_key: bigint("department_key", { mode: "number" }),
     counterparty_key: bigint("counterparty_key", { mode: "number" }),
-    amount: decimal("amount", { precision: 15, scale: 0 }).notNull(),
+    amount: decimal("amount").notNull(),
     description: text("description"),
   },
   (t) => [

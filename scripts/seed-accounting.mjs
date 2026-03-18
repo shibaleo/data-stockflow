@@ -327,4 +327,92 @@ if (!catNormal || !dept || !cp || !proj || !a1210 || !a4100 || !a5370 || !a1110)
   if (v2) console.log(`  V202504-002 昼食 → id=${v2.id}`);
 }
 
+// ============================================================
+// 8. 工数管理帳簿 + 勘定科目 + サンプル伝票
+// ============================================================
+
+console.log("\n=== 工数管理帳簿 ===");
+const hourBook = await post("/books", {
+  code: "manhour", name: "工数管理", unit: "時間",
+  unit_symbol: "h", unit_position: "right",
+  type_labels: { asset: "残高", liability: "負債", equity: "差異", revenue: "投入", expense: "実績" },
+});
+if (!hourBook) {
+  console.log("Failed to create hour book — skipping");
+} else {
+  const HB = hourBook.id;
+  console.log(`  manhour → id=${HB}`);
+
+  async function hacct(body) {
+    const d = await post(`/books/${HB}/accounts`, body);
+    if (d) console.log(`  ${d.code} ${d.name} → id=${d.id}`);
+    return d?.id;
+  }
+
+  // 資産 = 時間残高
+  console.log("\n=== 工数：残高 ===");
+  const h1000 = await hacct({ code: "H1000", name: "時間残高", account_type: "asset" });
+
+  // 収益 = 予定投入
+  console.log("\n=== 工数：投入 ===");
+  const h4000 = await hacct({ code: "H4000", name: "予定工数", account_type: "revenue" });
+
+  // 費用 = 実績消化
+  console.log("\n=== 工数：実績 ===");
+  const h5000 = await hacct({ code: "H5000", name: "作業実績", account_type: "expense" });
+
+  // 純資産 = 差異
+  console.log("\n=== 工数：差異 ===");
+  const h3000 = await hacct({ code: "H3000", name: "時間差異", account_type: "equity" });
+
+  if (h1000 && h4000 && h5000 && h3000 && proj && catNormal && catSpecial) {
+    console.log("\n=== 工数管理サンプル伝票 ===");
+
+    // 月初: 予定工数 160h を投入
+    // 月末: 実績 170h 消化 + 差異 10h
+    // + 一般帳簿の人件費計上
+    const vh = await post("/vouchers", {
+      idempotency_key: "seed-manhour-202503",
+      voucher_code: "MH202503-001",
+      description: "工数管理サンプル",
+      journals: [
+        {
+          book_id: HB,
+          posted_at: "2025-03-01T00:00:00Z",
+          journal_type_id: catNormal.id,
+          description: "予定投入",
+          lines: [
+            { sort_order: 1, side: "debit", account_id: h1000, amount: 160 },
+            { sort_order: 1, side: "credit", account_id: h4000, amount: 160 },
+          ],
+        },
+        {
+          book_id: HB,
+          posted_at: "2025-03-31T00:00:00Z",
+          journal_type_id: catSpecial.id,
+          project_id: proj.id,
+          description: "3月作業実績",
+          lines: [
+            { sort_order: 1, side: "debit", account_id: h5000, amount: 170 },
+            { sort_order: 1, side: "credit", account_id: h1000, amount: 160 },
+            { sort_order: 2, side: "credit", account_id: h3000, amount: 10 },
+          ],
+        },
+        {
+          book_id: BOOK_ID,
+          posted_at: "2025-03-31T00:00:00Z",
+          journal_type_id: catSpecial.id,
+          project_id: proj.id,
+          description: "人件費計上",
+          lines: [
+            { sort_order: 1, side: "debit", account_id: a5370, amount: 250000 },
+            { sort_order: 1, side: "credit", account_id: a4100, amount: 250000 },
+          ],
+        },
+      ],
+    });
+    if (vh) console.log(`  MH202503-001 工数管理サンプル → id=${vh.id}`);
+  }
+}
+
 console.log("\nDone!");

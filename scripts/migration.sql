@@ -316,7 +316,7 @@ CREATE TABLE data_stockflow.journal_line (
   account_key      BIGINT NOT NULL,
   department_key   BIGINT,
   counterparty_key BIGINT,
-  amount           DECIMAL(15,0) NOT NULL,
+  amount           NUMERIC NOT NULL,
   description      TEXT,
   PRIMARY KEY (uuid),
   FOREIGN KEY (journal_key, journal_revision) REFERENCES data_stockflow.journal (key, revision),
