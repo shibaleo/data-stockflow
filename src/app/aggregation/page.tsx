@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, Fragment } from "react";
 import { RefreshCw, Columns2, List } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -22,7 +22,19 @@ interface BalanceItem {
   balance: string;
 }
 
-type Tab = "bs" | "pl";
+interface TrialBalanceItem {
+  debit_total: string;
+  account_id: number;
+  code: string;
+  name: string;
+  account_type: string;
+  sign: number;
+  parent_account_id: number | null;
+  credit_total: string;
+  balance: string;
+}
+
+type Tab = "bs" | "pl" | "tb";
 type ViewMode = "tree" | "t-account";
 
 // ── Helpers ──
@@ -130,6 +142,7 @@ const DEFAULT_TYPE_LABELS: Record<string, string> = {
 
 export default function ReportsPage() {
   const [data, setData] = useState<BalanceItem[]>([]);
+  const [tbData, setTbData] = useState<TrialBalanceItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>("pl");
   const [viewMode, setViewMode] = useState<ViewMode>("tree");
@@ -169,10 +182,13 @@ export default function ReportsPage() {
       if (dateFrom) params.set("date_from", new Date(dateFrom).toISOString());
       if (dateTo) params.set("date_to", new Date(dateTo + "T23:59:59").toISOString());
       const qs = params.toString();
-      const res = await api.get<{ data: BalanceItem[] }>(
-        `/books/${selectedBookId}/reports/balances${qs ? `?${qs}` : ""}`
-      );
-      setData(res.data);
+      const suffix = qs ? `?${qs}` : "";
+      const [balRes, tbRes] = await Promise.all([
+        api.get<{ data: BalanceItem[] }>(`/books/${selectedBookId}/reports/balances${suffix}`),
+        api.get<{ data: TrialBalanceItem[] }>(`/books/${selectedBookId}/reports/trial-balance${suffix}`),
+      ]);
+      setData(balRes.data);
+      setTbData(tbRes.data);
     } catch (e) {
       const msg =
         e instanceof ApiError ? e.body.error : "データの取得に失敗しました";
@@ -228,18 +244,20 @@ export default function ReportsPage() {
           />
         </div>
         <div className="flex gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setViewMode(viewMode === "tree" ? "t-account" : "tree")}
-            title={viewMode === "tree" ? "T勘定ビュー" : "ツリービュー"}
-          >
-            {viewMode === "tree" ? (
-              <Columns2 className="h-4 w-4" />
-            ) : (
-              <List className="h-4 w-4" />
-            )}
-          </Button>
+          {tab !== "tb" && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setViewMode(viewMode === "tree" ? "t-account" : "tree")}
+              title={viewMode === "tree" ? "T勘定ビュー" : "ツリービュー"}
+            >
+              {viewMode === "tree" ? (
+                <Columns2 className="h-4 w-4" />
+              ) : (
+                <List className="h-4 w-4" />
+              )}
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={fetchData}>
             <RefreshCw className="h-4 w-4" />
           </Button>
@@ -272,6 +290,7 @@ export default function ReportsPage() {
           [
             ["bs", "B/S 貸借対照表"],
             ["pl", "P/L 損益計算書"],
+            ["tb", "T/B 合計残高試算表"],
           ] as [Tab, string][]
         ).map(([key, label]) => (
           <button
@@ -292,6 +311,8 @@ export default function ReportsPage() {
         <div className="text-center py-12 text-muted-foreground">
           読み込み中...
         </div>
+      ) : tab === "tb" ? (
+        <TrialBalanceTable items={tbData} typeLabels={typeLabels} fmt={fmt} />
       ) : viewMode === "tree" ? (
         tab === "bs" ? (
           <TreeBalanceSheet
@@ -662,6 +683,106 @@ function TAccountBalanceSheet({
     </div>
   );
 }
+
+// ── Trial Balance Component ──
+
+const TYPE_ORDER = ["asset", "liability", "equity", "revenue", "expense"];
+
+function TrialBalanceTable({
+  items,
+  typeLabels,
+  fmt,
+}: {
+  items: TrialBalanceItem[];
+  typeLabels: TypeLabels;
+  fmt: (n: number) => string;
+}) {
+  // Filter out accounts with no activity
+  const active = items.filter(
+    (i) => i.debit_total !== "0" || i.credit_total !== "0"
+  );
+
+  // Group by account_type, ordered
+  const grouped = TYPE_ORDER.map((type) => ({
+    type,
+    label: typeLabels[type as keyof TypeLabels],
+    rows: active.filter((i) => i.account_type === type),
+  })).filter((g) => g.rows.length > 0);
+
+  const grandDebit = active.reduce((s, i) => s + Number(i.debit_total), 0);
+  const grandCredit = active.reduce((s, i) => s + Number(i.credit_total), 0);
+
+  return (
+    <div>
+      <div className="border border-border rounded-md overflow-hidden">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-muted/50 text-xs text-muted-foreground">
+              <th className="py-2 px-3 text-right font-medium w-32 border-r border-border">借方合計</th>
+              <th className="py-2 px-3 text-center font-medium border-r border-border">科目</th>
+              <th className="py-2 px-3 text-right font-medium w-32 border-r border-border">貸方合計</th>
+              <th className="py-2 px-3 text-right font-medium w-32">残高</th>
+            </tr>
+          </thead>
+          <tbody>
+            {grouped.map((group) => (
+              <Fragment key={group.type}>
+                <tr className="bg-muted/30">
+                  <td colSpan={5} className="py-1.5 px-3 text-xs font-semibold text-muted-foreground">
+                    {group.label}
+                  </td>
+                </tr>
+                {group.rows.map((row) => (
+                  <tr
+                    key={row.account_id}
+                    className="border-b border-border/30 hover:bg-accent/20 transition-colors"
+                  >
+                    <td className="py-2 px-3 text-right font-mono whitespace-nowrap border-r border-border">
+                      {fmt(Number(row.debit_total))}
+                    </td>
+                    <td className="py-2 px-3 text-center border-r border-border">
+                      <span className="font-mono text-xs text-muted-foreground mr-2">
+                        {row.code}
+                      </span>
+                      {row.name}
+                    </td>
+                    <td className="py-2 px-3 text-right font-mono whitespace-nowrap border-r border-border">
+                      {fmt(Number(row.credit_total))}
+                    </td>
+                    <td className="py-2 px-3 text-right font-mono whitespace-nowrap">
+                      {fmt(Number(row.balance) * row.sign)}
+                    </td>
+                  </tr>
+                ))}
+              </Fragment>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr className="bg-muted/50 font-semibold">
+              <td className="py-2 px-3 text-right font-mono whitespace-nowrap border-r border-border">
+                {fmt(grandDebit)}
+              </td>
+              <td className="py-2 px-3 text-center border-r border-border">合計</td>
+              <td className="py-2 px-3 text-right font-mono whitespace-nowrap border-r border-border">
+                {fmt(grandCredit)}
+              </td>
+              <td />
+            </tr>
+            {grandDebit !== grandCredit && (
+              <tr>
+                <td colSpan={5} className="py-2 px-3 text-xs text-destructive text-center">
+                  貸借不一致: 差額 {fmt(Math.abs(grandDebit - grandCredit))}
+                </td>
+              </tr>
+            )}
+          </tfoot>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ── T-Account View Components ──
 
 function TAccountProfitLoss({
   revenueTree,

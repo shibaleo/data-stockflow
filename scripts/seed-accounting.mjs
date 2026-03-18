@@ -342,14 +342,25 @@ if (!catNormal || !dept || !cp || !proj || !a1210 || !a4100 || !a5370 || !a1110)
 }
 
 // ============================================================
-// 8. 工数管理帳簿 + 勘定科目 + サンプル伝票
+// 8. 工数管理帳簿（配賦方式・2仕訳モデル）
+//
+// 勘定構成:
+//   「○○時間(expense)」+「○○時間差異(expense)」= ペア（同じ会計サイド）
+//   「時間残高(asset)」= 複式の鏡像（毎期ゼロにリサイクル）
+//
+// 配賦サイクル:
+//   1. 予定配賦: Dr 残高 / Cr 作業時間  → 残高で予算が見える
+//   2. 実績+差異: Dr 作業時間 / Cr 残高 + Cr 差異  → 残高=0に戻る
+//
+// 管理会計的な予定配賦（金額ベース）は財務帳簿で行う。
+// 工数帳簿は時間の物量管理に専念する。
 // ============================================================
 
 console.log("\n=== 工数管理帳簿 ===");
 const hourBook = await post("/books", {
   code: "manhour", name: "工数管理", unit: "時間",
   unit_symbol: "h", unit_position: "right",
-  type_labels: { asset: "残高", liability: "負債", equity: "差異", revenue: "投入", expense: "実績" },
+  type_labels: { asset: "資産", liability: "負債", equity: "資本", revenue: "収益", expense: "工数" },
 });
 if (!hourBook) {
   console.log("Failed to create hour book — skipping");
@@ -363,69 +374,60 @@ if (!hourBook) {
     return d?.id;
   }
 
-  // 資産 = 時間残高
-  console.log("\n=== 工数：残高 ===");
-  const h1000 = await hacct({ code: "H1000", name: "時間残高", account_type: "asset" });
+  // 資産 = 時間残高（複式の鏡像、予定でDr増・実績でCr減、毎期ゼロ）
+  console.log("\n=== 工数：資産 ===");
+  const h3000 = await hacct({ code: "H3000", name: "時間残高", account_type: "asset" });
 
-  // 収益 = 予定投入
-  console.log("\n=== 工数：投入 ===");
-  const h4000 = await hacct({ code: "H4000", name: "予定工数", account_type: "revenue" });
+  // 工数 = 作業時間 + 差異（ペア、同じexpense側）
+  console.log("\n=== 工数：配賦ペア ===");
+  const h5100 = await hacct({ code: "H5100", name: "作業時間", account_type: "expense" });
+  const h5110 = await hacct({ code: "H5110", name: "作業時間差異", account_type: "expense" });
 
-  // 費用 = 実績消化
-  console.log("\n=== 工数：実績 ===");
-  const h5000 = await hacct({ code: "H5000", name: "作業実績", account_type: "expense" });
-
-  // 純資産 = 差異
-  console.log("\n=== 工数：差異 ===");
-  const h3000 = await hacct({ code: "H3000", name: "時間差異", account_type: "equity" });
-
-  if (h1000 && h4000 && h5000 && h3000 && proj && catNormal && catAdjusting) {
+  if (h3000 && h5100 && h5110 && proj && catNormal && catAdjusting) {
     console.log("\n=== 工数管理サンプル伝票 ===");
 
-    // 月初: 予定工数 160h を投入
-    // 月末: 実績 170h 消化 + 差異 10h
-    // + 一般帳簿の人件費計上
+    // 3月: 予定160h、実績170h → 不利差異10h
     const vh = await post("/vouchers", {
       idempotency_key: "seed-manhour-202503",
       voucher_code: "MH202503-001",
-      description: "工数管理サンプル",
+      description: "3月工数管理",
       journals: [
+        // 1. 予定配賦: Dr 時間残高 160h / Cr 作業時間 160h
+        //    → 残高=+160（予算が資産として見える）、作業時間=-160（予定）
         {
           book_id: HB,
           posted_at: "2025-03-01T00:00:00Z",
           journal_type_id: catNormal.id,
-          description: "予定投入",
+          description: "予定配賦 160h",
           lines: [
-            { sort_order: 1, side: "debit", account_id: h1000, amount: 160 },
-            { sort_order: 1, side: "credit", account_id: h4000, amount: 160 },
+            { sort_order: 1, side: "debit", account_id: h3000, amount: 160 },
+            { sort_order: 2, side: "credit", account_id: h5100, amount: 160 },
           ],
         },
+        // 2. 実績+差異: Dr 作業時間 170h / Cr 時間残高 160h + Cr 作業時間差異 10h
+        //    → 残高=+160-160=0（リサイクル）
+        //    → 作業時間=+160-170=-10（予実差）
+        //    → 差異=+10（不利差異を識別）
         {
           book_id: HB,
           posted_at: "2025-03-31T00:00:00Z",
           journal_type_id: catAdjusting.id,
           project_id: proj.id,
-          description: "3月作業実績",
+          description: "3月実績 170h（差異 10h）",
           lines: [
-            { sort_order: 1, side: "debit", account_id: h5000, amount: 170 },
-            { sort_order: 1, side: "credit", account_id: h1000, amount: 160 },
-            { sort_order: 2, side: "credit", account_id: h3000, amount: 10 },
-          ],
-        },
-        {
-          book_id: BOOK_ID,
-          posted_at: "2025-03-31T00:00:00Z",
-          journal_type_id: catAdjusting.id,
-          project_id: proj.id,
-          description: "人件費計上",
-          lines: [
-            { sort_order: 1, side: "debit", account_id: a5370, amount: 250000 },
-            { sort_order: 1, side: "credit", account_id: a4100, amount: 250000 },
+            { sort_order: 1, side: "debit", account_id: h5100, amount: 170 },
+            { sort_order: 2, side: "credit", account_id: h3000, amount: 160 },
+            { sort_order: 3, side: "credit", account_id: h5110, amount: 10 },
           ],
         },
       ],
     });
-    if (vh) console.log(`  MH202503-001 工数管理サンプル → id=${vh.id}`);
+    if (vh) console.log(`  MH202503-001 3月工数管理 → id=${vh.id}`);
+
+    // 期末残高:
+    //   H3000 時間残高    =   0（リサイクル済み、次期再利用可）
+    //   H5100 作業時間    = -10（予実差: 予定160 - 実績170）
+    //   H5110 作業時間差異 = +10（不利差異 10h）
   }
 }
 

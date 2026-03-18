@@ -127,4 +127,114 @@ app.openapi(balances, async (c) => {
   );
 });
 
+// ── Trial Balance ──
+
+const trialBalanceItemSchema = z.object({
+  debit_total: z.string(),
+  account_id: z.number(),
+  code: z.string(),
+  name: z.string(),
+  account_type: z.string(),
+  sign: z.number(),
+  parent_account_id: z.number().nullable(),
+  credit_total: z.string(),
+  balance: z.string(),
+});
+
+const trialBalance = createRoute({
+  method: "get",
+  path: "/trial-balance",
+  tags: ["Reports"],
+  summary: "Get trial balance (合計残高試算表)",
+  description:
+    "Returns per-account debit total, credit total, and net balance. " +
+    "debit_total and credit_total are absolute values (positive). " +
+    "balance is signed (credit=positive, debit=negative).",
+  request: { query: balancesQuerySchema },
+  responses: {
+    200: {
+      description: "Success",
+      content: { "application/json": { schema: z.object({ data: z.array(trialBalanceItemSchema) }) } },
+    },
+    400: {
+      description: "Bad request",
+      content: { "application/json": { schema: errorSchema } },
+    },
+  },
+});
+
+interface TrialBalanceRow {
+  account_key: number;
+  code: string;
+  name: string;
+  account_type: string;
+  sign: number;
+  parent_account_key: number | null;
+  debit_total: string;
+  credit_total: string;
+  balance: string;
+}
+
+app.openapi(trialBalance, async (c) => {
+  const bookKey = c.get("bookKey");
+  const { date_from, date_to } = c.req.valid("query");
+
+  const dateConditions: ReturnType<typeof sql>[] = [];
+  if (date_from) {
+    dateConditions.push(sql`cj.posted_at >= ${date_from}::timestamptz`);
+  }
+  if (date_to) {
+    dateConditions.push(sql`cj.posted_at <= ${date_to}::timestamptz`);
+  }
+  const dateFilter = dateConditions.length > 0
+    ? sql` AND ${sql.join(dateConditions, sql` AND `)}`
+    : sql``;
+
+  const query = sql`
+    SELECT
+      a.key AS account_key,
+      a.code,
+      a.name,
+      a.account_type,
+      a.sign,
+      a.parent_account_key,
+      COALESCE(tb.debit_total, 0)::text  AS debit_total,
+      COALESCE(tb.credit_total, 0)::text AS credit_total,
+      COALESCE(tb.balance, 0)::text      AS balance
+    FROM ${sql.raw(`"${S}".current_account`)} a
+    LEFT JOIN LATERAL (
+      SELECT
+        SUM(CASE WHEN jl.side = 'debit'  THEN ABS(jl.amount) ELSE 0 END) AS debit_total,
+        SUM(CASE WHEN jl.side = 'credit' THEN jl.amount ELSE 0 END)      AS credit_total,
+        SUM(jl.amount) AS balance
+      FROM ${sql.raw(`"${S}".journal_line`)} jl
+      JOIN ${sql.raw(`"${S}".current_journal`)} cj
+        ON cj.key = jl.journal_key AND cj.revision = jl.journal_revision
+      WHERE jl.account_key = a.key${dateFilter}
+    ) tb ON true
+    WHERE a.book_key = ${bookKey} AND a.is_active = true
+    ORDER BY a.code
+  `;
+
+  const { rows } = await db.execute(query);
+  const typedRows = rows as unknown as TrialBalanceRow[];
+
+  return c.json(
+    {
+      data: typedRows.map((r) => ({
+        debit_total: r.debit_total,
+        account_id: r.account_key,
+        code: r.code,
+        name: r.name,
+        account_type: r.account_type,
+        sign: r.sign,
+        parent_account_id: r.parent_account_key,
+        credit_total: r.credit_total,
+        balance: r.balance,
+      })),
+    },
+    200
+  );
+});
+
 export default app;
