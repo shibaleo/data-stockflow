@@ -4,10 +4,11 @@ import { dark } from "@clerk/themes";
 import { Toaster } from "sonner";
 import { AuthGate } from "@/components/auth/auth-gate";
 import { AppLayout } from "@/components/layout/app-layout";
+import { SITE_NAME } from "@/lib/site";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "data-stockflow",
+  title: SITE_NAME,
   description: "会計データベース",
 };
 

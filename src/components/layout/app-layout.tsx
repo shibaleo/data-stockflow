@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Menu } from "lucide-react";
+import { SITE_NAME } from "@/lib/site";
 import { Sidebar, SidebarNav } from "./sidebar";
 import { Sheet, SheetTrigger, SheetContent } from "@/components/ui/sheet";
 import { UserMenu } from "./user-menu";
@@ -25,7 +26,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             <SheetContent>
               <div className="flex h-14 items-center border-b border-sidebar-border px-3">
                 <span className="text-lg font-semibold text-primary">
-                  data-stockflow
+                  {SITE_NAME}
                 </span>
               </div>
               <SidebarNav onNavigate={() => setSheetOpen(false)} />
@@ -37,7 +38,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           </button>
         )}
         <span className="text-lg font-semibold truncate text-primary">
-          data-stockflow
+          {SITE_NAME}
         </span>
         <div className="ml-auto">
           <UserMenu collapsed />

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { SITE_NAME } from "@/lib/site";
 import {
   BarChart3,
   BookOpen,
@@ -137,7 +138,7 @@ export function Sidebar() {
             collapsed ? "opacity-0 w-0 overflow-hidden" : "opacity-100"
           )}
         >
-          data-stockflow
+          {SITE_NAME}
         </span>
       </div>
 
