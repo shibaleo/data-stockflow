@@ -80,6 +80,7 @@ export const role = s.table(
     revision_hash: text("revision_hash").notNull(),
     code: text("code").notNull(),
     name: text("name").notNull(),
+    authority_rank: integer("authority_rank").default(0).notNull(),
     is_active: boolean("is_active").default(true).notNull(),
   },
   (t) => [
@@ -151,6 +152,7 @@ export const book = s.table(
       .$type<Record<string, string>>()
       .default({})
       .notNull(),
+    authority_role_key: bigint("authority_role_key", { mode: "number" }).notNull(),
     is_active: boolean("is_active").default(true).notNull(),
   },
   (t) => [
@@ -185,6 +187,7 @@ export const account = s.table(
     code: text("code").notNull(),
     name: text("name").notNull(),
     account_type: text("account_type").notNull(),
+    authority_role_key: bigint("authority_role_key", { mode: "number" }).notNull(),
     is_active: boolean("is_active").default(true).notNull(),
     parent_account_key: bigint("parent_account_key", { mode: "number" }),
     display_account_key: bigint("display_account_key", { mode: "number" }),
@@ -224,7 +227,7 @@ export const displayAccount = s.table(
     account_type: text("account_type").notNull(),
     parent_key: bigint("parent_key", { mode: "number" }),
     sort_order: integer("sort_order").default(0).notNull(),
-    authority_level: text("authority_level").default("user").notNull(),
+    authority_role_key: bigint("authority_role_key", { mode: "number" }).notNull(),
     is_active: boolean("is_active").default(true).notNull(),
   },
   (t) => [
@@ -270,6 +273,7 @@ export const category = s.table(
       .references(() => categoryType.code),
     code: text("code").notNull(),
     name: text("name").notNull(),
+    authority_role_key: bigint("authority_role_key", { mode: "number" }).notNull(),
     is_active: boolean("is_active").default(true).notNull(),
     parent_category_key: bigint("parent_category_key", { mode: "number" }),
   },
@@ -306,6 +310,7 @@ export const department = s.table(
     code: text("code").notNull(),
     name: text("name").notNull(),
     department_type: text("department_type"),
+    authority_role_key: bigint("authority_role_key", { mode: "number" }).notNull(),
     is_active: boolean("is_active").default(true).notNull(),
     parent_department_key: bigint("parent_department_key", { mode: "number" }),
   },
@@ -340,6 +345,7 @@ export const counterparty = s.table(
     tenant_key: bigint("tenant_key", { mode: "number" }).notNull(),
     code: text("code").notNull(),
     name: text("name").notNull(),
+    authority_role_key: bigint("authority_role_key", { mode: "number" }).notNull(),
     is_active: boolean("is_active").default(true).notNull(),
     parent_counterparty_key: bigint("parent_counterparty_key", { mode: "number" }),
   },
@@ -377,6 +383,7 @@ export const project = s.table(
     department_key: bigint("department_key", { mode: "number" }),
     start_date: timestamp("start_date", { withTimezone: true }),
     end_date: timestamp("end_date", { withTimezone: true }),
+    authority_role_key: bigint("authority_role_key", { mode: "number" }).notNull(),
     is_active: boolean("is_active").default(true).notNull(),
     parent_project_key: bigint("parent_project_key", { mode: "number" }),
   },
@@ -421,6 +428,7 @@ export const voucher = s.table(
     sequence_no: integer("sequence_no").notNull(),
     prev_header_hash: text("prev_header_hash").notNull(),
     header_hash: text("header_hash").notNull(),
+    authority_role_key: bigint("authority_role_key", { mode: "number" }).notNull(),
   },
   (t) => [
     primaryKey({ columns: [t.key, t.revision] }),
@@ -457,13 +465,14 @@ export const journal = s.table(
     book_key: bigint("book_key", { mode: "number" }).notNull(),
     posted_at: timestamp("posted_at", { withTimezone: true }).notNull(),
     is_active: boolean("is_active").default(true).notNull(),
-    project_key: bigint("project_key", { mode: "number" }).notNull(),
+    project_key: bigint("project_key", { mode: "number" }),
     adjustment_flag: text("adjustment_flag").default("none").notNull(),
     description: text("description"),
     metadata: jsonb("metadata")
       .$type<Record<string, string>>()
       .default({})
       .notNull(),
+    authority_role_key: bigint("authority_role_key", { mode: "number" }).notNull(),
   },
   (t) => [primaryKey({ columns: [t.key, t.revision] })]
 );

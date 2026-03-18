@@ -111,6 +111,7 @@ export async function bumpVoucherRevision(
       lines_hash: linesHash,
       prev_revision_hash: prevRevisionHash,
       revision_hash: revisionHash,
+      authority_role_key: current.authority_role_key,
     })
     .returning();
 

@@ -24,6 +24,7 @@ import type {
 } from "@/lib/types";
 import { recordAudit } from "@/lib/audit";
 import { recordEvent } from "@/lib/event-log";
+import { authorityCheck } from "@/lib/authority";
 import { bumpVoucherRevision } from "@/lib/voucher-cascade";
 import {
   computeRevisionHash,
@@ -62,6 +63,10 @@ const reverse = createRoute({
       description: "Reversal created",
       content: { "application/json": { schema: dataSchema(journalDetailResponseSchema) } },
     },
+    403: {
+      description: "Forbidden",
+      content: { "application/json": { schema: errorSchema } },
+    },
     404: {
       description: "Not found",
       content: { "application/json": { schema: errorSchema } },
@@ -87,6 +92,8 @@ app.openapi(reverse, async (c) => {
     key: journalKey,
   });
   if (!current) return c.json({ error: "Journal not found" }, 404);
+  const authErr = await authorityCheck(c.get("roleRank"), current.authority_role_key, "仕訳");
+  if (authErr) return c.json({ error: authErr }, 403);
   if (!current.is_active)
     return c.json({ error: "Cannot reverse an inactive journal" }, 422);
 
@@ -146,6 +153,7 @@ app.openapi(reverse, async (c) => {
       lines_hash: linesHash,
       prev_revision_hash: GENESIS_PREV_HASH,
       revision_hash: revisionHash,
+      authority_role_key: current.authority_role_key,
     }).returning();
 
     // Insert reversed lines
@@ -233,6 +241,7 @@ app.openapi(reverse, async (c) => {
       posted_at: result.posted_at instanceof Date ? result.posted_at.toISOString() : String(result.posted_at),
       revision: 1,
       is_active: true, project_id: result.project_key,
+      authority_role_key: result.authority_role_key,
       adjustment_flag: result.adjustment_flag,
       description: result.description,
       metadata: (result.metadata ?? {}) as Record<string, string>,

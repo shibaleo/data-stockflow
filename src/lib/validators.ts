@@ -75,6 +75,7 @@ export const roleResponseSchema = z.object({
   id: z.number(),
   code: z.string(),
   name: z.string(),
+  authority_rank: z.number(),
   is_active: z.boolean(),
   revision: z.number(),
   created_at: z.string(),
@@ -147,6 +148,7 @@ export const bookResponseSchema = z.object({
   unit_symbol: z.string(),
   unit_position: z.string(),
   type_labels: typeLabelsResponseSchema,
+  authority_role_key: z.number(),
   is_active: z.boolean(),
   revision: z.number(),
   created_at: z.string(),
@@ -180,6 +182,7 @@ export const accountResponseSchema = z.object({
   code: z.string(),
   name: z.string(),
   account_type: z.string(),
+  authority_role_key: z.number(),
   is_active: z.boolean(),
   parent_account_id: z.number().nullable(),
   display_account_id: z.number().nullable(),
@@ -212,8 +215,6 @@ export const updateAccountSchema = z.object({
 // Display Account (表示科目)
 // ============================================================
 
-const authorityLevelEnum = z.enum(["tenant", "admin", "user"]);
-
 export const displayAccountResponseSchema = z.object({
   id: z.number(),
   book_id: z.number(),
@@ -222,7 +223,7 @@ export const displayAccountResponseSchema = z.object({
   account_type: z.string(),
   parent_id: z.number().nullable(),
   sort_order: z.number(),
-  authority_level: z.string(),
+  authority_role_key: z.number(),
   is_active: z.boolean(),
   revision: z.number(),
   created_at: z.string(),
@@ -253,6 +254,7 @@ export const categoryResponseSchema = z.object({
   category_type_code: z.string(),
   code: z.string(),
   name: z.string(),
+  authority_role_key: z.number(),
   is_active: z.boolean(),
   parent_category_id: z.number().nullable(),
   revision: z.number(),
@@ -281,6 +283,7 @@ export const departmentResponseSchema = z.object({
   code: z.string(),
   name: z.string(),
   department_type: z.string().nullable(),
+  authority_role_key: z.number(),
   is_active: z.boolean(),
   parent_department_id: z.number().nullable(),
   revision: z.number(),
@@ -309,6 +312,7 @@ export const counterpartyResponseSchema = z.object({
   id: z.number(),
   code: z.string(),
   name: z.string(),
+  authority_role_key: z.number(),
   is_active: z.boolean(),
   parent_counterparty_id: z.number().nullable(),
   revision: z.number(),
@@ -340,6 +344,7 @@ export const projectResponseSchema = z.object({
   department_id: z.number().nullable(),
   start_date: z.string().nullable(),
   end_date: z.string().nullable(),
+  authority_role_key: z.number(),
   is_active: z.boolean(),
   parent_project_id: z.number().nullable(),
   revision: z.number(),
@@ -375,6 +380,7 @@ export const voucherResponseSchema = z.object({
   voucher_code: z.string().nullable(),
   description: z.string().nullable(),
   source_system: z.string().nullable(),
+  authority_role_key: z.number(),
   created_at: z.string(),
 });
 
@@ -413,7 +419,8 @@ export const journalResponseSchema = z.object({
   posted_at: z.string(),
   revision: z.number(),
   is_active: z.boolean(),
-  project_id: z.number(),
+  project_id: z.number().nullable(),
+  authority_role_key: z.number(),
   adjustment_flag: z.string(),
   description: z.string().nullable(),
   metadata: z.record(z.string(), z.string()),
@@ -445,8 +452,8 @@ export const createVoucherSchema = z.object({
       z.object({
         book_id: z.number().int().positive(),
         posted_at: z.string().datetime(),
-        journal_type_id: z.number().int().positive(),
-        project_id: z.number().int().positive(),
+        journal_type_id: z.number().int().positive().optional(),
+        project_id: z.number().int().positive().optional(),
         adjustment_flag: z
           .enum(["none", "monthly_adj", "year_end_adj"])
           .default("none"),

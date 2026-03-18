@@ -19,6 +19,7 @@ registerCrudHandlers<CurrentCounterparty>(app, routes, {
   buildCreate: (body, c) => ({
     tenant_key: c.get("tenantKey"), code: body.code, name: body.name,
     parent_counterparty_key: body.parent_counterparty_id ?? null,
+    authority_role_key: c.get("roleKey"),
     created_by: c.get("userKey"),
   }),
   hashCreate: (body) => ({ code: body.code, name: body.name }),
@@ -26,16 +27,19 @@ registerCrudHandlers<CurrentCounterparty>(app, routes, {
     tenant_key: c.get("tenantKey"), code: body.code ?? cur.code,
     name: body.name ?? cur.name,
     parent_counterparty_key: body.parent_counterparty_id !== undefined ? body.parent_counterparty_id : cur.parent_counterparty_key,
+    authority_role_key: cur.authority_role_key,
     is_active: body.is_active ?? cur.is_active, created_by: c.get("userKey"),
   }),
   hashUpdate: (body, cur) => ({ code: body.code ?? cur.code, name: body.name ?? cur.name }),
   buildDeactivate: (cur, c) => ({
     tenant_key: c.get("tenantKey"), code: cur.code,
     name: cur.name, parent_counterparty_key: cur.parent_counterparty_key,
+    authority_role_key: cur.authority_role_key,
     created_by: c.get("userKey"),
   }),
   hashDeactivate: (cur) => ({ code: cur.code, name: cur.name }),
   canPurge: (key) => checkReferences("counterparty_key", key, ["counterparty"]),
+  hasAuthority: true,
 });
 
 export default app;

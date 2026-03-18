@@ -20,6 +20,7 @@ registerCrudHandlers<CurrentBook>(app, routes, {
     unit: body.unit, unit_symbol: body.unit_symbol ?? "",
     unit_position: body.unit_position ?? "left",
     type_labels: body.type_labels ?? {},
+    authority_role_key: c.get("roleKey"),
     created_by: c.get("userKey"),
   }),
   hashCreate: (body) => ({ code: body.code, name: body.name, unit: body.unit }),
@@ -29,6 +30,7 @@ registerCrudHandlers<CurrentBook>(app, routes, {
     unit_symbol: body.unit_symbol ?? cur.unit_symbol,
     unit_position: body.unit_position ?? cur.unit_position,
     type_labels: body.type_labels ?? (cur.type_labels as object),
+    authority_role_key: cur.authority_role_key,
     is_active: body.is_active ?? cur.is_active, created_by: c.get("userKey"),
   }),
   hashUpdate: (body, cur) => ({ code: body.code ?? cur.code, name: body.name ?? cur.name, unit: body.unit ?? cur.unit }),
@@ -36,9 +38,11 @@ registerCrudHandlers<CurrentBook>(app, routes, {
     tenant_key: c.get("tenantKey"), code: cur.code,
     name: cur.name, unit: cur.unit, unit_symbol: cur.unit_symbol,
     unit_position: cur.unit_position, type_labels: cur.type_labels as object,
+    authority_role_key: cur.authority_role_key,
     created_by: c.get("userKey"),
   }),
   hashDeactivate: (cur) => ({ code: cur.code, name: cur.name, unit: cur.unit }),
+  hasAuthority: true,
 });
 
 export default app;

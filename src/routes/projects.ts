@@ -22,6 +22,7 @@ registerCrudHandlers<CurrentProject>(app, routes, {
     start_date: body.start_date ? new Date(body.start_date as string) : null,
     end_date: body.end_date ? new Date(body.end_date as string) : null,
     parent_project_key: body.parent_project_id ?? null,
+    authority_role_key: c.get("roleKey"),
     created_by: c.get("userKey"),
   }),
   hashCreate: (body) => ({ code: body.code, name: body.name }),
@@ -32,6 +33,7 @@ registerCrudHandlers<CurrentProject>(app, routes, {
     start_date: body.start_date !== undefined ? (body.start_date ? new Date(body.start_date as string) : null) : cur.start_date,
     end_date: body.end_date !== undefined ? (body.end_date ? new Date(body.end_date as string) : null) : cur.end_date,
     parent_project_key: body.parent_project_id !== undefined ? body.parent_project_id : cur.parent_project_key,
+    authority_role_key: cur.authority_role_key,
     is_active: body.is_active ?? cur.is_active, created_by: c.get("userKey"),
   }),
   hashUpdate: (body, cur) => ({ code: body.code ?? cur.code, name: body.name ?? cur.name }),
@@ -40,10 +42,12 @@ registerCrudHandlers<CurrentProject>(app, routes, {
     name: cur.name, department_key: cur.department_key,
     start_date: cur.start_date, end_date: cur.end_date,
     parent_project_key: cur.parent_project_key,
+    authority_role_key: cur.authority_role_key,
     created_by: c.get("userKey"),
   }),
   hashDeactivate: (cur) => ({ code: cur.code, name: cur.name }),
   canPurge: (key) => checkReferences("project_key", key, ["project"]),
+  hasAuthority: true,
 });
 
 export default app;

@@ -24,6 +24,7 @@ export interface CurrentTenant extends BaseEntity {
 export interface CurrentRole extends BaseEntity {
   code: string;
   name: string;
+  authority_rank: number;
   is_active: boolean;
 }
 
@@ -48,6 +49,7 @@ export interface CurrentBook extends BaseEntity {
   unit_symbol: string;
   unit_position: string;
   type_labels: Record<string, string>;
+  authority_role_key: number;
   is_active: boolean;
 }
 
@@ -57,6 +59,7 @@ export interface CurrentAccount extends BaseEntity {
   code: string;
   name: string;
   account_type: string;
+  authority_role_key: number;
   is_active: boolean;
   parent_account_key: number | null;
   display_account_key: number | null;
@@ -71,7 +74,7 @@ export interface CurrentDisplayAccount extends BaseEntity {
   account_type: string;
   parent_key: number | null;
   sort_order: number;
-  authority_level: string;
+  authority_role_key: number;
   is_active: boolean;
 }
 
@@ -81,6 +84,7 @@ export interface CurrentCategory extends BaseEntity {
   category_type_code: string;
   code: string;
   name: string;
+  authority_role_key: number;
   is_active: boolean;
   parent_category_key: number | null;
 }
@@ -91,6 +95,7 @@ export interface CurrentDepartment extends BaseEntity {
   code: string;
   name: string;
   department_type: string | null;
+  authority_role_key: number;
   is_active: boolean;
   parent_department_key: number | null;
 }
@@ -100,6 +105,7 @@ export interface CurrentCounterparty extends BaseEntity {
   tenant_key: number;
   code: string;
   name: string;
+  authority_role_key: number;
   is_active: boolean;
   parent_counterparty_key: number | null;
 }
@@ -112,6 +118,7 @@ export interface CurrentProject extends BaseEntity {
   department_key: number | null;
   start_date: Date | null;
   end_date: Date | null;
+  authority_role_key: number;
   is_active: boolean;
   parent_project_key: number | null;
 }
@@ -128,6 +135,7 @@ export interface VoucherRow extends BaseEntity {
   sequence_no: number;
   prev_header_hash: string;
   header_hash: string;
+  authority_role_key: number;
 }
 
 export interface CurrentJournal extends BaseEntity {
@@ -137,10 +145,11 @@ export interface CurrentJournal extends BaseEntity {
   book_key: number;
   posted_at: Date;
   is_active: boolean;
-  project_key: number;
+  project_key: number | null;
   adjustment_flag: string;
   description: string | null;
   metadata: Record<string, string>;
+  authority_role_key: number;
 }
 
 export interface JournalLineRow {

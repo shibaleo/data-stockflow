@@ -21,15 +21,19 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { UserMenu } from "./user-menu";
+import { useMe } from "@/components/auth/auth-gate";
 
 const EXPANDED_WIDTH = 224;
 const COLLAPSED_WIDTH = 56;
+
+type UserRole = string;
 
 interface NavItem {
   href: string;
   label: string;
   icon: typeof PenLine;
   separator?: boolean;
+  roles?: UserRole[];
 }
 
 const navItems: NavItem[] = [
@@ -45,8 +49,8 @@ const navItems: NavItem[] = [
   { href: "/tags", label: "タグ", icon: Tags },
   // 設定
   { href: "/books", separator: true, label: "帳簿", icon: BookOpen },
-  { href: "/users", label: "ユーザー", icon: Shield },
-  { href: "/audit-logs", label: "監査ログ", icon: ScrollText },
+  { href: "/users", label: "ユーザー", icon: Shield, roles: ["admin", "auditor"] },
+  { href: "/audit-logs", label: "監査ログ", icon: ScrollText, roles: ["admin", "auditor"] },
   { href: "/api-doc", label: "API", icon: FileCode2 },
 ];
 
@@ -58,11 +62,16 @@ export function SidebarNav({
   onNavigate?: () => void;
 }) {
   const pathname = usePathname();
+  const { me } = useMe();
+
+  const visibleItems = navItems.filter(
+    (item) => !item.roles || item.roles.includes(me.role),
+  );
 
   return (
     <>
       <nav className="flex-1 space-y-0.5 p-2 overflow-y-auto">
-        {navItems.map((item) => {
+        {visibleItems.map((item) => {
           const active = pathname.startsWith(item.href);
           return (
             <div key={item.href}>

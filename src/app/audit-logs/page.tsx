@@ -9,6 +9,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { api, ApiError } from "@/lib/api-client";
+import { useMe } from "@/components/auth/auth-gate";
 
 // ── Types ──
 
@@ -75,7 +76,10 @@ const ENTITY_TYPES = Object.keys(ENTITY_LABELS);
 
 // ── Page ──
 
+const ALLOWED_ROLES = ["admin", "auditor"];
+
 export default function AuditLogsPage() {
+  const { me } = useMe();
   const [logs, setLogs] = useState<EventLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -147,6 +151,10 @@ export default function AuditLogsPage() {
     (acc[date] ??= []).push(log);
     return acc;
   }, {});
+
+  if (!ALLOWED_ROLES.includes(me.role)) {
+    return <div className="p-6 text-center text-muted-foreground">このページへのアクセス権限がありません</div>;
+  }
 
   return (
     <div className="p-4 md:p-6">

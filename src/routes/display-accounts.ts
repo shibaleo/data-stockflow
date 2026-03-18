@@ -5,13 +5,6 @@ import { displayAccountResponseSchema, createDisplayAccountSchema, updateDisplay
 import { createMapper, defineCrudRoutes, registerCrudHandlers } from "@/lib/crud-factory";
 import { checkReferences } from "@/lib/append-only";
 import type { CurrentDisplayAccount } from "@/lib/types";
-import type { UserRole } from "@/middleware/context";
-
-function roleToAuthority(role: UserRole): string {
-  if (role === "platform") return "tenant";
-  if (role === "admin") return "admin";
-  return "user";
-}
 
 const app = createApp();
 app.use("*", requireAuth(), requireBook());
@@ -38,7 +31,7 @@ registerCrudHandlers<CurrentDisplayAccount>(app, routes, {
     account_type: body.account_type,
     parent_key: body.parent_id ?? null,
     sort_order: body.sort_order ?? 0,
-    authority_level: roleToAuthority(c.get("userRole")),
+    authority_role_key: c.get("roleKey"),
     created_by: c.get("userKey"),
   }),
   hashCreate: (body) => ({
@@ -51,7 +44,7 @@ registerCrudHandlers<CurrentDisplayAccount>(app, routes, {
     account_type: body.account_type ?? cur.account_type,
     parent_key: body.parent_id !== undefined ? body.parent_id : cur.parent_key,
     sort_order: body.sort_order ?? cur.sort_order,
-    authority_level: cur.authority_level,
+    authority_role_key: cur.authority_role_key,
     is_active: body.is_active ?? cur.is_active,
     created_by: c.get("userKey"),
   }),
@@ -66,13 +59,14 @@ registerCrudHandlers<CurrentDisplayAccount>(app, routes, {
     account_type: cur.account_type,
     parent_key: cur.parent_key,
     sort_order: cur.sort_order,
-    authority_level: cur.authority_level,
+    authority_role_key: cur.authority_role_key,
     created_by: c.get("userKey"),
   }),
   hashDeactivate: (cur) => ({
     code: cur.code, name: cur.name, account_type: cur.account_type,
   }),
   canPurge: (key) => checkReferences("display_account_key", key, ["display_account"]),
+  hasAuthority: true,
 });
 
 export default app;

@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api-client";
 import { MasterPage, PropRow } from "@/components/shared/master-page";
 import { getRoleColor } from "@/lib/role-utils";
+import { useMe } from "@/components/auth/auth-gate";
 
 // ── Types ──
 
@@ -16,7 +17,14 @@ interface RoleRow {
   color_hex?: string | null;
 }
 
+const ALLOWED_ROLES = ["admin", "auditor"];
+
 export default function UsersPage() {
+  const { me } = useMe();
+
+  if (!ALLOWED_ROLES.includes(me.role)) {
+    return <div className="p-6 text-center text-muted-foreground">このページへのアクセス権限がありません</div>;
+  }
   const [roles, setRoles] = useState<RoleRow[]>([]);
   const [meId, setMeId] = useState<number | null>(null);
   const [roleColorMap, setRoleColorMap] = useState<Map<string, string>>(new Map());

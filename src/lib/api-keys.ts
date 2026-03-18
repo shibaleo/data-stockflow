@@ -108,14 +108,24 @@ export async function verifyApiKey(
     .then(() => {})
     .catch(() => {});
 
-  // Fetch user name for event log context
+  // Fetch user name + role info for event log context
   let userName = "api-key";
+  let roleKey = 0;
+  let roleRank = 0;
   try {
     const { rows: userRows } = await db.execute(sql`
-      SELECT name FROM ${sql.raw(`"${S}".current_user`)} WHERE key = ${userKey} LIMIT 1
+      SELECT u.name, u.role_key, r.authority_rank
+      FROM ${sql.raw(`"${S}".current_user`)} u
+      JOIN ${sql.raw(`"${S}".current_role`)} r ON r.key = u.role_key
+      WHERE u.key = ${userKey} LIMIT 1
     `);
-    if (userRows.length > 0) userName = (userRows[0] as { name: string }).name;
-  } catch { /* fallback to "api-key" */ }
+    if (userRows.length > 0) {
+      const row = userRows[0] as { name: string; role_key: number; authority_rank: number };
+      userName = row.name;
+      roleKey = row.role_key;
+      roleRank = row.authority_rank;
+    }
+  } catch { /* fallback */ }
 
   return {
     userKey,
@@ -123,6 +133,8 @@ export async function verifyApiKey(
     role: role as UserRole,
     roleCode: role,
     userName,
+    roleKey,
+    roleRank,
   };
 }
 

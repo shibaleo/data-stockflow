@@ -20,6 +20,7 @@ registerCrudHandlers<CurrentDepartment>(app, routes, {
     tenant_key: c.get("tenantKey"), code: body.code, name: body.name,
     department_type: body.department_type ?? null,
     parent_department_key: body.parent_department_id ?? null,
+    authority_role_key: c.get("roleKey"),
     created_by: c.get("userKey"),
   }),
   hashCreate: (body) => ({ code: body.code, name: body.name }),
@@ -28,16 +29,19 @@ registerCrudHandlers<CurrentDepartment>(app, routes, {
     name: body.name ?? cur.name,
     department_type: body.department_type !== undefined ? body.department_type : cur.department_type,
     parent_department_key: body.parent_department_id !== undefined ? body.parent_department_id : cur.parent_department_key,
+    authority_role_key: cur.authority_role_key,
     is_active: body.is_active ?? cur.is_active, created_by: c.get("userKey"),
   }),
   hashUpdate: (body, cur) => ({ code: body.code ?? cur.code, name: body.name ?? cur.name }),
   buildDeactivate: (cur, c) => ({
     tenant_key: c.get("tenantKey"), code: cur.code,
     name: cur.name, department_type: cur.department_type,
-    parent_department_key: cur.parent_department_key, created_by: c.get("userKey"),
+    parent_department_key: cur.parent_department_key,
+    authority_role_key: cur.authority_role_key, created_by: c.get("userKey"),
   }),
   hashDeactivate: (cur) => ({ code: cur.code, name: cur.name }),
   canPurge: (key) => checkReferences("department_key", key, ["department"]),
+  hasAuthority: true,
 });
 
 export default app;

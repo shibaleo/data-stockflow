@@ -21,6 +21,7 @@ import { requireTenant, requireAuth, requireRole } from "@/middleware/guards";
 import { recordAudit } from "@/lib/audit";
 import { recordEvent } from "@/lib/event-log";
 import { bumpVoucherRevision } from "@/lib/voucher-cascade";
+import { authorityCheck } from "@/lib/authority";
 import { getMaxRevision } from "@/lib/append-only";
 import {
   computeRevisionHash,
@@ -82,6 +83,7 @@ async function buildJournalDetail(j: CurrentJournal) {
     posted_at: j.posted_at instanceof Date ? j.posted_at.toISOString() : String(j.posted_at),
     revision: j.revision,
     is_active: j.is_active, project_id: j.project_key,
+    authority_role_key: j.authority_role_key,
     adjustment_flag: j.adjustment_flag,
     description: j.description,
     metadata: (j.metadata ?? {}) as Record<string, string>,
@@ -121,6 +123,7 @@ const updateRoute = createRoute({
   request: { params, body: { content: { "application/json": { schema: updateJournalSchema } } } },
   responses: {
     200: { description: "Updated", content: { "application/json": { schema: dataSchema(journalDetailResponseSchema) } } },
+    403: { description: "Forbidden", content: { "application/json": { schema: errorSchema } } },
     404: { description: "Not found", content: { "application/json": { schema: errorSchema } } },
     422: { description: "Validation error", content: { "application/json": { schema: errorSchema } } },
   },
@@ -131,6 +134,7 @@ const deleteRoute = createRoute({
   request: { params },
   responses: {
     200: { description: "Deactivated", content: { "application/json": { schema: messageSchema } } },
+    403: { description: "Forbidden", content: { "application/json": { schema: errorSchema } } },
     404: { description: "Not found", content: { "application/json": { schema: errorSchema } } },
     422: { description: "Already deactivated", content: { "application/json": { schema: errorSchema } } },
   },
@@ -178,6 +182,8 @@ app.openapi(updateRoute, async (c) => {
 
   const current = await getJournalForVoucher(voucherKey, journalKey);
   if (!current) return c.json({ error: "Not found" }, 404);
+  const authErr = await authorityCheck(c.get("roleRank"), current.authority_role_key, "仕訳");
+  if (authErr) return c.json({ error: authErr }, 403);
 
   // Balance check
   const debit = body.lines.filter((l) => l.side === "debit").reduce((s, l) => s + l.amount, 0);
@@ -225,6 +231,7 @@ app.openapi(updateRoute, async (c) => {
       created_by: userKey,
       lines_hash: linesHash, prev_revision_hash: prevRevisionHash,
       revision_hash: revisionHash,
+      authority_role_key: current.authority_role_key,
     }).returning();
 
     await tx.insert(journalLine).values(
@@ -303,6 +310,8 @@ app.openapi(deleteRoute, async (c) => {
 
   const current = await getJournalForVoucher(voucherKey, journalKey);
   if (!current) return c.json({ error: "Not found" }, 404);
+  const authErr = await authorityCheck(c.get("roleRank"), current.authority_role_key, "仕訳");
+  if (authErr) return c.json({ error: authErr }, 403);
   if (!current.is_active) return c.json({ error: "Already deactivated" }, 422);
 
   const maxRev = await getMaxRevision("journal", journalKey);
@@ -326,6 +335,7 @@ app.openapi(deleteRoute, async (c) => {
       created_by: userKey,
       lines_hash: linesHash, prev_revision_hash: prevRevisionHash,
       revision_hash: revisionHash,
+      authority_role_key: current.authority_role_key,
     });
 
     // Cascade: bump voucher revision to reflect journal deactivation
@@ -355,6 +365,7 @@ app.openapi(historyRoute, async (c) => {
       posted_at: j.posted_at instanceof Date ? j.posted_at.toISOString() : String(j.posted_at),
       revision: j.revision,
       is_active: j.is_active, project_id: j.project_key,
+      authority_role_key: j.authority_role_key,
       adjustment_flag: j.adjustment_flag,
       description: j.description,
       metadata: (j.metadata ?? {}) as Record<string, string>,

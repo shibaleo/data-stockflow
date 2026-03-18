@@ -52,6 +52,7 @@ CREATE TABLE data_stockflow.role (
   revision_hash    TEXT NOT NULL,
   code             TEXT NOT NULL,
   name             TEXT NOT NULL,
+  authority_rank   INTEGER NOT NULL DEFAULT 0,
   is_active        BOOLEAN NOT NULL DEFAULT true,
   PRIMARY KEY (key, revision),
   UNIQUE (code, revision)
@@ -96,6 +97,7 @@ CREATE TABLE data_stockflow.book (
   unit_symbol      TEXT NOT NULL DEFAULT '',
   unit_position    TEXT NOT NULL DEFAULT 'left',
   type_labels      JSONB NOT NULL DEFAULT '{}',
+  authority_role_key BIGINT NOT NULL,
   is_active        BOOLEAN NOT NULL DEFAULT true,
   PRIMARY KEY (key, revision),
   UNIQUE (tenant_key, code, revision)
@@ -116,6 +118,7 @@ CREATE TABLE data_stockflow.account (
   code             TEXT NOT NULL,
   name             TEXT NOT NULL,
   account_type     TEXT NOT NULL,
+  authority_role_key BIGINT NOT NULL,
   is_active        BOOLEAN NOT NULL DEFAULT true,
   parent_account_key BIGINT,
   display_account_key BIGINT,
@@ -140,7 +143,7 @@ CREATE TABLE data_stockflow.display_account (
   account_type     TEXT NOT NULL,
   parent_key       BIGINT,
   sort_order       INTEGER NOT NULL DEFAULT 0,
-  authority_level  TEXT NOT NULL DEFAULT 'user',
+  authority_role_key BIGINT NOT NULL,
   is_active        BOOLEAN NOT NULL DEFAULT true,
   PRIMARY KEY (key, revision),
   UNIQUE (book_key, code, revision)
@@ -171,6 +174,7 @@ CREATE TABLE data_stockflow.category (
   category_type_code TEXT NOT NULL REFERENCES data_stockflow.category_type(code),
   code             TEXT NOT NULL,
   name             TEXT NOT NULL,
+  authority_role_key BIGINT NOT NULL,
   is_active        BOOLEAN NOT NULL DEFAULT true,
   parent_category_key BIGINT,
   PRIMARY KEY (key, revision),
@@ -192,6 +196,7 @@ CREATE TABLE data_stockflow.department (
   code             TEXT NOT NULL,
   name             TEXT NOT NULL,
   department_type  TEXT,
+  authority_role_key BIGINT NOT NULL,
   is_active        BOOLEAN NOT NULL DEFAULT true,
   parent_department_key BIGINT,
   PRIMARY KEY (key, revision),
@@ -212,6 +217,7 @@ CREATE TABLE data_stockflow.counterparty (
   tenant_key       BIGINT NOT NULL,
   code             TEXT NOT NULL,
   name             TEXT NOT NULL,
+  authority_role_key BIGINT NOT NULL,
   is_active        BOOLEAN NOT NULL DEFAULT true,
   parent_counterparty_key BIGINT,
   PRIMARY KEY (key, revision),
@@ -235,6 +241,7 @@ CREATE TABLE data_stockflow.project (
   department_key   BIGINT,
   start_date       TIMESTAMPTZ,
   end_date         TIMESTAMPTZ,
+  authority_role_key BIGINT NOT NULL,
   is_active        BOOLEAN NOT NULL DEFAULT true,
   parent_project_key BIGINT,
   PRIMARY KEY (key, revision),
@@ -260,6 +267,7 @@ CREATE TABLE data_stockflow.voucher (
   sequence_no      INTEGER NOT NULL,
   prev_header_hash TEXT NOT NULL,
   header_hash      TEXT NOT NULL,
+  authority_role_key BIGINT NOT NULL,
   PRIMARY KEY (key, revision)
 );
 
@@ -289,10 +297,11 @@ CREATE TABLE data_stockflow.journal (
   book_key         BIGINT NOT NULL,
   posted_at        TIMESTAMPTZ NOT NULL,
   is_active        BOOLEAN NOT NULL DEFAULT true,
-  project_key      BIGINT NOT NULL,
+  project_key      BIGINT,
   adjustment_flag  TEXT NOT NULL DEFAULT 'none',
   description      TEXT,
   metadata         JSONB NOT NULL DEFAULT '{}',
+  authority_role_key BIGINT NOT NULL,
   PRIMARY KEY (key, revision)
 );
 
@@ -569,11 +578,11 @@ SELECT * FROM data_stockflow.journal ORDER BY key, revision;
 -- ============================================================
 
 -- Roles (system seed)
-INSERT INTO data_stockflow.role (key, revision, code, name, lines_hash, prev_revision_hash, revision_hash) VALUES
-  (nextval('data_stockflow.role_key_seq'), 1, 'platform', 'Platform',  'bootstrap', 'genesis', 'bootstrap'),
-  (nextval('data_stockflow.role_key_seq'), 1, 'admin',    'Admin',     'bootstrap', 'genesis', 'bootstrap'),
-  (nextval('data_stockflow.role_key_seq'), 1, 'user',     'User',      'bootstrap', 'genesis', 'bootstrap'),
-  (nextval('data_stockflow.role_key_seq'), 1, 'auditor',  'Auditor',   'bootstrap', 'genesis', 'bootstrap');
+INSERT INTO data_stockflow.role (key, revision, code, name, authority_rank, lines_hash, prev_revision_hash, revision_hash) VALUES
+  (nextval('data_stockflow.role_key_seq'), 1, 'platform', 'Platform',  100, 'bootstrap', 'genesis', 'bootstrap'),
+  (nextval('data_stockflow.role_key_seq'), 1, 'admin',    'Admin',      50, 'bootstrap', 'genesis', 'bootstrap'),
+  (nextval('data_stockflow.role_key_seq'), 1, 'user',     'User',       10, 'bootstrap', 'genesis', 'bootstrap'),
+  (nextval('data_stockflow.role_key_seq'), 1, 'auditor',  'Auditor',     0, 'bootstrap', 'genesis', 'bootstrap');
 
 -- Category types (system seed)
 -- 各ドメインエンティティに種別（単一）、仕訳のみタグ（複数可）

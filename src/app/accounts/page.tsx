@@ -169,39 +169,33 @@ export default function AccountsPage() {
 
   // ── 表示科目タブ用 ──
 
-  // Map authority_level codes → role display name and color
-  const authorityLabelMap = useMemo(() => {
+  const roleNameMap = useMemo(() => {
     const m = new Map<string, string>();
-    for (const r of roles) {
-      m.set(r.code, r.name);
-    }
-    // "tenant" authority uses the admin role display or fallback
-    if (!m.has("tenant")) m.set("tenant", "テナント");
+    for (const r of roles) m.set(String(r.id), r.name);
     return m;
   }, [roles]);
 
-  const authorityColorMap = useMemo(() => {
+  const roleColorMap = useMemo(() => {
     const m = new Map<string, string>();
-    for (const r of roles) {
-      m.set(r.code, r.color_hex ?? getRoleColor(r.code));
-    }
-    if (!m.has("tenant")) m.set("tenant", getRoleColor("platform"));
+    for (const r of roles) m.set(String(r.id), r.color_hex ?? getRoleColor(r.code));
     return m;
   }, [roles]);
+
+  const roleOptions = useMemo(
+    () => roles.map((r) => ({ value: String(r.id), label: r.name })),
+    [roles],
+  );
 
   const daExtraFields = useMemo<ExtraField[]>(
     () => [{
-      key: "authority_level",
+      key: "authority_role_key",
       label: "権限",
       type: "select" as const,
-      options: ["tenant", "admin", "user"].map((code) => ({
-        value: code,
-        label: authorityLabelMap.get(code) ?? code,
-      })),
-      format: (v) => authorityLabelMap.get(String(v)) ?? String(v),
-      badgeColor: (v) => authorityColorMap.get(String(v)),
+      options: roleOptions,
+      format: (v) => roleNameMap.get(String(v)) ?? String(v),
+      badgeColor: (v) => roleColorMap.get(String(v)),
     }],
-    [authorityLabelMap, authorityColorMap],
+    [roleOptions, roleNameMap, roleColorMap],
   );
 
   const daDialogExtraFields = useMemo<ExtraField[]>(

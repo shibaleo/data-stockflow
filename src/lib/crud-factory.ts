@@ -16,6 +16,7 @@ import { requireRole } from "@/middleware/guards";
 import { recordAudit, type AuditEntityType } from "@/lib/audit";
 import { recordEvent, computeChanges } from "@/lib/event-log";
 import { computeMasterHashes } from "@/lib/entity-hash";
+import { authorityCheck } from "@/lib/authority";
 import type { Context } from "hono";
 import type { AppVariables, UserRole } from "@/middleware/context";
 
@@ -130,6 +131,7 @@ export function defineCrudRoutes(
       request: { params: idObj },
       responses: {
         200: { description: "Deactivated", ...jc(messageSchema) },
+        403: { description: "Forbidden", ...jc(errorSchema) },
         404: { description: "Not found", ...jc(errorSchema) },
         422: { description: "Already deactivated", ...jc(errorSchema) },
       },
@@ -144,6 +146,7 @@ export function defineCrudRoutes(
       request: { params: idObj },
       responses: {
         200: { description: "Restored", ...jc(dataSchema(responseSchema)) },
+        403: { description: "Forbidden", ...jc(errorSchema) },
         404: { description: "Not found", ...jc(errorSchema) },
         422: { description: "Already active", ...jc(errorSchema) },
       },
@@ -184,6 +187,8 @@ interface CrudConfig<T extends BaseRow> {
   writeRoles?: UserRole[];
   /** If set, the UPDATE endpoint uses these roles instead of writeRoles */
   updateRoles?: UserRole[];
+  /** If true, check authority_role_key on update/deactivate/restore/purge */
+  hasAuthority?: boolean;
 }
 
 export function registerCrudHandlers<T extends BaseRow>(
@@ -200,6 +205,7 @@ export function registerCrudHandlers<T extends BaseRow>(
     canPurge,
     writeRoles = ["admin", "user"],
     updateRoles,
+    hasAuthority = false,
   } = config;
 
   const writeGuard = requireRole(...writeRoles);
@@ -264,6 +270,16 @@ export function registerCrudHandlers<T extends BaseRow>(
     return c.json({ data: mappedCreated }, 201);
   });
 
+  // Authority check helper
+  const checkAuthorityGuard = async (c: Ctx, current: T) => {
+    if (!hasAuthority) return null;
+    const ark = (current as T & { authority_role_key?: number }).authority_role_key;
+    if (ark == null) return null;
+    const err = await authorityCheck(c.get("roleRank"), ark, entityLabel);
+    if (err) return c.json({ error: err }, 403);
+    return null;
+  };
+
   // UPDATE
   app.use(routes.update.getRoutingPath(), updateGuard);
   app.openapi(routes.update, async (c) => {
@@ -271,6 +287,8 @@ export function registerCrudHandlers<T extends BaseRow>(
     const body = c.req.valid("json") as Record<string, unknown>;
     const current = await getCurrent<T>(viewName, getFilter(c, entityKey));
     if (!current) return c.json({ error: "Not found" }, 404);
+    const authDenied = await checkAuthorityGuard(c, current);
+    if (authDenied) return authDenied;
     const maxRev = await getMaxRevision(tableName, entityKey);
     const hashes = computeMasterHashes(hashUpdate(body, current), (current as BaseRow).revision_hash);
     const [updated] = await db.insert(table).values({
@@ -297,6 +315,8 @@ export function registerCrudHandlers<T extends BaseRow>(
     const entityKey = getKey(c);
     const current = await getCurrent<T>(viewName, getFilter(c, entityKey));
     if (!current) return c.json({ error: "Not found" }, 404);
+    const deactAuthDenied = await checkAuthorityGuard(c, current);
+    if (deactAuthDenied) return deactAuthDenied;
     if ((current as T & { is_active?: boolean }).is_active === false) {
       return c.json({ error: "Already deactivated" }, 422);
     }
@@ -331,6 +351,8 @@ export function registerCrudHandlers<T extends BaseRow>(
     const entityKey = getKey(c);
     const current = await getLatest<T>(tableName, entityKey);
     if (!current) return c.json({ error: "Not found" }, 404);
+    const restoreAuthDenied = await checkAuthorityGuard(c, current);
+    if (restoreAuthDenied) return restoreAuthDenied;
     if ((current as T & { is_active?: boolean }).is_active !== false) {
       return c.json({ error: "Already active" }, 422);
     }
@@ -365,6 +387,8 @@ export function registerCrudHandlers<T extends BaseRow>(
     // Use getLatest (raw table) so we can see already-deactivated items
     const current = await getLatest<T>(tableName, entityKey);
     if (!current) return c.json({ error: "Not found" }, 404);
+    const purgeAuthDenied = await checkAuthorityGuard(c, current);
+    if (purgeAuthDenied) return purgeAuthDenied;
     if ((current as T & { is_active?: boolean }).is_active !== false) {
       return c.json({ error: "Must be deactivated before purge" }, 422);
     }

@@ -21,6 +21,7 @@ registerCrudHandlers<CurrentAccount>(app, routes, {
     account_type: body.account_type,
     parent_account_key: body.parent_account_id ?? null,
     display_account_key: body.display_account_id ?? null,
+    authority_role_key: c.get("roleKey"),
     created_by: c.get("userKey"),
   }),
   hashCreate: (body) => ({ code: body.code, name: body.name, account_type: body.account_type }),
@@ -29,6 +30,7 @@ registerCrudHandlers<CurrentAccount>(app, routes, {
     name: body.name ?? cur.name, account_type: body.account_type ?? cur.account_type,
     parent_account_key: body.parent_account_id !== undefined ? body.parent_account_id : cur.parent_account_key,
     display_account_key: body.display_account_id !== undefined ? body.display_account_id : cur.display_account_key,
+    authority_role_key: cur.authority_role_key,
     is_active: body.is_active ?? cur.is_active, created_by: c.get("userKey"),
   }),
   hashUpdate: (body, cur) => ({ code: body.code ?? cur.code, name: body.name ?? cur.name, account_type: body.account_type ?? cur.account_type }),
@@ -37,10 +39,12 @@ registerCrudHandlers<CurrentAccount>(app, routes, {
     name: cur.name, account_type: cur.account_type,
     parent_account_key: cur.parent_account_key,
     display_account_key: cur.display_account_key,
+    authority_role_key: cur.authority_role_key,
     created_by: c.get("userKey"),
   }),
   hashDeactivate: (cur) => ({ code: cur.code, name: cur.name, account_type: cur.account_type }),
   canPurge: (key) => checkReferences("account_key", key, ["account"]),
+  hasAuthority: true,
 });
 
 export default app;

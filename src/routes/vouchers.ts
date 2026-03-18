@@ -8,6 +8,7 @@ import { requireTenant, requireAuth, requireRole } from "@/middleware/guards";
 import { recordAudit } from "@/lib/audit";
 import { recordEvent } from "@/lib/event-log";
 import { createMapper } from "@/lib/crud-factory";
+import { authorityCheck } from "@/lib/authority";
 import {
   acquireNextHeaderSequence,
   computeHeaderHash,
@@ -66,6 +67,7 @@ const update = createRoute({
   },
   responses: {
     200: { description: "Updated", content: { "application/json": { schema: dataSchema(voucherDetailResponseSchema) } } },
+    403: { description: "Forbidden", content: { "application/json": { schema: errorSchema } } },
     404: { description: "Not found", content: { "application/json": { schema: errorSchema } } },
   },
 });
@@ -147,6 +149,7 @@ app.openapi(get, async (c) => {
       posted_at: j.posted_at instanceof Date ? j.posted_at.toISOString() : String(j.posted_at),
       revision: j.revision,
       is_active: j.is_active, project_id: j.project_key,
+      authority_role_key: j.authority_role_key,
       adjustment_flag: j.adjustment_flag,
       description: j.description,
       metadata: (j.metadata ?? {}) as Record<string, string>,
@@ -224,6 +227,7 @@ app.openapi(create, async (c) => {
       prev_header_hash: prevHeaderHash, header_hash: headerHash,
       lines_hash: voucherLinesHash, prev_revision_hash: GENESIS_PREV_HASH,
       revision_hash: voucherRevisionHash,
+      authority_role_key: c.get("roleKey"),
     }).returning();
 
     // Insert journals
@@ -235,12 +239,13 @@ app.openapi(create, async (c) => {
       const [j] = await tx.insert(journal).values({
         tenant_key: tenantKey, voucher_key: v.key, book_key: jInput.book_id,
         posted_at: new Date(jInput.posted_at),
-        project_key: jInput.project_id,
+        project_key: jInput.project_id ?? null,
         adjustment_flag: jInput.adjustment_flag ?? "none",
         description: jInput.description ?? null,
         metadata: jInput.metadata ?? {},
         created_by: userKey, lines_hash: linesHash,
         prev_revision_hash: GENESIS_PREV_HASH, revision_hash: revisionHash,
+        authority_role_key: c.get("roleKey"),
       }).returning();
 
       // Insert lines
@@ -256,11 +261,13 @@ app.openapi(create, async (c) => {
       );
 
       // Insert journal_type category
-      await tx.insert(entityCategory).values({
-        tenant_key: tenantKey, category_type_code: "journal_type",
-        entity_key: j.key, entity_revision: 1,
-        category_key: jInput.journal_type_id, created_by: userKey,
-      });
+      if (jInput.journal_type_id) {
+        await tx.insert(entityCategory).values({
+          tenant_key: tenantKey, category_type_code: "journal_type",
+          entity_key: j.key, entity_revision: 1,
+          category_key: jInput.journal_type_id, created_by: userKey,
+        });
+      }
 
       // Insert journal_tag categories
       if (jInput.tags?.length) {
@@ -295,6 +302,7 @@ app.openapi(create, async (c) => {
     revision: 1,
     is_active: true,
     project_id: j.journal.project_key,
+    authority_role_key: j.journal.authority_role_key,
     adjustment_flag: j.journal.adjustment_flag, description: j.journal.description,
     metadata: (j.journal.metadata ?? {}) as Record<string, string>,
     created_at: j.journal.created_at instanceof Date ? j.journal.created_at.toISOString() : String(j.journal.created_at),
@@ -321,13 +329,16 @@ app.openapi(update, async (c) => {
   const voucherKey = Number(c.req.param("voucherId"));
   const body = c.req.valid("json");
 
-  // Check existence
+  // Check existence + authority
   const { rows: checkRows } = await db.execute(sql`
-    SELECT key FROM ${sql.raw(`"${S}".current_voucher`)}
+    SELECT key, authority_role_key FROM ${sql.raw(`"${S}".current_voucher`)}
     WHERE tenant_key = ${tenantKey} AND key = ${voucherKey}
     LIMIT 1
   `);
   if (checkRows.length === 0) return c.json({ error: "Not found" }, 404);
+  const vRow = checkRows[0] as { key: number; authority_role_key: number };
+  const authErr = await authorityCheck(c.get("roleRank"), vRow.authority_role_key, "伝票");
+  if (authErr) return c.json({ error: authErr }, 403);
 
   const result = await db.transaction(async (tx: typeof db) => {
     return bumpVoucherRevision(tx, voucherKey, tenantKey, userKey, {
@@ -379,6 +390,7 @@ app.openapi(update, async (c) => {
       id: j.key, voucher_id: j.voucher_key, book_id: j.book_key,
       posted_at: j.posted_at instanceof Date ? j.posted_at.toISOString() : String(j.posted_at),
       revision: j.revision, is_active: j.is_active, project_id: j.project_key,
+      authority_role_key: j.authority_role_key,
       adjustment_flag: j.adjustment_flag, description: j.description,
       metadata: (j.metadata ?? {}) as Record<string, string>,
       created_at: j.created_at instanceof Date ? j.created_at.toISOString() : String(j.created_at),

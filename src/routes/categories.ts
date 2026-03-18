@@ -21,6 +21,7 @@ registerCrudHandlers<CurrentCategory>(app, routes, {
     category_type_code: body.category_type_code,
     code: body.code, name: body.name,
     parent_category_key: body.parent_category_id ?? null,
+    authority_role_key: c.get("roleKey"),
     created_by: c.get("userKey"),
   }),
   hashCreate: (body) => ({ category_type_code: body.category_type_code, code: body.code, name: body.name }),
@@ -30,6 +31,7 @@ registerCrudHandlers<CurrentCategory>(app, routes, {
     code: body.code ?? cur.code,
     name: body.name ?? cur.name,
     parent_category_key: body.parent_category_id !== undefined ? body.parent_category_id : cur.parent_category_key,
+    authority_role_key: cur.authority_role_key,
     is_active: body.is_active ?? cur.is_active,
     created_by: c.get("userKey"),
   }),
@@ -43,6 +45,7 @@ registerCrudHandlers<CurrentCategory>(app, routes, {
     category_type_code: cur.category_type_code,
     code: cur.code, name: cur.name,
     parent_category_key: cur.parent_category_key,
+    authority_role_key: cur.authority_role_key,
     created_by: c.get("userKey"),
   }),
   hashDeactivate: (cur) => ({
@@ -50,6 +53,7 @@ registerCrudHandlers<CurrentCategory>(app, routes, {
     code: cur.code, name: cur.name,
   }),
   canPurge: (key) => checkReferences("category_key", key, ["category"]),
+  hasAuthority: true,
 });
 
 export default app;

@@ -8,6 +8,8 @@ export type AppVariables = {
   userKey: number;
   userRole: UserRole;
   userName: string;
+  roleKey: number;
+  roleRank: number;
   bookKey: number;
 };
 
@@ -21,6 +23,8 @@ export const contextMiddleware = createMiddleware<{
       c.set("userKey", result.userKey);
       c.set("userRole", result.role);
       c.set("userName", result.userName);
+      c.set("roleKey", result.roleKey);
+      c.set("roleRank", result.roleRank);
     }
   } catch (e) {
     console.error("[contextMiddleware] authenticate error:", e);
