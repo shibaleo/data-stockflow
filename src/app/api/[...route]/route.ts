@@ -15,15 +15,26 @@ function hasApiKey(req: Request): boolean {
   return !!req.headers.get("x-api-key")?.startsWith("sf_");
 }
 
+function hasLocalSession(req: Request): boolean {
+  return !!req.headers.get("cookie")?.includes("__local_session=");
+}
+
 /**
  * Route handler that bridges Clerk auth and Hono.
  *
  * - sf_ API key requests: proxy.ts strips Authorization and sets X-Api-Key,
  *   so we pass directly to Hono (auth.ts reads X-Api-Key).
+ * - Local session requests: __local_session cookie → pass directly to Hono
+ *   (auth.ts reads cookie and verifies HS256 JWT).
  * - Browser requests: Clerk session → inject Bearer token → Hono.
  */
 async function withClerkAuth(req: Request) {
   if (hasApiKey(req)) {
+    return honoHandler(req);
+  }
+
+  // Local password session → pass directly (auth.ts handles the cookie)
+  if (hasLocalSession(req)) {
     return honoHandler(req);
   }
 

@@ -94,6 +94,16 @@ export interface MasterPageConfig {
   extraFieldsFirst?: boolean;
   /** Filter parent candidates based on current dialog extras state */
   parentFilter?: (candidate: MasterRow, extras: Record<string, string>) => boolean;
+  /** If true, name is read-only in the edit dialog (user can only change it in their own settings) */
+  nameReadOnly?: boolean;
+  /** If true, code is read-only in the edit dialog */
+  codeReadOnly?: boolean;
+  /** Hide the create button (entity creation not allowed) */
+  hideCreate?: boolean;
+  /** Hide the delete/deactivate button in the dialog */
+  hideDelete?: boolean;
+  /** Sort items by id (key) instead of code (alphabetical) */
+  sortByKey?: boolean;
   /** Enable color assignment for this entity type */
   hasColor?: boolean;
   /** entity_type value for entity_color table (required when hasColor=true) */
@@ -121,7 +131,7 @@ export interface TreeNode {
   hasChildren: boolean;
 }
 
-export function buildTree(items: MasterRow[], parentKey: string): TreeNode[] {
+export function buildTree(items: MasterRow[], parentKey: string, sortByKey = false): TreeNode[] {
   const nodeMap = new Map<number, TreeNode>();
   for (const item of items) {
     nodeMap.set(item.id, {
@@ -140,7 +150,7 @@ export function buildTree(items: MasterRow[], parentKey: string): TreeNode[] {
     }
   }
   function sortAndSetDepth(nodes: TreeNode[], depth: number) {
-    nodes.sort((a, b) => a.code.localeCompare(b.code));
+    nodes.sort((a, b) => sortByKey ? a.id - b.id : a.code.localeCompare(b.code));
     for (const n of nodes) { n.depth = depth; sortAndSetDepth(n.children, depth + 1); }
   }
   sortAndSetDepth(roots, 0);
@@ -438,11 +448,11 @@ export function MasterItemDialog({
 
           <div className="space-y-2">
             <Label>コード</Label>
-            <Input value={code} onChange={(e) => setCode(e.target.value)} placeholder={config.codePlaceholder ?? "例: code-001"} className="font-mono" />
+            <Input value={code} onChange={(e) => setCode(e.target.value)} placeholder={config.codePlaceholder ?? "例: code-001"} className="font-mono" disabled={!isCreate && config.codeReadOnly} />
           </div>
           <div className="space-y-2">
             <Label>名前</Label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={config.namePlaceholder ?? "例: 名前"} />
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={config.namePlaceholder ?? "例: 名前"} disabled={!isCreate && config.nameReadOnly} />
           </div>
 
           {config.extraFieldsFirst && <ExtraFieldsBlock fields={allExtraFields} extras={extras} setExtras={setExtras} />}
@@ -514,12 +524,12 @@ export function MasterItemDialog({
         </div>
 
         <DialogFooter>
-          {!isCreate && item.is_active && canDelete && (
+          {!isCreate && item.is_active && canDelete && !config.hideDelete && (
             <Button variant="outline" size="sm" className="text-destructive hover:text-destructive mr-auto" onClick={onDeleted}>
               <Trash2 className="h-3.5 w-3.5 mr-1" />無効化
             </Button>
           )}
-          {!isCreate && !item.is_active && (
+          {!isCreate && !item.is_active && !config.hideDelete && (
             <div className="flex gap-1 mr-auto">
               <Button variant="outline" size="sm" onClick={onRestored}>
                 <Undo2 className="h-3.5 w-3.5 mr-1 text-green-400" />復元
@@ -552,13 +562,15 @@ export function PropRow({ label, value, mono, children }: {
 
 // ── Full MasterPage ──
 
-export function MasterPage({ config, headerSlot, afterContent, canDelete, detailExtra }: {
+export function MasterPage({ config, headerSlot, afterContent, canDelete, detailExtra, onColorSaved }: {
   config: MasterPageConfig;
   headerSlot?: ReactNode;
   afterContent?: ReactNode;
   canDelete?: (item: MasterRow) => boolean;
   /** Extra content rendered in the detail dialog */
   detailExtra?: (item: MasterRow) => ReactNode;
+  /** Called after a color is saved (for parent to refresh dependent data) */
+  onColorSaved?: () => void;
 }) {
   const [items, setItems] = useState<MasterRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -608,12 +620,12 @@ export function MasterPage({ config, headerSlot, afterContent, canDelete, detail
     if (config.groupBy) {
       return config.groupBy.sections.map(([value, title]) => {
         const filtered = items.filter((i) => i[config.groupBy!.field] === value);
-        const roots = buildTree(filtered, parentKey);
+        const roots = buildTree(filtered, parentKey, config.sortByKey);
         return { title, roots };
       });
     }
-    return [{ title: undefined as string | undefined, roots: buildTree(items, parentKey) }];
-  }, [items, parentKey, config.groupBy]);
+    return [{ title: undefined as string | undefined, roots: buildTree(items, parentKey, config.sortByKey) }];
+  }, [items, parentKey, config.groupBy, config.sortByKey]);
 
   const handleCreate = () => { setDialogItem(null); setDialogOpen(true); };
   const handleRowClick = (id: number) => {
@@ -668,12 +680,16 @@ export function MasterPage({ config, headerSlot, afterContent, canDelete, detail
           {headerSlot}
         </div>
         <div className="flex gap-2">
-          <Button variant={showInactive ? "secondary" : "outline"} size="sm" onClick={() => setShowInactive((v) => !v)}>
-            {showInactive ? <EyeOff className="h-4 w-4 mr-1" /> : <Eye className="h-4 w-4 mr-1" />}
-            削除済み
-          </Button>
+          {!config.hideDelete && (
+            <Button variant={showInactive ? "secondary" : "outline"} size="sm" onClick={() => setShowInactive((v) => !v)}>
+              {showInactive ? <EyeOff className="h-4 w-4 mr-1" /> : <Eye className="h-4 w-4 mr-1" />}
+              削除済み
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={fetchItems}><RefreshCw className="h-4 w-4" /></Button>
-          <Button size="sm" onClick={handleCreate}><Plus className="h-4 w-4 mr-1" />{config.createLabel ?? "新規作成"}</Button>
+          {!config.hideCreate && (
+            <Button size="sm" onClick={handleCreate}><Plus className="h-4 w-4 mr-1" />{config.createLabel ?? "新規作成"}</Button>
+          )}
         </div>
       </div>
 
@@ -704,9 +720,11 @@ export function MasterPage({ config, headerSlot, afterContent, canDelete, detail
 
       {afterContent}
 
-      <Button className="fixed bottom-6 right-6 h-14 w-14 rounded-full shadow-lg" size="icon" onClick={handleCreate}>
-        <Plus className="h-6 w-6" />
-      </Button>
+      {!config.hideCreate && (
+        <Button className="fixed bottom-6 right-6 h-14 w-14 rounded-full shadow-lg" size="icon" onClick={handleCreate}>
+          <Plus className="h-6 w-6" />
+        </Button>
+      )}
 
       <MasterItemDialog
         open={dialogOpen}
@@ -722,7 +740,7 @@ export function MasterPage({ config, headerSlot, afterContent, canDelete, detail
         canPurge
         detailExtra={dialogItem && detailExtra ? detailExtra(dialogItem) : undefined}
         colorMap={config.hasColor ? colorMap : undefined}
-        onColorSaved={fetchItems}
+        onColorSaved={() => { fetchItems(); onColorSaved?.(); }}
       />
 
       <Dialog open={confirmAction !== null} onOpenChange={(open: boolean) => { if (!open) setConfirmAction(null); }}>

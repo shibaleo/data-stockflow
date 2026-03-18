@@ -1,7 +1,7 @@
 import { createMiddleware } from "hono/factory";
 import { authenticate } from "@/lib/auth";
 
-export type UserRole = "platform" | "audit" | "admin" | "user";
+export type UserRole = "platform" | "admin" | "user" | "auditor";
 
 export type AppVariables = {
   tenantKey: number;

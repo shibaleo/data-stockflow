@@ -17,14 +17,16 @@ registerCrudHandlers<CurrentRole>(app, routes, {
   scope: () => null,
   buildCreate: (body) => ({ code: body.code, name: body.name }),
   hashCreate: (body) => ({ code: body.code, name: body.name }),
-  buildUpdate: (body, cur) => ({
-    code: body.code ?? cur.code, name: body.name ?? cur.name,
-    is_active: body.is_active ?? cur.is_active,
+  buildUpdate: (body, cur, c) => ({
+    code: c.get("userRole") === "platform" ? (body.code ?? cur.code) : cur.code,
+    name: body.name ?? cur.name,
+    is_active: c.get("userRole") === "platform" ? (body.is_active ?? cur.is_active) : cur.is_active,
   }),
   hashUpdate: (body, cur) => ({ code: body.code ?? cur.code, name: body.name ?? cur.name }),
   buildDeactivate: (cur) => ({ code: cur.code, name: cur.name }),
   hashDeactivate: (cur) => ({ code: cur.code, name: cur.name }),
   writeRoles: ["platform"],
+  updateRoles: ["platform", "admin"],
 });
 
 export default app;

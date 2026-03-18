@@ -19,8 +19,8 @@ import {
   Tags,
   Users,
 } from "lucide-react";
-import { UserButton, useUser } from "@clerk/nextjs";
 import { cn } from "@/lib/utils";
+import { UserMenu } from "./user-menu";
 
 const EXPANDED_WIDTH = 224;
 const COLLAPSED_WIDTH = 56;
@@ -97,31 +97,8 @@ export function SidebarNav({
         })}
       </nav>
 
-      <UserSection collapsed={collapsed} />
+      <UserMenu collapsed={collapsed} />
     </>
-  );
-}
-
-function UserSection({ collapsed = false }: { collapsed?: boolean }) {
-  const { user } = useUser();
-  const name = user?.fullName ?? user?.firstName ?? null;
-
-  return (
-    <div className="border-t border-sidebar-border px-3 py-3">
-      <div className="flex items-center gap-2">
-        <UserButton />
-        {name && (
-          <span
-            className={cn(
-              "truncate text-sm text-sidebar-foreground whitespace-nowrap transition-opacity duration-200",
-              collapsed ? "opacity-0 w-0 overflow-hidden" : "opacity-100"
-            )}
-          >
-            {name}
-          </span>
-        )}
-      </div>
-    </div>
   );
 }
 

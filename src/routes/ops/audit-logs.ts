@@ -41,7 +41,7 @@ const list = createRoute({
   },
 });
 
-app.use(list.getRoutingPath(), requireRole("admin", "audit"));
+app.use(list.getRoutingPath(), requireRole("admin", "auditor"));
 app.openapi(list, async (c) => {
   const tenantKey = c.get("tenantKey");
   const query = c.req.valid("query");

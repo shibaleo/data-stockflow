@@ -16,9 +16,9 @@ export interface AuthResult {
 
 const ROLES: readonly string[] = [
   "platform",
-  "audit",
   "admin",
   "user",
+  "auditor",
 ];
 
 // ============================================================
@@ -60,7 +60,7 @@ interface ClerkIdentity {
 const emailCache = new Map<string, { email: string | null; expiresAt: number }>();
 const EMAIL_CACHE_TTL = 10 * 60 * 1000;
 
-/** AuthResult cache keyed by Clerk userId, TTL 5 min */
+/** AuthResult cache keyed by email, TTL 5 min */
 const authCache = new Map<string, { result: AuthResult; expiresAt: number }>();
 const AUTH_CACHE_TTL = 5 * 60 * 1000;
 
@@ -144,55 +144,22 @@ function toAuthResult(row: UserRow): AuthResult | null {
 }
 
 /**
- * Look up user by external_id or email.
- *
- * 1. Search by external_id (Clerk User ID) — fast path for returning users
- * 2. If not found, search by email — first login after invitation
- *    → bind external_id to the matched user (append new revision)
+ * Look up user by email.
+ * Clerk provides the email via Backend API; we match it against the user table.
  */
 async function findUser(
   identity: ClerkIdentity
 ): Promise<AuthResult | null> {
-  // 1. Try external_id (Clerk User ID)
-  const { rows: byExtId } = await db.execute(sql`
+  if (!identity.email) return null;
+  const { rows } = await db.execute(sql`
     SELECT u.key, u.tenant_key, u.role_key, u.name, r.code as role_code
     FROM ${sql.raw(`"${S}".current_user`)} u
     JOIN ${sql.raw(`"${S}".current_role`)} r ON r.key = u.role_key
-    WHERE u.external_id = ${identity.userId}
+    WHERE u.email = ${identity.email}
     LIMIT 1
   `);
-  if (byExtId.length > 0) return toAuthResult(byExtId[0] as UserRow);
-
-  // 2. Try email (invitation flow — first login)
-  if (!identity.email) return null;
-  const { rows: byEmail } = await db.execute(sql`
-    SELECT u.key, u.tenant_key, u.role_key, u.revision, u.code, u.name, u.email,
-           u.revision_hash, r.code as role_code
-    FROM ${sql.raw(`"${S}".current_user`)} u
-    JOIN ${sql.raw(`"${S}".current_role`)} r ON r.key = u.role_key
-    WHERE u.email = ${identity.email} AND u.external_id IS NULL
-    LIMIT 1
-  `);
-  if (byEmail.length === 0) return null;
-
-  const matched = byEmail[0] as UserRow & {
-    revision: number; code: string; name: string; email: string; revision_hash: string;
-  };
-
-  // Bind Clerk User ID by appending a new revision
-  const newRev = matched.revision + 1;
-  await db.execute(sql`
-    INSERT INTO ${sql.raw(`"${S}"."user"`)} (
-      key, revision, external_id, email, tenant_key, role_key, code, name,
-      lines_hash, prev_revision_hash, revision_hash
-    ) VALUES (
-      ${matched.key}, ${newRev}, ${identity.userId}, ${matched.email},
-      ${matched.tenant_key}, ${matched.role_key}, ${matched.code}, ${matched.name},
-      'bind', ${matched.revision_hash}, 'bind'
-    )
-  `);
-
-  return toAuthResult(matched);
+  if (rows.length === 0) return null;
+  return toAuthResult(rows[0] as UserRow);
 }
 
 // ============================================================
@@ -248,8 +215,12 @@ function extractBearerToken(req: Request): string | null {
 function extractSessionCookie(req: Request): string | null {
   const cookieHeader = req.headers.get("cookie");
   if (!cookieHeader) return null;
-  const match = cookieHeader.match(/(?:^|;\s*)__session=([^;]*)/);
-  return match ? match[1] : null;
+  // Local password session takes priority
+  const local = cookieHeader.match(/(?:^|;\s*)__local_session=([^;]*)/);
+  if (local) return local[1];
+  // Clerk session
+  const clerk = cookieHeader.match(/(?:^|;\s*)__session=([^;]*)/);
+  return clerk ? clerk[1] : null;
 }
 
 // ============================================================
@@ -270,13 +241,15 @@ export async function authenticate(
       return verifyApiKey(token);
     }
 
-    // Try Clerk JWKS → cache or DB lookup
+    // Try Clerk JWKS → cache or DB lookup by email
     const clerkIdentity = await verifyClerkToken(token);
     if (clerkIdentity) {
-      const cached = getCachedAuth(clerkIdentity.userId);
-      if (cached) return cached;
+      if (clerkIdentity.email) {
+        const cached = getCachedAuth(clerkIdentity.email);
+        if (cached) return cached;
+      }
       const result = await findUser(clerkIdentity);
-      if (result) setCachedAuth(clerkIdentity.userId, result);
+      if (result && clerkIdentity.email) setCachedAuth(clerkIdentity.email, result);
       return result;
     }
 

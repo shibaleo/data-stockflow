@@ -2,9 +2,9 @@
 
 import { useState, useEffect } from "react";
 import { Menu } from "lucide-react";
-import { UserButton } from "@clerk/nextjs";
 import { Sidebar, SidebarNav } from "./sidebar";
 import { Sheet, SheetTrigger, SheetContent } from "@/components/ui/sheet";
+import { UserMenu } from "./user-menu";
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -40,7 +40,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           data-stockflow
         </span>
         <div className="ml-auto">
-          <UserButton />
+          <UserMenu collapsed />
         </div>
       </header>
 

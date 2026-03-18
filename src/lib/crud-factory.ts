@@ -182,6 +182,8 @@ interface CrudConfig<T extends BaseRow> {
   /** undefined = purge not allowed; function returning null = allowed; returning string = denied with reason */
   canPurge?: (entityKey: number) => Promise<string | null>;
   writeRoles?: UserRole[];
+  /** If set, the UPDATE endpoint uses these roles instead of writeRoles */
+  updateRoles?: UserRole[];
 }
 
 export function registerCrudHandlers<T extends BaseRow>(
@@ -197,9 +199,11 @@ export function registerCrudHandlers<T extends BaseRow>(
     buildDeactivate, hashDeactivate,
     canPurge,
     writeRoles = ["admin", "user"],
+    updateRoles,
   } = config;
 
   const writeGuard = requireRole(...writeRoles);
+  const updateGuard = updateRoles ? requireRole(...updateRoles) : writeGuard;
 
   const getKey = (c: Ctx) => Number(c.req.param(idParam));
   // platform role bypasses tenant/book scope filter
@@ -261,7 +265,7 @@ export function registerCrudHandlers<T extends BaseRow>(
   });
 
   // UPDATE
-  app.use(routes.update.getRoutingPath(), writeGuard);
+  app.use(routes.update.getRoutingPath(), updateGuard);
   app.openapi(routes.update, async (c) => {
     const entityKey = getKey(c);
     const body = c.req.valid("json") as Record<string, unknown>;

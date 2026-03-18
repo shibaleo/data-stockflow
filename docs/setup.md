@@ -107,11 +107,8 @@ node scripts/seed-accounting.mjs
 node scripts/seed-grocery.mjs
 ```
 
-## 6. ログインと自動紐付け
+## 6. ログイン
 
 1. bootstrap で登録したメールアドレスの Google アカウントで Clerk ログイン
-2. システムが Clerk JWT の `sub` → `external_id` で検索 (初回は未登録)
-3. Clerk Backend API からメールアドレスを取得
-4. `email` で一致するユーザーを検索 → ヒット
-5. `external_id` に Clerk User ID を書き込み (append-only で新リビジョン追加)
-6. 以降のログインは `external_id` で即マッチ
+2. Clerk JWT を検証後、Clerk Backend API からメールアドレスを取得
+3. `email` で一致するユーザーを検索 → 認証完了

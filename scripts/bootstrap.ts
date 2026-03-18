@@ -2,9 +2,11 @@
  * Bootstrap: set up one usable tenant from scratch.
  *
  * 1. Generate platform API key   (DB direct — api_key is infra, not audited)
- * 2. Create tenant               (API: POST /tenants)
- * 3. Create admin user           (API: POST /tenants/{id}/users)
- * 4. Generate admin API key      (DB direct — same as step 1)
+ * 2. Configure role names/colors (API: PUT /roles, PUT /entity-colors)
+ * 3. Create tenant               (API: POST /tenants)
+ * 4. Create admin user           (API: POST /tenants/{id}/users)
+ * 5. Set admin password          (API: POST /users/{id}/password)
+ * 6. Generate admin API key      (DB direct — same as step 1)
  *
  * Requires:
  *   - DATABASE_URL, JWT_SECRET in .env
@@ -25,29 +27,35 @@ const TENANT_NAME = "個人会計";
 const ADMIN_EMAIL = "shiba.dog.leo.private@gmail.com";
 const ADMIN_CODE = "admin001";
 const ADMIN_NAME = "管理者";
-const ADMIN_ROLE_ID = 100000000002; // admin role (seeded by migration)
+const ADMIN_ROLE_ID = 100000000001; // admin role (seeded: platform=0, admin=1, user=2, auditor=3)
+const ADMIN_PASSWORD = process.argv[2] || "admin1234"; // override: npx tsx scripts/bootstrap.ts <password>
 
 // ── Helpers ──
 
-async function apiPost<T>(
+async function apiCall<T>(
+  method: string,
   path: string,
-  body: Record<string, unknown>,
+  body: Record<string, unknown> | null,
   token: string,
 ): Promise<T> {
   const res = await fetch(`${BASE}/api/v1${path}`, {
-    method: "POST",
+    method,
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify(body),
+    ...(body ? { body: JSON.stringify(body) } : {}),
   });
   const json = await res.json();
   if (!res.ok) {
-    throw new Error(`POST ${path} failed (${res.status}): ${JSON.stringify(json)}`);
+    throw new Error(`${method} ${path} failed (${res.status}): ${JSON.stringify(json)}`);
   }
   return (json as { data: T }).data;
 }
+
+const apiGet = <T>(path: string, token: string) => apiCall<T>("GET", path, null, token);
+const apiPost = <T>(path: string, body: Record<string, unknown>, token: string) => apiCall<T>("POST", path, body, token);
+const apiPut = <T>(path: string, body: Record<string, unknown>, token: string) => apiCall<T>("PUT", path, body, token);
 
 function upsertEnvVar(content: string, key: string, value: string): string {
   const re = new RegExp(`^${key}=.*$`, "m");
@@ -70,8 +78,27 @@ async function main() {
   });
   console.log("   done.");
 
-  // 2. Create tenant
-  console.log(`2. Creating tenant "${TENANT_NAME}"...`);
+  // 2. Set role display names and colors
+  console.log("2. Configuring roles...");
+  const ROLE_CONFIG: { code: string; name: string; color?: string }[] = [
+    { code: "platform", name: "システム",       color: "#14B8A6" },
+    { code: "admin",    name: "管理者",         color: "#EF4444" },
+    { code: "user",     name: "一般ユーザー" },
+    { code: "auditor",  name: "監査",           color: "#22C55E" },
+  ];
+  const allRoles = await apiGet<{ id: number; code: string }[]>("/roles", platformKey);
+  for (const rc of ROLE_CONFIG) {
+    const role = allRoles.find((r) => r.code === rc.code);
+    if (!role) { console.log(`   skip: ${rc.code} (not found)`); continue; }
+    await apiPut(`/roles/${role.id}`, { name: rc.name }, platformKey);
+    if (rc.color) {
+      await apiPut("/entity-colors", { entity_type: "role", entity_key: role.id, color: rc.color }, platformKey);
+    }
+  }
+  console.log("   done.");
+
+  // 3. Create tenant
+  console.log(`3. Creating tenant "${TENANT_NAME}"...`);
   const tenant = await apiPost<{ id: number }>(
     "/tenants",
     { name: TENANT_NAME },
@@ -79,8 +106,8 @@ async function main() {
   );
   console.log(`   tenant id = ${tenant.id}`);
 
-  // 3. Create admin user
-  console.log(`3. Creating admin user "${ADMIN_EMAIL}"...`);
+  // 4. Create admin user
+  console.log(`4. Creating admin user "${ADMIN_EMAIL}"...`);
   const user = await apiPost<{ id: number }>(
     `/tenants/${tenant.id}/users`,
     {
@@ -93,8 +120,17 @@ async function main() {
   );
   console.log(`   user id = ${user.id}`);
 
-  // 4. Admin API key (tenant-scoped)
-  console.log("4. Creating admin API key...");
+  // 5. Set admin password
+  console.log(`5. Setting admin password...`);
+  await apiPost(
+    `/users/${user.id}/password`,
+    { password: ADMIN_PASSWORD },
+    platformKey,
+  );
+  console.log("   done.");
+
+  // 6. Admin API key (tenant-scoped)
+  console.log("6. Creating admin API key...");
   const { rawKey: adminKey } = await createApiKey({
     userKey: user.id,
     tenantKey: tenant.id,
@@ -118,6 +154,7 @@ async function main() {
   console.log(`ADMIN_API_KEY=${adminKey}`);
   console.log(`\nTenant: ${TENANT_NAME} (id=${tenant.id})`);
   console.log(`Admin:  ${ADMIN_EMAIL} (id=${user.id})`);
+  console.log(`Password: ${ADMIN_PASSWORD}`);
   console.log(`\n.env updated automatically.`);
 
   process.exit(0);

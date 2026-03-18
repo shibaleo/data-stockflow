@@ -1,5 +1,6 @@
 import { createApp } from "@/lib/create-app";
 import { db } from "@/lib/db";
+import { sql } from "drizzle-orm";
 import { user } from "@/lib/db/schema";
 import { listCurrent, getCurrent, getMaxRevision, listHistory, decodeCursor, encodeCursor } from "@/lib/append-only";
 import { userResponseSchema, createUserSchema, updateUserSchema } from "@/lib/validators";
@@ -11,6 +12,7 @@ import { createMapper, defineCrudRoutes } from "@/lib/crud-factory";
 import { createApiKey, listApiKeys, revokeApiKey } from "@/lib/api-keys";
 import type { CurrentUser } from "@/lib/types";
 
+const S = "data_stockflow";
 const app = createApp();
 app.use("*", requireTenant(), requireAuth());
 
@@ -33,7 +35,25 @@ app.openapi(routes.list, async (c) => {
 app.get("/me", async (c) => {
   const row = await getCurrent<CurrentUser>("current_user", { tenant_key: c.get("tenantKey"), key: c.get("userKey") });
   if (!row) return c.json({ error: "Not found" }, 404);
-  return c.json({ data: mapUser(row) }, 200);
+  // Fetch role name + color
+  const roleCode = c.get("userRole");
+  let roleName: string = roleCode;
+  let roleColor: string | null = null;
+  try {
+    const { rows: roleRows } = await db.execute(sql`
+      SELECT r.key, r.name FROM ${sql.raw(`"${S}".current_role`)} r WHERE r.code = ${roleCode} LIMIT 1
+    `);
+    if (roleRows.length > 0) {
+      const rr = roleRows[0] as { key: number; name: string };
+      roleName = rr.name;
+      const { rows: colorRows } = await db.execute(sql`
+        SELECT color FROM ${sql.raw(`"${S}".entity_color`)}
+        WHERE entity_type = 'role' AND entity_key = ${rr.key} LIMIT 1
+      `);
+      if (colorRows.length > 0) roleColor = (colorRows[0] as { color: string }).color;
+    }
+  } catch { /* fallback to code */ }
+  return c.json({ data: { ...mapUser(row), role: roleCode, role_name: roleName, role_color: roleColor } }, 200);
 });
 
 app.openapi(routes.get, async (c) => {
@@ -140,6 +160,67 @@ app.openapi(routes.del, async (c) => {
 app.openapi(routes.history, async (c) => {
   const rows = await listHistory<CurrentUser>("history_user", Number(c.req.param("userId")));
   return c.json({ data: rows.map(mapUser) }, 200);
+});
+
+// ============================================================
+// Password management
+// ============================================================
+
+/** POST /users/me/password — change own password (any authenticated user) */
+app.post("/me/password", async (c) => {
+  const { default: bcrypt } = await import("bcryptjs");
+  const { sql } = await import("drizzle-orm");
+  const userKey = c.get("userKey");
+  if (!userKey) return c.json({ error: "Authentication required" }, 401);
+
+  const body = await c.req.json<{ password?: string }>();
+  if (!body.password || body.password.length < 4) {
+    return c.json({ error: "password must be at least 4 characters" }, 400);
+  }
+
+  const S = "data_stockflow";
+  const hash = await bcrypt.hash(body.password, 10);
+  await db.execute(sql`
+    INSERT INTO ${sql.raw(`"${S}".user_credential`)} (user_key, password_hash, updated_at)
+    VALUES (${userKey}, ${hash}, now())
+    ON CONFLICT (user_key) DO UPDATE SET password_hash = ${hash}, updated_at = now()
+  `);
+
+  recordAudit(c, { action: "update", entityType: "user_credential", entityKey: userKey });
+  return c.json({ message: "Password updated" }, 200);
+});
+
+/** POST /users/:userId/password — set or change password (admin+) */
+app.post("/:userId/password", requireRole("admin"), async (c) => {
+  const { default: bcrypt } = await import("bcryptjs");
+  const { sql } = await import("drizzle-orm");
+  const userKey = Number(c.req.param("userId"));
+  const body = await c.req.json<{ password?: string }>();
+  if (!body.password || body.password.length < 4) {
+    return c.json({ error: "password must be at least 4 characters" }, 400);
+  }
+
+  const S = "data_stockflow";
+  const filter = c.get("userRole") === "platform"
+    ? { key: userKey }
+    : { tenant_key: c.get("tenantKey"), key: userKey };
+  const current = await getCurrent<CurrentUser>("current_user", filter);
+  if (!current) return c.json({ error: "Not found" }, 404);
+
+  const hash = await bcrypt.hash(body.password, 10);
+  await db.execute(sql`
+    INSERT INTO ${sql.raw(`"${S}".user_credential`)} (user_key, password_hash, updated_at)
+    VALUES (${userKey}, ${hash}, now())
+    ON CONFLICT (user_key) DO UPDATE SET password_hash = ${hash}, updated_at = now()
+  `);
+
+  recordAudit(c, { action: "update", entityType: "user_credential", entityKey: userKey });
+  recordEvent(c, {
+    action: "update", entityType: "user_credential", entityKey: userKey,
+    entityName: current.name,
+    summary: `ユーザー「${current.name}」のパスワードを設定しました`,
+  });
+  return c.json({ message: "Password updated" }, 200);
 });
 
 // ============================================================

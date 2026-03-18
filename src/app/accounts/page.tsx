@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useCallback } from "react";
 import { MasterPage, type ExtraField } from "@/components/shared/master-page";
 import { BookSelector } from "@/components/shared/book-selector";
 import { useBooks } from "@/hooks/use-books";
-import { fetchAllPages } from "@/lib/api-client";
+import { api, fetchAllPages } from "@/lib/api-client";
+import { getRoleColor } from "@/lib/role-utils";
 
 interface DisplayAccountRow {
   id: number;
@@ -12,6 +13,13 @@ interface DisplayAccountRow {
   name: string;
   account_type: string;
   parent_id: number | null;
+  color_hex?: string | null;
+}
+
+interface RoleRow {
+  id: number;
+  code: string;
+  name: string;
   color_hex?: string | null;
 }
 
@@ -25,18 +33,22 @@ const DEFAULT_TYPE_LABELS: Record<string, string> = {
   expense: "費用の部",
 };
 
-const AUTHORITY_LABELS: Record<string, string> = {
-  tenant: "テナント",
-  admin: "管理者",
-  user: "ユーザー",
-};
-
 type TabKey = "accounts" | "display-accounts";
 
 export default function AccountsPage() {
   const { books, selectedBookId, setSelectedBookId, selectedBook } = useBooks();
   const [tab, setTab] = useState<TabKey>("accounts");
   const [displayAccounts, setDisplayAccounts] = useState<DisplayAccountRow[]>([]);
+  const [roles, setRoles] = useState<RoleRow[]>([]);
+
+  const fetchRoles = useCallback(async () => {
+    try {
+      const res = await api.get<{ data: RoleRow[] }>("/roles");
+      setRoles(res.data);
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => { fetchRoles(); }, [fetchRoles]);
 
   useEffect(() => {
     if (!selectedBookId) return;
@@ -157,18 +169,39 @@ export default function AccountsPage() {
 
   // ── 表示科目タブ用 ──
 
+  // Map authority_level codes → role display name and color
+  const authorityLabelMap = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const r of roles) {
+      m.set(r.code, r.name);
+    }
+    // "tenant" authority uses the admin role display or fallback
+    if (!m.has("tenant")) m.set("tenant", "テナント");
+    return m;
+  }, [roles]);
+
+  const authorityColorMap = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const r of roles) {
+      m.set(r.code, r.color_hex ?? getRoleColor(r.code));
+    }
+    if (!m.has("tenant")) m.set("tenant", getRoleColor("platform"));
+    return m;
+  }, [roles]);
+
   const daExtraFields = useMemo<ExtraField[]>(
     () => [{
       key: "authority_level",
       label: "権限",
       type: "select" as const,
-      options: Object.entries(AUTHORITY_LABELS).map(([value, label]) => ({ value, label })),
-      format: (v) => AUTHORITY_LABELS[String(v)] ?? String(v),
-      badgeClassName: (v) =>
-        v === "tenant" ? "border-amber-600/50 text-amber-400" :
-        v === "admin" ? "border-blue-600/50 text-blue-400" : "",
+      options: ["tenant", "admin", "user"].map((code) => ({
+        value: code,
+        label: authorityLabelMap.get(code) ?? code,
+      })),
+      format: (v) => authorityLabelMap.get(String(v)) ?? String(v),
+      badgeColor: (v) => authorityColorMap.get(String(v)),
     }],
-    [],
+    [authorityLabelMap, authorityColorMap],
   );
 
   const daDialogExtraFields = useMemo<ExtraField[]>(

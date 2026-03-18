@@ -1,10 +1,6 @@
-import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import { clerkMiddleware } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-
-const isPublicRoute = createRouteMatcher([
-  "/api/(.*)",
-]);
 
 /**
  * sf_ API key → strip Authorization header so Clerk doesn't crash
@@ -17,6 +13,10 @@ function hasApiKey(req: NextRequest): boolean {
   return header.slice(7).startsWith("sf_");
 }
 
+function hasLocalSession(req: NextRequest): boolean {
+  return !!req.cookies.get("__local_session")?.value;
+}
+
 export default function middleware(req: NextRequest) {
   if (hasApiKey(req)) {
     const token = req.headers.get("authorization")!.slice(7);
@@ -26,12 +26,14 @@ export default function middleware(req: NextRequest) {
     return NextResponse.next({ request: { headers } });
   }
 
-  // All other requests → Clerk middleware
-  return clerkMiddleware(async (auth, r) => {
-    if (!isPublicRoute(r)) {
-      await auth.protect();
-    }
-  })(req, {} as any);
+  // Local password session → skip Clerk (auth.ts handles HS256 JWT)
+  if (hasLocalSession(req)) {
+    return NextResponse.next();
+  }
+
+  // Clerk middleware — all pages are public (AuthGate handles access control).
+  // Clerk only needs to run so that useAuth() hooks work in the client.
+  return clerkMiddleware()(req, {} as any);
 }
 
 export const config = {

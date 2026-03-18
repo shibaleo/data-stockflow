@@ -558,6 +558,12 @@ export const entityColor = s.table(
   (t) => [primaryKey({ columns: [t.entity_type, t.entity_key] })]
 );
 
+export const userCredential = s.table("user_credential", {
+  userKey: bigint("user_key", { mode: "number" }).primaryKey(),
+  passwordHash: text("password_hash").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 // ============================================================
 // ログ系
 // ============================================================

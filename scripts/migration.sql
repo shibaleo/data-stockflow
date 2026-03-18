@@ -434,6 +434,13 @@ CREATE TABLE data_stockflow.entity_color (
   PRIMARY KEY (entity_type, entity_key)
 );
 
+-- ---- user_credential (mutable, password hash) ----
+CREATE TABLE data_stockflow.user_credential (
+  user_key       BIGINT PRIMARY KEY,
+  password_hash  TEXT NOT NULL,
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 -- ============================================================
 -- VIEWS: current_* (latest valid revision)
 -- ============================================================
@@ -563,10 +570,10 @@ SELECT * FROM data_stockflow.journal ORDER BY key, revision;
 
 -- Roles (system seed)
 INSERT INTO data_stockflow.role (key, revision, code, name, lines_hash, prev_revision_hash, revision_hash) VALUES
-  (nextval('data_stockflow.role_key_seq'), 1, 'platform', 'Platform Admin', 'bootstrap', 'genesis', 'bootstrap'),
-  (nextval('data_stockflow.role_key_seq'), 1, 'audit',    'Auditor',        'bootstrap', 'genesis', 'bootstrap'),
-  (nextval('data_stockflow.role_key_seq'), 1, 'admin',    'Tenant Admin',   'bootstrap', 'genesis', 'bootstrap'),
-  (nextval('data_stockflow.role_key_seq'), 1, 'user',     'User',           'bootstrap', 'genesis', 'bootstrap');
+  (nextval('data_stockflow.role_key_seq'), 1, 'platform', 'Platform',  'bootstrap', 'genesis', 'bootstrap'),
+  (nextval('data_stockflow.role_key_seq'), 1, 'admin',    'Admin',     'bootstrap', 'genesis', 'bootstrap'),
+  (nextval('data_stockflow.role_key_seq'), 1, 'user',     'User',      'bootstrap', 'genesis', 'bootstrap'),
+  (nextval('data_stockflow.role_key_seq'), 1, 'auditor',  'Auditor',   'bootstrap', 'genesis', 'bootstrap');
 
 -- Category types (system seed)
 -- 各ドメインエンティティに種別（単一）、仕訳のみタグ（複数可）

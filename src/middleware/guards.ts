@@ -72,7 +72,7 @@ export const requireBook = () =>
 export const requireWritable = () =>
   createMiddleware<{ Variables: AppVariables }>(async (c, next) => {
     if (
-      c.get("userRole") === "audit" &&
+      c.get("userRole") === "auditor" &&
       c.req.method !== "GET" &&
       c.req.method !== "HEAD" &&
       c.req.method !== "OPTIONS"

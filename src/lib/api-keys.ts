@@ -8,7 +8,7 @@ import type { UserRole } from "@/middleware/context";
 const S = "data_stockflow";
 
 const PREFIX = "sf_";
-const ROLES: readonly string[] = ["platform", "audit", "admin", "user"];
+const ROLES: readonly string[] = ["platform", "admin", "user", "auditor"];
 
 function getSecret(): Uint8Array {
   const secret = process.env.JWT_SECRET;
