@@ -263,9 +263,11 @@ const da1300 = await dacct({ code: "DA-1300", name: "その他流動資産", acc
 const da1500 = await dacct({ code: "DA-1500", name: "固定資産・預金", account_type: "asset", parent_id: da1000, sort_order: 150, authority_level: "tenant" });
 
 // BS: 負債
-const da2000 = await dacct({ code: "DA-2000", name: "負債", account_type: "liability", sort_order: 200, authority_level: "tenant" });
-const da2100 = await dacct({ code: "DA-2100", name: "未払金・クレジット", account_type: "liability", parent_id: da2000, sort_order: 210, authority_level: "tenant" });
-const da2500 = await dacct({ code: "DA-2500", name: "借入金", account_type: "liability", parent_id: da2000, sort_order: 250, authority_level: "tenant" });
+const da2000 = await dacct({ code: "DA-2000", name: "流動負債", account_type: "liability", sort_order: 200, authority_level: "tenant" });
+const da2100 = await dacct({ code: "DA-2100", name: "クレジット", account_type: "liability", parent_id: da2000, sort_order: 210, authority_level: "tenant" });
+const da2200 = await dacct({ code: "DA-2200", name: "未払費用", account_type: "liability", parent_id: da2000, sort_order: 220, authority_level: "tenant" });
+const da2500 = await dacct({ code: "DA-2500", name: "固定負債", account_type: "liability", sort_order: 250, authority_level: "tenant" });
+const da2510 = await dacct({ code: "DA-2510", name: "借入金", account_type: "liability", parent_id: da2500, sort_order: 251, authority_level: "tenant" });
 
 // BS: 純資産
 const da3000 = await dacct({ code: "DA-3000", name: "純資産", account_type: "equity", sort_order: 300, authority_level: "tenant" });

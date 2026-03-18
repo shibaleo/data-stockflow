@@ -257,7 +257,16 @@ export function registerCrudHandlers<T extends BaseRow>(
   app.openapi(routes.create, async (c) => {
     const body = c.req.valid("json") as Record<string, unknown>;
     const hashes = computeMasterHashes(hashCreate(body), null);
-    const [created] = await db.insert(table).values({ ...buildCreate(body, c), ...hashes }).returning();
+    let created;
+    try {
+      [created] = await db.insert(table).values({ ...buildCreate(body, c), ...hashes }).returning();
+    } catch (e: unknown) {
+      if (e && typeof e === "object" && "code" in e && (e as { code: string }).code === "23505") {
+        const code = body.code as string | undefined;
+        return c.json({ error: code ? `コード「${code}」は既に使用されています（削除済みを含む）` : "一意制約に違反しています" }, 409);
+      }
+      throw e;
+    }
     recordAudit(c, { action: "create", entityType, entityKey: created.key });
     const name = (body.name as string) ?? (body.code as string) ?? "";
     recordEvent(c, {
