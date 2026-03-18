@@ -19,6 +19,9 @@ import "dotenv/config";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { createApiKey } from "@/lib/api-keys";
+import { db } from "@/lib/db";
+import { category } from "@/lib/db/schema";
+import { computeMasterHashes } from "@/lib/entity-hash";
 
 const BASE = process.env.BASE_URL || "http://localhost:3000";
 
@@ -27,7 +30,6 @@ const TENANT_NAME = "個人会計";
 const ADMIN_EMAIL = "shiba.dog.leo.private@gmail.com";
 const ADMIN_CODE = "admin001";
 const ADMIN_NAME = "管理者";
-const ADMIN_ROLE_ID = 100000000001; // admin role (seeded: platform=0, admin=1, user=2, auditor=3)
 const ADMIN_PASSWORD = process.argv[2] || "admin1234"; // override: npx tsx scripts/bootstrap.ts <password>
 
 // ── Helpers ──
@@ -81,7 +83,8 @@ async function main() {
   // 2. Set role display names and colors
   console.log("2. Configuring roles...");
   const ROLE_CONFIG: { code: string; name: string; color?: string }[] = [
-    { code: "platform", name: "システム",       color: "#14B8A6" },
+    { code: "platform", name: "ベンダー",       color: "#14B8A6" },
+    { code: "tenant",   name: "システム",       color: "#8B5CF6" },
     { code: "admin",    name: "管理者",         color: "#EF4444" },
     { code: "user",     name: "一般ユーザー" },
     { code: "auditor",  name: "監査",           color: "#22C55E" },
@@ -106,15 +109,43 @@ async function main() {
   );
   console.log(`   tenant id = ${tenant.id}`);
 
+  // 3.5 Seed system journal_type categories (DB direct)
+  console.log("3.5 Seeding system journal types...");
+  const platformRole = allRoles.find((r) => r.code === "platform");
+  if (!platformRole) throw new Error("platform role not found");
+  const SYSTEM_JOURNAL_TYPES = [
+    { code: "normal",    name: "通常仕訳" },
+    { code: "adjusting", name: "決算整理仕訳" },
+    { code: "closing",   name: "損益振替仕訳" },
+  ];
+  for (const jt of SYSTEM_JOURNAL_TYPES) {
+    const hashes = computeMasterHashes(
+      { category_type_code: "journal_type", code: jt.code, name: jt.name },
+      null,
+    );
+    await db.insert(category).values({
+      tenant_key: tenant.id,
+      category_type_code: "journal_type",
+      code: jt.code,
+      name: jt.name,
+      authority_role_key: platformRole.id,
+      created_by: 0,
+      ...hashes,
+    });
+  }
+  console.log("   done.");
+
   // 4. Create admin user
   console.log(`4. Creating admin user "${ADMIN_EMAIL}"...`);
+  const adminRole = allRoles.find((r) => r.code === "admin");
+  if (!adminRole) throw new Error("admin role not found");
   const user = await apiPost<{ id: number }>(
     `/tenants/${tenant.id}/users`,
     {
       email: ADMIN_EMAIL,
       code: ADMIN_CODE,
       name: ADMIN_NAME,
-      role_id: ADMIN_ROLE_ID,
+      role_id: adminRole.id,
     },
     platformKey,
   );

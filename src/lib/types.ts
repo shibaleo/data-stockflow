@@ -24,7 +24,6 @@ export interface CurrentTenant extends BaseEntity {
 export interface CurrentRole extends BaseEntity {
   code: string;
   name: string;
-  authority_rank: number;
   is_active: boolean;
 }
 

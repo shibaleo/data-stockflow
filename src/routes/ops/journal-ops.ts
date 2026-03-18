@@ -92,7 +92,7 @@ app.openapi(reverse, async (c) => {
     key: journalKey,
   });
   if (!current) return c.json({ error: "Journal not found" }, 404);
-  const authErr = await authorityCheck(c.get("roleRank"), current.authority_role_key, "仕訳");
+  const authErr = await authorityCheck(c.get("roleKey"), current.authority_role_key, "仕訳");
   if (authErr) return c.json({ error: authErr }, 403);
   if (!current.is_active)
     return c.json({ error: "Cannot reverse an inactive journal" }, 422);

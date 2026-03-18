@@ -61,6 +61,15 @@ async function cat(typeCode, code, name, parentId) {
   return d;
 }
 
+async function get(path) {
+  const res = await fetch(`${API}${path}`, {
+    headers: { Authorization: `Bearer ${TOKEN}` },
+  });
+  const data = await res.json();
+  if (!res.ok) { console.error(`  FAIL GET ${path}: ${JSON.stringify(data)}`); return null; }
+  return data.data;
+}
+
 // -- 種別（各エンティティ） --
 await cat("user_type", "default", "デフォルト");
 await cat("book_type", "default", "デフォルト");
@@ -70,9 +79,14 @@ await cat("counterparty_type", "default", "デフォルト");
 await cat("project_type", "default", "デフォルト");
 await cat("voucher_type", "default", "デフォルト");
 
-// -- 仕訳種別 --
-const catNormal = await cat("journal_type", "normal", "経常");
-const catSpecial = await cat("journal_type", "special", "特別");
+// -- 仕訳種別（system seeded by bootstrap — search by code） --
+const allCats = await get("/categories");
+const catNormal = allCats?.find((c) => c.category_type_code === "journal_type" && c.code === "normal");
+const catAdjusting = allCats?.find((c) => c.category_type_code === "journal_type" && c.code === "adjusting");
+const catClosing = allCats?.find((c) => c.category_type_code === "journal_type" && c.code === "closing");
+if (catNormal) console.log(`  journal_type/normal → id=${catNormal.id} (system)`);
+if (catAdjusting) console.log(`  journal_type/adjusting → id=${catAdjusting.id} (system)`);
+if (catClosing) console.log(`  journal_type/closing → id=${catClosing.id} (system)`);
 
 // -- 仕訳タグ（journal のみ） --
 const tagFixed = await cat("journal_tag", "fixed", "固定費");
@@ -365,7 +379,7 @@ if (!hourBook) {
   console.log("\n=== 工数：差異 ===");
   const h3000 = await hacct({ code: "H3000", name: "時間差異", account_type: "equity" });
 
-  if (h1000 && h4000 && h5000 && h3000 && proj && catNormal && catSpecial) {
+  if (h1000 && h4000 && h5000 && h3000 && proj && catNormal && catAdjusting) {
     console.log("\n=== 工数管理サンプル伝票 ===");
 
     // 月初: 予定工数 160h を投入
@@ -389,7 +403,7 @@ if (!hourBook) {
         {
           book_id: HB,
           posted_at: "2025-03-31T00:00:00Z",
-          journal_type_id: catSpecial.id,
+          journal_type_id: catAdjusting.id,
           project_id: proj.id,
           description: "3月作業実績",
           lines: [
@@ -401,7 +415,7 @@ if (!hourBook) {
         {
           book_id: BOOK_ID,
           posted_at: "2025-03-31T00:00:00Z",
-          journal_type_id: catSpecial.id,
+          journal_type_id: catAdjusting.id,
           project_id: proj.id,
           description: "人件費計上",
           lines: [

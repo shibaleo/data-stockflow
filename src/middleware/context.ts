@@ -1,7 +1,7 @@
 import { createMiddleware } from "hono/factory";
 import { authenticate } from "@/lib/auth";
 
-export type UserRole = "platform" | "admin" | "user" | "auditor";
+export type UserRole = "platform" | "tenant" | "admin" | "user" | "auditor";
 
 export type AppVariables = {
   tenantKey: number;
@@ -9,7 +9,6 @@ export type AppVariables = {
   userRole: UserRole;
   userName: string;
   roleKey: number;
-  roleRank: number;
   bookKey: number;
 };
 
@@ -24,7 +23,6 @@ export const contextMiddleware = createMiddleware<{
       c.set("userRole", result.role);
       c.set("userName", result.userName);
       c.set("roleKey", result.roleKey);
-      c.set("roleRank", result.roleRank);
     }
   } catch (e) {
     console.error("[contextMiddleware] authenticate error:", e);

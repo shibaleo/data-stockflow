@@ -75,7 +75,6 @@ export const roleResponseSchema = z.object({
   id: z.number(),
   code: z.string(),
   name: z.string(),
-  authority_rank: z.number(),
   is_active: z.boolean(),
   revision: z.number(),
   created_at: z.string(),

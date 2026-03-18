@@ -1,51 +1,48 @@
 /**
- * Authority helper — role-rank-based entity editing control.
+ * Authority helper — matrix-based entity editing control.
  *
  * Each entity stores the creator's role_key as authority_role_key.
- * On update/deactivate/purge, we compare the user's roleRank against
- * the entity's authority_role_key's rank. Higher rank = more authority.
+ * On update/deactivate/purge, we resolve both the user's roleKey and the
+ * entity's authority_role_key to role codes, then check canModifyByRole().
  */
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
+import { canModifyByRole } from "@/lib/permissions";
+import type { UserRole } from "@/middleware/context";
 
 const S = "data_stockflow";
 
-/** In-memory cache: role_key → authority_rank */
-const rankCache = new Map<number, number>();
+/** In-memory cache: role_key → role code */
+const codeCache = new Map<number, UserRole>();
 
-export async function getRoleRank(roleKey: number): Promise<number> {
-  const cached = rankCache.get(roleKey);
+export async function getRoleCode(roleKey: number): Promise<UserRole | null> {
+  const cached = codeCache.get(roleKey);
   if (cached !== undefined) return cached;
 
   const { rows } = await db.execute(sql`
-    SELECT authority_rank FROM ${sql.raw(`"${S}".current_role`)}
+    SELECT code FROM ${sql.raw(`"${S}".current_role`)}
     WHERE key = ${roleKey} LIMIT 1
   `);
-  const rank = rows.length > 0
-    ? (rows[0] as { authority_rank: number }).authority_rank
-    : 0;
-  rankCache.set(roleKey, rank);
-  return rank;
+  if (rows.length === 0) return null;
+  const code = (rows[0] as { code: string }).code as UserRole;
+  codeCache.set(roleKey, code);
+  return code;
 }
 
 /**
- * Check if a user with `userRank` can modify an entity
- * that was created by a role with `entityAuthorityRoleKey`.
+ * Check if a user with `userRoleKey` can modify an entity
+ * whose authority_role_key is `entityAuthorityRoleKey`.
  *
- * Returns true if userRank >= entity's role rank.
- */
-/**
- * Check if a user with `userRank` can modify an entity
- * that was created by a role with `entityAuthorityRoleKey`.
- *
- * Returns true if userRank >= entity's role rank.
+ * Resolves both keys to role codes and uses the authority matrix.
  */
 export async function canModify(
-  userRank: number,
+  userRoleKey: number,
   entityAuthorityRoleKey: number,
 ): Promise<boolean> {
-  const entityRank = await getRoleRank(entityAuthorityRoleKey);
-  return userRank >= entityRank;
+  const userCode = await getRoleCode(userRoleKey);
+  const entityCode = await getRoleCode(entityAuthorityRoleKey);
+  if (!userCode || !entityCode) return false;
+  return canModifyByRole(userCode, entityCode);
 }
 
 /**
@@ -53,10 +50,10 @@ export async function canModify(
  * Returns null if the user is allowed.
  */
 export async function authorityCheck(
-  userRank: number,
+  userRoleKey: number,
   entityAuthorityRoleKey: number,
   entityLabel: string,
 ): Promise<string | null> {
-  const ok = await canModify(userRank, entityAuthorityRoleKey);
+  const ok = await canModify(userRoleKey, entityAuthorityRoleKey);
   return ok ? null : `権限不足：この${entityLabel}を変更する権限がありません`;
 }

@@ -17,8 +17,9 @@ import { recordAudit, type AuditEntityType } from "@/lib/audit";
 import { recordEvent, computeChanges } from "@/lib/event-log";
 import { computeMasterHashes } from "@/lib/entity-hash";
 import { authorityCheck } from "@/lib/authority";
+import { ENTITY_PERMISSIONS } from "@/lib/permissions";
 import type { Context } from "hono";
-import type { AppVariables, UserRole } from "@/middleware/context";
+import type { AppVariables } from "@/middleware/context";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type DrizzleTable = any;
@@ -184,9 +185,6 @@ interface CrudConfig<T extends BaseRow> {
   hashDeactivate: (current: T) => Record<string, unknown>;
   /** undefined = purge not allowed; function returning null = allowed; returning string = denied with reason */
   canPurge?: (entityKey: number) => Promise<string | null>;
-  writeRoles?: UserRole[];
-  /** If set, the UPDATE endpoint uses these roles instead of writeRoles */
-  updateRoles?: UserRole[];
   /** If true, check authority_role_key on update/deactivate/restore/purge */
   hasAuthority?: boolean;
 }
@@ -203,13 +201,15 @@ export function registerCrudHandlers<T extends BaseRow>(
     buildUpdate, hashUpdate,
     buildDeactivate, hashDeactivate,
     canPurge,
-    writeRoles = ["admin", "user"],
-    updateRoles,
     hasAuthority = false,
   } = config;
 
-  const writeGuard = requireRole(...writeRoles);
-  const updateGuard = updateRoles ? requireRole(...updateRoles) : writeGuard;
+  const perms = ENTITY_PERMISSIONS[entityType];
+  const createGuard = requireRole(...perms.create);
+  const updateGuard = requireRole(...perms.update);
+  const deleteGuard = requireRole(...perms.delete);
+  const restoreGuard = requireRole(...perms.restore);
+  const purgeGuard = requireRole(...perms.purge);
 
   const getKey = (c: Ctx) => Number(c.req.param(idParam));
   // platform role bypasses tenant/book scope filter
@@ -253,7 +253,7 @@ export function registerCrudHandlers<T extends BaseRow>(
   });
 
   // CREATE
-  app.use(routes.create.getRoutingPath(), writeGuard);
+  app.use(routes.create.getRoutingPath(), createGuard);
   app.openapi(routes.create, async (c) => {
     const body = c.req.valid("json") as Record<string, unknown>;
     const hashes = computeMasterHashes(hashCreate(body), null);
@@ -275,7 +275,7 @@ export function registerCrudHandlers<T extends BaseRow>(
     if (!hasAuthority) return null;
     const ark = (current as T & { authority_role_key?: number }).authority_role_key;
     if (ark == null) return null;
-    const err = await authorityCheck(c.get("roleRank"), ark, entityLabel);
+    const err = await authorityCheck(c.get("roleKey"), ark, entityLabel);
     if (err) return c.json({ error: err }, 403);
     return null;
   };
@@ -310,7 +310,7 @@ export function registerCrudHandlers<T extends BaseRow>(
   });
 
   // DELETE (deactivate) — same reference check as purge
-  app.use(routes.del.getRoutingPath(), writeGuard);
+  app.use(routes.del.getRoutingPath(), deleteGuard);
   app.openapi(routes.del, async (c) => {
     const entityKey = getKey(c);
     const current = await getCurrent<T>(viewName, getFilter(c, entityKey));
@@ -346,7 +346,7 @@ export function registerCrudHandlers<T extends BaseRow>(
   });
 
   // RESTORE — reactivate a deactivated entity
-  app.use(routes.restore.getRoutingPath(), writeGuard);
+  app.use(routes.restore.getRoutingPath(), restoreGuard);
   app.openapi(routes.restore, async (c) => {
     const entityKey = getKey(c);
     const current = await getLatest<T>(tableName, entityKey);
@@ -378,7 +378,7 @@ export function registerCrudHandlers<T extends BaseRow>(
   });
 
   // PURGE — insert revision with valid_to=now() to hide from current_* views
-  app.use(routes.purge.getRoutingPath(), writeGuard);
+  app.use(routes.purge.getRoutingPath(), purgeGuard);
   app.openapi(routes.purge, async (c) => {
     if (!canPurge) {
       return c.json({ error: "Purge not supported for this entity" }, 403);

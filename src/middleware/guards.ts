@@ -22,12 +22,11 @@ export const requireAuth = () =>
     await next();
   });
 
-// platform role always has full access.
-// Other roles must be explicitly listed in requireRole().
+// Check if the user's role is in the allowed list (bus matrix).
 export const requireRole = (...roles: UserRole[]) =>
   createMiddleware<{ Variables: AppVariables }>(async (c, next) => {
     const userRole = c.get("userRole");
-    if (userRole === "platform" || roles.includes(userRole)) {
+    if (roles.includes(userRole)) {
       await next();
       return;
     }

@@ -25,8 +25,6 @@ registerCrudHandlers<CurrentRole>(app, routes, {
   hashUpdate: (body, cur) => ({ code: body.code ?? cur.code, name: body.name ?? cur.name }),
   buildDeactivate: (cur) => ({ code: cur.code, name: cur.name }),
   hashDeactivate: (cur) => ({ code: cur.code, name: cur.name }),
-  writeRoles: ["platform"],
-  updateRoles: ["platform", "admin"],
 });
 
 export default app;

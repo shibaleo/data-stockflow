@@ -32,7 +32,6 @@ registerCrudHandlers<CurrentTenant>(app, routes, {
   hashUpdate: (body, cur) => ({ name: body.name ?? cur.name }),
   buildDeactivate: (cur) => ({ name: cur.name, locked_until: cur.locked_until }),
   hashDeactivate: (cur) => ({ name: cur.name }),
-  writeRoles: ["platform"],
 });
 
 // ============================================================

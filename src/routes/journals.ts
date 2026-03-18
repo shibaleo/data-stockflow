@@ -182,7 +182,7 @@ app.openapi(updateRoute, async (c) => {
 
   const current = await getJournalForVoucher(voucherKey, journalKey);
   if (!current) return c.json({ error: "Not found" }, 404);
-  const authErr = await authorityCheck(c.get("roleRank"), current.authority_role_key, "仕訳");
+  const authErr = await authorityCheck(c.get("roleKey"), current.authority_role_key, "仕訳");
   if (authErr) return c.json({ error: authErr }, 403);
 
   // Balance check
@@ -310,7 +310,7 @@ app.openapi(deleteRoute, async (c) => {
 
   const current = await getJournalForVoucher(voucherKey, journalKey);
   if (!current) return c.json({ error: "Not found" }, 404);
-  const authErr = await authorityCheck(c.get("roleRank"), current.authority_role_key, "仕訳");
+  const authErr = await authorityCheck(c.get("roleKey"), current.authority_role_key, "仕訳");
   if (authErr) return c.json({ error: authErr }, 403);
   if (!current.is_active) return c.json({ error: "Already deactivated" }, 422);
 

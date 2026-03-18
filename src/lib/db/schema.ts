@@ -80,7 +80,6 @@ export const role = s.table(
     revision_hash: text("revision_hash").notNull(),
     code: text("code").notNull(),
     name: text("name").notNull(),
-    authority_rank: integer("authority_rank").default(0).notNull(),
     is_active: boolean("is_active").default(true).notNull(),
   },
   (t) => [

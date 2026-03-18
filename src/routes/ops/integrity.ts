@@ -69,7 +69,7 @@ const headerChainRoute = createRoute({
   },
 });
 
-app.use(headerChainRoute.getRoutingPath(), requireRole("admin", "auditor"));
+app.use(headerChainRoute.getRoutingPath(), requireRole("platform", "tenant", "admin", "auditor"));
 app.openapi(headerChainRoute, async (c) => {
   const tenantKey = c.get("tenantKey");
 
@@ -187,7 +187,7 @@ const revisionChainRoute = createRoute({
   },
 });
 
-app.use(revisionChainRoute.getRoutingPath(), requireRole("admin", "auditor"));
+app.use(revisionChainRoute.getRoutingPath(), requireRole("platform", "tenant", "admin", "auditor"));
 app.openapi(revisionChainRoute, async (c) => {
   const journalKey = Number(c.req.param("journalId"));
 

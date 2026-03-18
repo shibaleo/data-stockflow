@@ -65,7 +65,7 @@ app.openapi(routes.get, async (c) => {
   return c.json({ data: mapUser(row) }, 200);
 });
 
-app.use(routes.create.getRoutingPath(), requireRole("admin"));
+app.use(routes.create.getRoutingPath(), requireRole("platform", "tenant"));
 app.openapi(routes.create, async (c) => {
   const body = c.req.valid("json") as Record<string, unknown>;
   const email = body.email as string;
@@ -90,7 +90,7 @@ app.openapi(routes.create, async (c) => {
   return c.json({ data: mapUser(created as unknown as CurrentUser) }, 201);
 });
 
-app.use(routes.update.getRoutingPath(), requireRole("admin"));
+app.use(routes.update.getRoutingPath(), requireRole("platform", "tenant"));
 app.openapi(routes.update, async (c) => {
   const userKey = Number(c.req.param("userId"));
   const body = c.req.valid("json") as Record<string, unknown>;
@@ -123,7 +123,7 @@ app.openapi(routes.update, async (c) => {
   return c.json({ data: mapUser(updated as unknown as CurrentUser) }, 200);
 });
 
-app.use(routes.del.getRoutingPath(), requireRole("admin"));
+app.use(routes.del.getRoutingPath(), requireRole("platform", "tenant"));
 app.openapi(routes.del, async (c) => {
   const userKey = Number(c.req.param("userId"));
 
@@ -191,7 +191,7 @@ app.post("/me/password", async (c) => {
 });
 
 /** POST /users/:userId/password — set or change password (admin+) */
-app.post("/:userId/password", requireRole("admin"), async (c) => {
+app.post("/:userId/password", requireRole("platform", "tenant"), async (c) => {
   const { default: bcrypt } = await import("bcryptjs");
   const { sql } = await import("drizzle-orm");
   const userKey = Number(c.req.param("userId"));

@@ -8,7 +8,7 @@ import type { UserRole } from "@/middleware/context";
 const S = "data_stockflow";
 
 const PREFIX = "sf_";
-const ROLES: readonly string[] = ["platform", "admin", "user", "auditor"];
+const ROLES: readonly string[] = ["platform", "tenant", "admin", "user", "auditor"];
 
 function getSecret(): Uint8Array {
   const secret = process.env.JWT_SECRET;
@@ -111,19 +111,16 @@ export async function verifyApiKey(
   // Fetch user name + role info for event log context
   let userName = "api-key";
   let roleKey = 0;
-  let roleRank = 0;
   try {
     const { rows: userRows } = await db.execute(sql`
-      SELECT u.name, u.role_key, r.authority_rank
+      SELECT u.name, u.role_key
       FROM ${sql.raw(`"${S}".current_user`)} u
-      JOIN ${sql.raw(`"${S}".current_role`)} r ON r.key = u.role_key
       WHERE u.key = ${userKey} LIMIT 1
     `);
     if (userRows.length > 0) {
-      const row = userRows[0] as { name: string; role_key: number; authority_rank: number };
+      const row = userRows[0] as { name: string; role_key: number };
       userName = row.name;
       roleKey = row.role_key;
-      roleRank = row.authority_rank;
     }
   } catch { /* fallback */ }
 
@@ -134,7 +131,6 @@ export async function verifyApiKey(
     roleCode: role,
     userName,
     roleKey,
-    roleRank,
   };
 }
 

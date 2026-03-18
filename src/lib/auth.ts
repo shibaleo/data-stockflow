@@ -13,11 +13,11 @@ export interface AuthResult {
   roleCode: string;
   userName: string;
   roleKey: number;
-  roleRank: number;
 }
 
 const ROLES: readonly string[] = [
   "platform",
+  "tenant",
   "admin",
   "user",
   "auditor",
@@ -132,7 +132,7 @@ async function verifyClerkToken(token: string): Promise<ClerkIdentity | null> {
   }
 }
 
-type UserRow = { key: number; tenant_key: number; role_key: number; role_code: string; authority_rank: number; name: string };
+type UserRow = { key: number; tenant_key: number; role_key: number; role_code: string; name: string };
 
 function toAuthResult(row: UserRow): AuthResult | null {
   if (!ROLES.includes(row.role_code)) return null;
@@ -143,7 +143,6 @@ function toAuthResult(row: UserRow): AuthResult | null {
     roleCode: row.role_code,
     userName: row.name,
     roleKey: row.role_key,
-    roleRank: row.authority_rank,
   };
 }
 
@@ -156,7 +155,7 @@ async function findUser(
 ): Promise<AuthResult | null> {
   if (!identity.email) return null;
   const { rows } = await db.execute(sql`
-    SELECT u.key, u.tenant_key, u.role_key, u.name, r.code as role_code, r.authority_rank
+    SELECT u.key, u.tenant_key, u.role_key, u.name, r.code as role_code
     FROM ${sql.raw(`"${S}".current_user`)} u
     JOIN ${sql.raw(`"${S}".current_role`)} r ON r.key = u.role_key
     WHERE u.email = ${identity.email}
@@ -190,12 +189,12 @@ async function verifyDevToken(token: string): Promise<AuthResult | null> {
     if (!userKey || !tenantKey || !roleCode) return null;
     if (!ROLES.includes(roleCode)) return null;
 
-    // Lookup role key + rank from DB
+    // Lookup role key from DB
     const { rows: roleRows } = await db.execute(sql`
-      SELECT key, authority_rank FROM ${sql.raw(`"${S}".current_role`)}
+      SELECT key FROM ${sql.raw(`"${S}".current_role`)}
       WHERE code = ${roleCode} LIMIT 1
     `);
-    const roleRow = roleRows[0] as { key: number; authority_rank: number } | undefined;
+    const roleRow = roleRows[0] as { key: number } | undefined;
 
     return {
       userKey,
@@ -204,7 +203,6 @@ async function verifyDevToken(token: string): Promise<AuthResult | null> {
       roleCode,
       userName,
       roleKey: roleRow?.key ?? 0,
-      roleRank: roleRow?.authority_rank ?? 0,
     };
   } catch {
     return null;

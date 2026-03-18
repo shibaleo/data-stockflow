@@ -52,7 +52,6 @@ CREATE TABLE data_stockflow.role (
   revision_hash    TEXT NOT NULL,
   code             TEXT NOT NULL,
   name             TEXT NOT NULL,
-  authority_rank   INTEGER NOT NULL DEFAULT 0,
   is_active        BOOLEAN NOT NULL DEFAULT true,
   PRIMARY KEY (key, revision),
   UNIQUE (code, revision)
@@ -578,11 +577,12 @@ SELECT * FROM data_stockflow.journal ORDER BY key, revision;
 -- ============================================================
 
 -- Roles (system seed)
-INSERT INTO data_stockflow.role (key, revision, code, name, authority_rank, lines_hash, prev_revision_hash, revision_hash) VALUES
-  (nextval('data_stockflow.role_key_seq'), 1, 'platform', 'Platform',  100, 'bootstrap', 'genesis', 'bootstrap'),
-  (nextval('data_stockflow.role_key_seq'), 1, 'admin',    'Admin',      50, 'bootstrap', 'genesis', 'bootstrap'),
-  (nextval('data_stockflow.role_key_seq'), 1, 'user',     'User',       10, 'bootstrap', 'genesis', 'bootstrap'),
-  (nextval('data_stockflow.role_key_seq'), 1, 'auditor',  'Auditor',     0, 'bootstrap', 'genesis', 'bootstrap');
+INSERT INTO data_stockflow.role (key, revision, code, name, lines_hash, prev_revision_hash, revision_hash) VALUES
+  (nextval('data_stockflow.role_key_seq'), 1, 'platform', 'Platform',  'bootstrap', 'genesis', 'bootstrap'),
+  (nextval('data_stockflow.role_key_seq'), 1, 'tenant',   'Tenant',    'bootstrap', 'genesis', 'bootstrap'),
+  (nextval('data_stockflow.role_key_seq'), 1, 'admin',    'Admin',     'bootstrap', 'genesis', 'bootstrap'),
+  (nextval('data_stockflow.role_key_seq'), 1, 'user',     'User',      'bootstrap', 'genesis', 'bootstrap'),
+  (nextval('data_stockflow.role_key_seq'), 1, 'auditor',  'Auditor',   'bootstrap', 'genesis', 'bootstrap');
 
 -- Category types (system seed)
 -- 各ドメインエンティティに種別（単一）、仕訳のみタグ（複数可）

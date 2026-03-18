@@ -337,7 +337,7 @@ app.openapi(update, async (c) => {
   `);
   if (checkRows.length === 0) return c.json({ error: "Not found" }, 404);
   const vRow = checkRows[0] as { key: number; authority_role_key: number };
-  const authErr = await authorityCheck(c.get("roleRank"), vRow.authority_role_key, "伝票");
+  const authErr = await authorityCheck(c.get("roleKey"), vRow.authority_role_key, "伝票");
   if (authErr) return c.json({ error: authErr }, 403);
 
   const result = await db.transaction(async (tx: typeof db) => {
